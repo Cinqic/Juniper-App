@@ -46,4 +46,29 @@ describe('Juniper application shell', () => {
     expect(container.textContent).toContain('No model selected')
     expect(container.textContent).toContain('choose one in Models')
   })
+
+  it('keeps model, tool, privacy, and diagnostics surfaces reachable in zero-model mode', async () => {
+    await act(async () => buttonByText(container, 'Continue').click())
+    await act(async () => buttonByText(container, 'Continue').click())
+    await act(async () => buttonByText(container, 'Continue').click())
+    await act(async () => buttonByText(container, 'Enter Juniper').click())
+
+    await act(async () => buttonByText(container, 'Models').click())
+    expect(container.textContent).toContain('Model library')
+    expect(container.textContent).toContain('No models installed yet')
+    expect(container.textContent).toContain('UNKNOWN')
+
+    await act(async () => buttonByText(container, 'Tools').click())
+    expect(container.textContent).toContain('Permission boundary is active')
+    expect(container.textContent).toContain('calculator.evaluate')
+
+    await act(async () => buttonByText(container, 'Privacy center').click())
+    expect(container.textContent).toContain('Privacy center')
+    expect(container.textContent).toContain('Telemetry')
+    expect(container.textContent).toContain('No model selected')
+
+    await act(async () => buttonByText(container, 'Diagnostics').click())
+    expect(container.textContent).toContain('Diagnostics')
+    expect(container.textContent).toContain('SQLite schema v3')
+  })
 })

@@ -9,7 +9,7 @@ use reqwest::{Client, Response};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashSet};
 use std::time::Instant;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::oneshot;
 use tokio::time::{Duration, timeout};
 use uuid::Uuid;
@@ -808,12 +808,12 @@ fn ollama_body(request: &ChatRequest, messages: &[Value], tools: &[Value]) -> Va
     body
 }
 
-async fn stream_one_openai_turn(
+async fn stream_one_openai_turn<R: Runtime>(
     request: &ChatRequest,
     endpoint: &str,
     messages: &[Value],
     tools: &[Value],
-    app: &AppHandle,
+    app: &AppHandle<R>,
     topic: &str,
     cancellation: &Cancellation,
 ) -> Result<TurnOutcome, ProviderError> {
@@ -838,84 +838,90 @@ async fn stream_one_openai_turn(
     let mut bytes = response.bytes_stream();
     let mut buffer = Vec::new();
     let mut pending: BTreeMap<u64, ToolCallAccumulator> = BTreeMap::new();
+    let mut stream_done = false;
+    let mut process_line = |line: &str| -> Result<(), ProviderError> {
+        if stream_done {
+            return Ok(());
+        }
+        let value = match parse_openai_sse_line(line)? {
+            ProviderStreamRecord::Ignore => return Ok(()),
+            ProviderStreamRecord::Done => {
+                stream_done = true;
+                return Ok(());
+            }
+            ProviderStreamRecord::Json(value) => value,
+        };
+        if let Some(message) = value["error"]["message"]
+            .as_str()
+            .or_else(|| value["error"].as_str())
+        {
+            return Err(ProviderError::new("PROVIDER_ERROR", message));
+        }
+        if let Some(usage) = provider_usage(&value, None) {
+            let _ = app.emit(
+                topic,
+                ChatStreamEvent {
+                    request_id: request.request_id.clone(),
+                    delta: None,
+                    reasoning: None,
+                    tool_calls: None,
+                    tool_results: None,
+                    done: Some(false),
+                    usage: Some(usage),
+                    error: None,
+                    permission_request: None,
+                },
+            );
+        }
+        let choice = &value["choices"][0];
+        let delta = choice["delta"]["content"].as_str().map(str::to_owned);
+        let reasoning = choice["delta"]["reasoning_content"]
+            .as_str()
+            .map(str::to_owned);
+        if delta.is_some() || reasoning.is_some() {
+            let _ = app.emit(
+                topic,
+                ChatStreamEvent {
+                    request_id: request.request_id.clone(),
+                    delta,
+                    reasoning,
+                    tool_calls: None,
+                    tool_results: None,
+                    done: Some(false),
+                    usage: None,
+                    error: None,
+                    permission_request: None,
+                },
+            );
+        }
+        if let Some(calls) = choice["delta"]["tool_calls"].as_array() {
+            for (position, call) in calls.iter().enumerate() {
+                let index = call["index"].as_u64().unwrap_or(position as u64);
+                let entry = pending.entry(index).or_default();
+                if let Some(id) = call["id"].as_str() {
+                    entry.id = id.to_owned();
+                }
+                if let Some(name) = call["function"]["name"].as_str() {
+                    entry.name = name.to_owned();
+                }
+                if let Some(arguments) = call["function"]["arguments"].as_str() {
+                    entry.arguments.push_str(arguments);
+                }
+            }
+        }
+        Ok(())
+    };
     while let Some(next) = tokio::select! { chunk = bytes.next() => chunk, _ = cancellation.wait() => return Err(ProviderError::new("REQUEST_CANCELLED", "Generation cancelled.")) }
     {
         let chunk = next.map_err(|_| {
             ProviderError::new("STREAM_ERROR", "The model stream ended unexpectedly.")
         })?;
         buffer.extend_from_slice(&chunk);
-        while let Some(index) = buffer.iter().position(|byte| *byte == b'\n') {
-            let line = buffer.drain(..=index).collect::<Vec<_>>();
-            let line = std::str::from_utf8(&line).map_err(|_| {
-                ProviderError::new(
-                    "MALFORMED_PROVIDER_RESPONSE",
-                    "The provider returned invalid UTF-8.",
-                )
-            })?;
-            let value = match parse_openai_sse_line(line)? {
-                ProviderStreamRecord::Ignore => continue,
-                ProviderStreamRecord::Done => break,
-                ProviderStreamRecord::Json(value) => value,
-            };
-            if let Some(message) = value["error"]["message"]
-                .as_str()
-                .or_else(|| value["error"].as_str())
-            {
-                return Err(ProviderError::new("PROVIDER_ERROR", message));
-            }
-            if let Some(usage) = provider_usage(&value, None) {
-                let _ = app.emit(
-                    topic,
-                    ChatStreamEvent {
-                        request_id: request.request_id.clone(),
-                        delta: None,
-                        reasoning: None,
-                        tool_calls: None,
-                        tool_results: None,
-                        done: Some(false),
-                        usage: Some(usage),
-                        error: None,
-                        permission_request: None,
-                    },
-                );
-            }
-            let choice = &value["choices"][0];
-            let delta = choice["delta"]["content"].as_str().map(str::to_owned);
-            let reasoning = choice["delta"]["reasoning_content"]
-                .as_str()
-                .map(str::to_owned);
-            if delta.is_some() || reasoning.is_some() {
-                let _ = app.emit(
-                    topic,
-                    ChatStreamEvent {
-                        request_id: request.request_id.clone(),
-                        delta,
-                        reasoning,
-                        tool_calls: None,
-                        tool_results: None,
-                        done: Some(false),
-                        usage: None,
-                        error: None,
-                        permission_request: None,
-                    },
-                );
-            }
-            if let Some(calls) = choice["delta"]["tool_calls"].as_array() {
-                for (position, call) in calls.iter().enumerate() {
-                    let index = call["index"].as_u64().unwrap_or(position as u64);
-                    let entry = pending.entry(index).or_default();
-                    if let Some(id) = call["id"].as_str() {
-                        entry.id = id.to_owned();
-                    }
-                    if let Some(name) = call["function"]["name"].as_str() {
-                        entry.name = name.to_owned();
-                    }
-                    if let Some(arguments) = call["function"]["arguments"].as_str() {
-                        entry.arguments.push_str(arguments);
-                    }
-                }
-            }
-        }
+        drain_provider_buffer(&mut buffer, &mut process_line)?;
+    }
+    if buffer.iter().any(|byte| !byte.is_ascii_whitespace()) {
+        buffer.push(b'\n');
+        drain_provider_buffer(&mut buffer, &mut process_line)?;
     }
     if buffer.iter().any(|byte| !byte.is_ascii_whitespace()) {
         return Err(ProviderError::new(
@@ -1014,12 +1020,12 @@ async fn stream_ollama(
     ))
 }
 
-async fn stream_one_ollama_turn(
+async fn stream_one_ollama_turn<R: Runtime>(
     request: &ChatRequest,
     endpoint: &str,
     messages: &[Value],
     tools: &[Value],
-    app: &AppHandle,
+    app: &AppHandle<R>,
     topic: &str,
     cancellation: &Cancellation,
 ) -> Result<TurnOutcome, ProviderError> {
@@ -1043,89 +1049,87 @@ async fn stream_one_ollama_turn(
     let mut bytes = response.bytes_stream();
     let mut buffer = Vec::new();
     let mut pending: BTreeMap<u64, ToolCallAccumulator> = BTreeMap::new();
+    let mut process_line = |line: &str| -> Result<(), ProviderError> {
+        let value = match parse_ollama_stream_line(line)? {
+            ProviderStreamRecord::Ignore | ProviderStreamRecord::Done => return Ok(()),
+            ProviderStreamRecord::Json(value) => value,
+        };
+        if let Some(message) = value["error"]
+            .as_str()
+            .or_else(|| value["error"]["message"].as_str())
+        {
+            return Err(ProviderError::new("PROVIDER_ERROR", message));
+        }
+        if value["done"].as_bool() == Some(true)
+            && let Some(usage) = provider_usage(&value, Some("total_duration"))
+        {
+            let _ = app.emit(
+                topic,
+                ChatStreamEvent {
+                    request_id: request.request_id.clone(),
+                    delta: None,
+                    reasoning: None,
+                    tool_calls: None,
+                    tool_results: None,
+                    done: Some(false),
+                    usage: Some(usage),
+                    error: None,
+                    permission_request: None,
+                },
+            );
+        }
+        let message = &value["message"];
+        let delta = message["content"]
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
+        let reasoning = message["thinking"]
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
+        if delta.is_some() || reasoning.is_some() {
+            let _ = app.emit(
+                topic,
+                ChatStreamEvent {
+                    request_id: request.request_id.clone(),
+                    delta,
+                    reasoning,
+                    tool_calls: None,
+                    tool_results: None,
+                    done: Some(false),
+                    usage: None,
+                    error: None,
+                    permission_request: None,
+                },
+            );
+        }
+        if let Some(calls) = message["tool_calls"].as_array() {
+            for (index, call) in calls.iter().enumerate() {
+                let entry = pending.entry(index as u64).or_default();
+                entry.id = call["id"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| format!("ollama-call-{index}"));
+                entry.name = call["function"]["name"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned();
+                entry.arguments = call["function"]["arguments"].to_string();
+            }
+        }
+        Ok(())
+    };
     while let Some(next) = tokio::select! { chunk = bytes.next() => chunk, _ = cancellation.wait() => return Err(ProviderError::new("REQUEST_CANCELLED", "Generation cancelled.")) }
     {
         let chunk = next.map_err(|_| {
             ProviderError::new("STREAM_ERROR", "The Ollama stream ended unexpectedly.")
         })?;
         buffer.extend_from_slice(&chunk);
-        while let Some(index) = buffer.iter().position(|byte| *byte == b'\n') {
-            let line = buffer.drain(..=index).collect::<Vec<_>>();
-            let line = std::str::from_utf8(&line).map_err(|_| {
-                ProviderError::new(
-                    "MALFORMED_PROVIDER_RESPONSE",
-                    "Ollama returned invalid UTF-8.",
-                )
-            })?;
-            let value = match parse_ollama_stream_line(line)? {
-                ProviderStreamRecord::Ignore => continue,
-                ProviderStreamRecord::Done => break,
-                ProviderStreamRecord::Json(value) => value,
-            };
-            if let Some(message) = value["error"]
-                .as_str()
-                .or_else(|| value["error"]["message"].as_str())
-            {
-                return Err(ProviderError::new("PROVIDER_ERROR", message));
-            }
-            if value["done"].as_bool() == Some(true)
-                && let Some(usage) = provider_usage(&value, Some("total_duration"))
-            {
-                let _ = app.emit(
-                    topic,
-                    ChatStreamEvent {
-                        request_id: request.request_id.clone(),
-                        delta: None,
-                        reasoning: None,
-                        tool_calls: None,
-                        tool_results: None,
-                        done: Some(false),
-                        usage: Some(usage),
-                        error: None,
-                        permission_request: None,
-                    },
-                );
-            }
-            let message = &value["message"];
-            let delta = message["content"]
-                .as_str()
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned);
-            let reasoning = message["thinking"]
-                .as_str()
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned);
-            if delta.is_some() || reasoning.is_some() {
-                let _ = app.emit(
-                    topic,
-                    ChatStreamEvent {
-                        request_id: request.request_id.clone(),
-                        delta,
-                        reasoning,
-                        tool_calls: None,
-                        tool_results: None,
-                        done: Some(false),
-                        usage: None,
-                        error: None,
-                        permission_request: None,
-                    },
-                );
-            }
-            if let Some(calls) = message["tool_calls"].as_array() {
-                for (index, call) in calls.iter().enumerate() {
-                    let entry = pending.entry(index as u64).or_default();
-                    entry.id = call["id"]
-                        .as_str()
-                        .map(str::to_owned)
-                        .unwrap_or_else(|| format!("ollama-call-{index}"));
-                    entry.name = call["function"]["name"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_owned();
-                    entry.arguments = call["function"]["arguments"].to_string();
-                }
-            }
-        }
+        drain_provider_buffer(&mut buffer, &mut process_line)?;
+    }
+    if buffer.iter().any(|byte| !byte.is_ascii_whitespace()) {
+        buffer.push(b'\n');
+        drain_provider_buffer(&mut buffer, &mut process_line)?;
     }
     if buffer.iter().any(|byte| !byte.is_ascii_whitespace()) {
         return Err(ProviderError::new(
@@ -1333,6 +1337,23 @@ pub async fn inspect_model(
                 .collect()
         }),
     })
+}
+
+fn drain_provider_buffer(
+    buffer: &mut Vec<u8>,
+    handler: &mut impl FnMut(&str) -> Result<(), ProviderError>,
+) -> Result<(), ProviderError> {
+    while let Some(index) = buffer.iter().position(|byte| *byte == b'\n') {
+        let line = buffer.drain(..=index).collect::<Vec<_>>();
+        let line = std::str::from_utf8(&line).map_err(|_| {
+            ProviderError::new(
+                "MALFORMED_PROVIDER_RESPONSE",
+                "The provider returned invalid UTF-8.",
+            )
+        })?;
+        handler(line)?;
+    }
+    Ok(())
 }
 
 fn parse_ollama_pull_line(
@@ -1880,7 +1901,9 @@ mod tests {
         assert!(parse_ollama_pull_line("  \n", "pull-1").unwrap().is_none());
     }
 
-    fn fake_json_server(responses: Vec<&'static str>) -> (String, std::thread::JoinHandle<()>) {
+    fn fake_http_server(
+        responses: Vec<(u16, &'static str)>,
+    ) -> (String, std::thread::JoinHandle<()>) {
         use std::io::{Read, Write};
         use std::net::TcpListener;
         let listener = TcpListener::bind("127.0.0.1:0").expect("fake server should bind");
@@ -1888,12 +1911,12 @@ mod tests {
             .local_addr()
             .expect("fake server should have an address");
         let handle = std::thread::spawn(move || {
-            for body in responses {
+            for (status, body) in responses {
                 let (mut stream, _) = listener.accept().expect("fake server should accept");
                 let mut request = [0u8; 4096];
                 let _ = stream.read(&mut request);
                 let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                     body.len(),
                     body
                 );
@@ -1903,6 +1926,10 @@ mod tests {
             }
         });
         (format!("http://{address}"), handle)
+    }
+
+    fn fake_json_server(responses: Vec<&'static str>) -> (String, std::thread::JoinHandle<()>) {
+        fake_http_server(responses.into_iter().map(|body| (200, body)).collect())
     }
 
     #[test]
@@ -1942,6 +1969,101 @@ mod tests {
                 .unwrap();
             assert_eq!(models[0].model_id, "future-openai-model");
         });
+        server.join().expect("fake server should stop");
+    }
+
+    #[test]
+    fn fake_openai_chat_server_handles_unicode_tool_fragments_and_final_record() {
+        let (base_url, server) = fake_json_server(vec![
+            r#"data: {"choices":[{"delta":{"content":"Hello 🌿"}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"unit.convert","arguments":"{\"value\":1,"}}]}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"from\":\"km\",\"to\":\"m\"}"}}]}}]}
+data: [DONE]"#,
+        ]);
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let request = request();
+        let tools = tool_payload(&request);
+        let endpoint = format!("{base_url}/v1/chat/completions");
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let outcome = runtime
+            .block_on(async {
+                stream_one_openai_turn(
+                    &request,
+                    &endpoint,
+                    &[],
+                    &tools,
+                    &handle,
+                    "test-topic",
+                    &Cancellation::default(),
+                )
+                .await
+            })
+            .expect("fake OpenAI chat should parse");
+        assert_eq!(outcome.tool_calls.len(), 1);
+        assert_eq!(outcome.tool_calls[0].name, "unit.convert");
+        assert_eq!(outcome.tool_calls[0].arguments["value"], 1);
+        assert_eq!(outcome.tool_calls[0].arguments["from"], "km");
+        assert_eq!(outcome.tool_calls[0].arguments["to"], "m");
+        server.join().expect("fake server should stop");
+    }
+
+    #[test]
+    fn fake_ollama_chat_server_handles_thinking_and_final_record() {
+        let (base_url, server) = fake_json_server(vec![
+            "{\"message\":{\"content\":\"Hi 🌿\",\"thinking\":\"reason\"}}\n{\"done\":true,\"prompt_eval_count\":1,\"eval_count\":2,\"total_duration\":1000000}",
+        ]);
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let request = request();
+        let tools = tool_payload(&request);
+        let endpoint = format!("{base_url}/api/chat");
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let outcome = runtime
+            .block_on(async {
+                stream_one_ollama_turn(
+                    &request,
+                    &endpoint,
+                    &[],
+                    &tools,
+                    &handle,
+                    "test-topic",
+                    &Cancellation::default(),
+                )
+                .await
+            })
+            .expect("fake Ollama chat should parse");
+        assert!(outcome.tool_calls.is_empty());
+        server.join().expect("fake server should stop");
+    }
+
+    #[test]
+    fn fake_openai_chat_server_surfaces_provider_http_errors() {
+        let (base_url, server) =
+            fake_http_server(vec![(429, r#"{"error":{"message":"rate limited"}}"#)]);
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let request = request();
+        let tools = tool_payload(&request);
+        let endpoint = format!("{base_url}/v1/chat/completions");
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let result = runtime.block_on(async {
+            stream_one_openai_turn(
+                &request,
+                &endpoint,
+                &[],
+                &tools,
+                &handle,
+                "test-topic",
+                &Cancellation::default(),
+            )
+            .await
+        });
+        let Err(error) = result else {
+            panic!("fake HTTP error should be surfaced");
+        };
+        assert_eq!(error.code, "PROVIDER_ERROR");
+        assert!(error.message.contains("HTTP 429"));
         server.join().expect("fake server should stop");
     }
 }

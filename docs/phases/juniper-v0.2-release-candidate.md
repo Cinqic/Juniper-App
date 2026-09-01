@@ -73,7 +73,7 @@ Passing with the bundled Node runtime:
 - pnpm format
 - pnpm lint
 - pnpm typecheck
-- pnpm test — 5 files, 14 tests
+- pnpm test — 5 files, 15 tests
 - pnpm build
 - pnpm schema:validate — 7 schemas and representative fixtures
 - pnpm version:check
@@ -81,7 +81,7 @@ Passing with the bundled Node runtime:
 - Rust cargo check --locked
 - Rust cargo check --tests --locked
 - Rust cargo clippy --all-targets -- -D warnings
-- Rust cargo test --locked — 19 tests passed
+- Rust cargo test --locked — 22 tests passed
 - pnpm tauri build --bundles deb,appimage — native binary plus `.deb` and
   `.AppImage` bundles produced
 
