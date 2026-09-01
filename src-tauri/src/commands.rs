@@ -5,11 +5,12 @@ use std::{
     collections::{HashMap, HashSet},
     io::Read,
     path::PathBuf,
+    process::Stdio,
     sync::{Arc, Mutex},
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, oneshot};
 use uuid::Uuid;
 
 #[derive(Default)]
@@ -17,6 +18,7 @@ pub struct AppState {
     pub cancellations: Mutex<HashMap<String, Cancellation>>,
     pub attachments: Mutex<HashMap<String, PathBuf>>,
     pub gguf_files: Mutex<HashMap<String, PathBuf>>,
+    pub permission_waiters: Mutex<HashMap<String, oneshot::Sender<String>>>,
 }
 
 #[derive(Clone, Default)]
@@ -58,10 +60,10 @@ pub fn system_info() -> HashMap<String, String> {
         (String::from("telemetry"), String::from("Off")),
     ]);
     #[cfg(target_os = "linux")]
-    if let Ok(contents) = std::fs::read_to_string("/proc/meminfo") {
-        if let Some(line) = contents.lines().find(|line| line.starts_with("MemTotal:")) {
-            result.insert("memory".into(), line.replace("MemTotal:", "").trim().into());
-        }
+    if let Ok(contents) = std::fs::read_to_string("/proc/meminfo")
+        && let Some(line) = contents.lines().find(|line| line.starts_with("MemTotal:"))
+    {
+        result.insert("memory".into(), line.replace("MemTotal:", "").trim().into());
     }
     result
 }
@@ -162,6 +164,124 @@ pub fn cancel_model_pull(state: State<'_, AppState>, request_id: String) -> Resu
 }
 
 #[tauri::command]
+pub async fn import_gguf(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    selection_id: String,
+    model_name: String,
+    request_id: String,
+) -> Result<(), String> {
+    let model_name = model_name.trim();
+    if !valid_model_reference(model_name) {
+        return Err("Enter a model name using letters, numbers, '/', ':', '.', '_' or '-'.".into());
+    }
+    let path = state
+        .gguf_files
+        .lock()
+        .map_err(|_| "GGUF selection state unavailable.")?
+        .get(&selection_id)
+        .cloned()
+        .ok_or_else(|| "This GGUF selection is no longer available.".to_owned())?;
+    let path_text = path
+        .to_str()
+        .filter(|value| !value.chars().any(char::is_control))
+        .ok_or_else(|| "The selected GGUF path cannot be represented safely.".to_owned())?;
+    let metadata = std::fs::metadata(&path).map_err(|_| "The selected GGUF is unavailable.")?;
+    if !metadata.is_file() || metadata.len() == 0 {
+        return Err("The selected GGUF file is no longer a readable regular file.".into());
+    }
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| error.to_string())?
+        .join("gguf-imports");
+    std::fs::create_dir_all(&cache_dir).map_err(|error| error.to_string())?;
+    let modelfile = cache_dir.join(format!("juniper-{}.Modelfile", Uuid::new_v4()));
+    std::fs::write(&modelfile, format!("FROM {path_text}\n"))
+        .map_err(|error| format!("Could not prepare the Ollama import: {error}"))?;
+
+    let cancellation = Cancellation::default();
+    state
+        .cancellations
+        .lock()
+        .map_err(|_| "Cancellation state unavailable.")?
+        .insert(request_id.clone(), cancellation.clone());
+    let topic = format!("juniper://gguf-import/{request_id}");
+    let result = async {
+        let modelfile_text = modelfile
+            .to_str()
+            .ok_or_else(|| "The temporary Modelfile path is invalid.".to_owned())?;
+        let mut child = tokio::process::Command::new("ollama")
+            .args(["create", model_name, "-f", modelfile_text])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|_| "Ollama could not be started for GGUF import.".to_owned())?;
+        let status = tokio::select! {
+            status = child.wait() => status.map_err(|error| format!("Ollama import failed: {error}")),
+            _ = cancellation.wait() => {
+                let _ = child.kill().await;
+                emit_gguf_progress(&app, &topic, &request_id, "cancelled", Some("MODEL_IMPORT_CANCELLED"), "GGUF import cancelled.");
+                return Err("GGUF import cancelled.".into());
+            }
+        }?;
+        if !status.success() {
+            emit_gguf_progress(&app, &topic, &request_id, "error", Some("MODEL_IMPORT_FAILED"), "Ollama could not import the GGUF file.");
+            return Err("Ollama could not import the GGUF file.".into());
+        }
+        emit_gguf_progress(&app, &topic, &request_id, "complete", None, "GGUF import complete.");
+        Ok(())
+    }
+    .await;
+    state
+        .cancellations
+        .lock()
+        .map_err(|_| "Cancellation state unavailable.")?
+        .remove(&request_id);
+    let _ = std::fs::remove_file(modelfile);
+    result
+}
+
+#[tauri::command]
+pub fn cancel_gguf_import(state: State<'_, AppState>, request_id: String) -> Result<(), String> {
+    cancel_chat(state, request_id)
+}
+
+fn valid_model_reference(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '/' | ':' | '.' | '_' | '-')
+        })
+}
+
+fn emit_gguf_progress(
+    app: &AppHandle,
+    topic: &str,
+    request_id: &str,
+    status: &str,
+    code: Option<&str>,
+    message: &str,
+) {
+    let _ = app.emit(
+        topic,
+        crate::domain::ModelPullProgress {
+            request_id: request_id.into(),
+            status: status.into(),
+            digest: None,
+            completed_bytes: None,
+            total_bytes: None,
+            done: Some(true),
+            error: code.map(|code| crate::domain::RuntimeError {
+                code: code.into(),
+                message: message.into(),
+            }),
+        },
+    );
+}
+
+#[tauri::command]
 pub async fn delete_model(
     kind: String,
     base_url: String,
@@ -192,7 +312,7 @@ pub async fn chat_stream(
         .lock()
         .map_err(|_| "Cancellation state unavailable.")?
         .insert(request.request_id.clone(), cancellation.clone());
-    providers::stream(request.clone(), app, cancellation).await;
+    providers::stream(request.clone(), app, cancellation, state.inner()).await;
     state
         .cancellations
         .lock()
@@ -212,6 +332,31 @@ pub fn cancel_chat(state: State<'_, AppState>, request_id: String) -> Result<(),
         cancellation.cancel();
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn resolve_permission(
+    state: State<'_, AppState>,
+    request_id: String,
+    call_id: String,
+    decision: String,
+) -> Result<(), String> {
+    if !matches!(
+        decision.as_str(),
+        "allow-once" | "allow-chat" | "allow-assistant" | "deny"
+    ) {
+        return Err("Unknown permission decision.".into());
+    }
+    let key = format!("{request_id}:{call_id}");
+    let sender = state
+        .permission_waiters
+        .lock()
+        .map_err(|_| "Permission state unavailable.")?
+        .remove(&key)
+        .ok_or_else(|| "This permission request is no longer pending.".to_owned())?;
+    sender
+        .send(decision)
+        .map_err(|_| "The permission request is no longer active.".into())
 }
 
 #[tauri::command]
@@ -374,9 +519,9 @@ pub fn secure_set_credential(reference: String, secret: String) -> Result<(), St
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        return credential_entry(&reference)?
+        credential_entry(&reference)?
             .set_password(&secret)
-            .map_err(|_| "Could not save the credential to the system keychain.".into());
+            .map_err(|_| "Could not save the credential to the system keychain.".into())
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
@@ -389,10 +534,10 @@ pub fn secure_set_credential(reference: String, secret: String) -> Result<(), St
 pub fn secure_has_credential(reference: String) -> Result<bool, String> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        return match credential_entry(&reference)?.get_password() {
+        match credential_entry(&reference)?.get_password() {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
-        };
+        }
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
@@ -405,9 +550,9 @@ pub fn secure_has_credential(reference: String) -> Result<bool, String> {
 pub fn secure_delete_credential(reference: String) -> Result<(), String> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        return credential_entry(&reference)?
+        credential_entry(&reference)?
             .delete_credential()
-            .map_err(|_| "Could not remove the credential from the system keychain.".into());
+            .map_err(|_| "Could not remove the credential from the system keychain.".into())
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {

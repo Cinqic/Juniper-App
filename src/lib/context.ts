@@ -11,6 +11,7 @@ export interface ContextSummary {
   conversation: ContextMessage[]
   currentUserMessage: string
   tools: string[]
+  attachments: string[]
   estimatedTokens: number
   contextLimit: number
   contextLimitAssumed: boolean
@@ -80,6 +81,7 @@ export function buildContext(
   tools: ToolDefinition[],
   limit?: number,
   currentUserMessage?: string,
+  attachments: Array<{ name: string }> = [],
 ): ContextSummary {
   const enabledMemories =
     assistant.memoryPolicy === 'curated'
@@ -142,6 +144,7 @@ export function buildContext(
     conversation: kept,
     currentUserMessage: current,
     tools: toolNames,
+    attachments: attachments.map((attachment) => attachment.name),
     estimatedTokens: fixedTokens + used,
     contextLimit,
     contextLimitAssumed,

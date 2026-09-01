@@ -245,6 +245,7 @@ export function initialAppData(): AppData {
     providers: [defaultProvider],
     conversations: [],
     memories: [],
+    permissions: [],
     settings: defaultSettings,
   }
 }

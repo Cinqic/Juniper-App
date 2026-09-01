@@ -19,6 +19,8 @@ pub enum ToolError {
     UnsupportedUnit,
     #[error("invalid tool arguments")]
     InvalidArguments,
+    #[error("unknown tool")]
+    UnknownTool,
     #[error("calculator expression is too deeply nested")]
     TooDeep,
     #[error("calculator exponent is outside the supported range")]
@@ -196,7 +198,7 @@ pub fn validate_call(name: &str, arguments: &Value) -> Result<(), ToolError> {
             | "file.metadata"
             | "system.info"
     ) {
-        return Err(ToolError::InvalidArguments);
+        return Err(ToolError::UnknownTool);
     }
     let object = arguments.as_object().ok_or(ToolError::InvalidArguments)?;
     let valid = match name {
@@ -211,26 +213,42 @@ pub fn validate_call(name: &str, arguments: &Value) -> Result<(), ToolError> {
         "unit.convert" => {
             object.len() == 3
                 && object.get("value").and_then(Value::as_f64).is_some()
-                && object.get("from").and_then(Value::as_str).is_some()
-                && object.get("to").and_then(Value::as_str).is_some()
+                && object
+                    .get("from")
+                    .and_then(Value::as_str)
+                    .is_some_and(valid_argument_string)
+                && object
+                    .get("to")
+                    .and_then(Value::as_str)
+                    .is_some_and(valid_argument_string)
         }
         "memory.save" => {
             object.len() == 1
                 && object
                     .get("content")
                     .and_then(Value::as_str)
-                    .is_some_and(|value| value.len() <= 1000)
+                    .is_some_and(|value| !value.is_empty() && value.len() <= 1000)
         }
-        "memory.delete" => object.len() == 1 && object.get("id").and_then(Value::as_str).is_some(),
+        "memory.delete" => {
+            object.len() == 1
+                && object
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .is_some_and(valid_identifier)
+        }
         "file.read" | "file.metadata" => {
-            object.len() == 1 && object.get("attachmentId").and_then(Value::as_str).is_some()
+            object.len() == 1
+                && object
+                    .get("attachmentId")
+                    .and_then(Value::as_str)
+                    .is_some_and(valid_identifier)
         }
         "chat.search" => {
             object.len() == 1
                 && object
                     .get("query")
                     .and_then(Value::as_str)
-                    .is_some_and(|value| value.len() <= 200)
+                    .is_some_and(|value| !value.is_empty() && value.len() <= 200)
         }
         _ => false,
     };
@@ -245,6 +263,14 @@ pub fn validate_call(name: &str, arguments: &Value) -> Result<(), ToolError> {
         return Err(ToolError::ResultTooLarge);
     }
     Ok(())
+}
+
+fn valid_argument_string(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 64 && !value.chars().any(char::is_control)
+}
+
+fn valid_identifier(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 128 && !value.chars().any(char::is_control)
 }
 
 pub fn host_result(
@@ -284,12 +310,17 @@ pub fn execute_call(
         );
     }
     if let Err(error) = validate_call(name, arguments) {
+        let code = if error == ToolError::UnknownTool {
+            "UNKNOWN_TOOL"
+        } else {
+            "INVALID_TOOL_ARGUMENT"
+        };
         return host_result(
             call_id,
             name,
             "error",
             None,
-            Some(json!({ "code": "INVALID_TOOL_ARGUMENT", "message": error.to_string() })),
+            Some(json!({ "code": code, "message": error.to_string() })),
         );
     }
 
@@ -572,7 +603,7 @@ mod tests {
         );
         assert_eq!(
             validate_call("unknown.tool", &json!({})).unwrap_err(),
-            ToolError::InvalidArguments
+            ToolError::UnknownTool
         );
     }
 }

@@ -6,7 +6,7 @@ Status: CANDIDATE - PENDING INDEPENDENT REVIEW
 
 - Starting canonical commit: 9c900021435505ea5b2bb16647ebd5bf2bb035f5
 - Working branch: luna/juniper-model-agnostic-completion
-- Final commit: recorded in the repository history for this handoff
+- Final commit: pending follow-up remediation commit
 - Product version: 0.2.0-rc.1
 
 ## Architecture changes
@@ -37,9 +37,10 @@ progress; user/model text is never placed in a shell command.
 
 ## Persistence, chat, tools, files, and privacy
 
-- Tauri application state is saved through SQLite schema v2, with migrations,
+- Tauri application state is saved through SQLite schema v3, with migrations,
   foreign keys, normalized entity tables, an app-state snapshot, and private
-  chat exclusion. Browser localStorage is isolated to the development preview.
+  chat and chat-scoped permission exclusion. Browser localStorage is isolated
+  to the development preview.
 - Prompt composition is deterministic: Juniper identity, assistant prompt,
   compiled personality, response preference, host tool guidance, curated
   memory, history, attachment context, and the current user message.
@@ -49,12 +50,18 @@ progress; user/model text is never placed in a shell command.
 - Native provider streams carry separate reasoning, tool-call, host-result,
   usage, completion, and stable error events. Cancellation uses one request ID
   through the frontend and native boundary.
+- User-data and filesystem tool calls pause at a native permission boundary.
+  Allow-once, chat-scoped, assistant-scoped, and deny decisions are visible in
+  the UI; durable grants are stored in SQLite and private chat grants are
+  discarded.
 - Safe host tools use strict argument validation, bounded calculator parsing,
   dimension-safe conversion, bounded loops/payloads, and host-authored results.
   Unknown or malformed tool arguments never become an empty object.
 - Text attachments use scoped native picker grants and a 1 MiB per-file cap.
   The GGUF picker validates extension, readability, size, and the GGUF magic
-  header without exposing the selected path to the webview.
+  header without exposing the selected path to the webview. Ollama GGUF import
+  uses a fixed native executable invocation and streamed completion/cancellation
+  status; managed llama.cpp process ownership remains unavailable.
 - Desktop provider secrets use opaque references backed by the OS credential
   store; credentials are not exported. There is no telemetry, automatic
   conversation upload, or silent remote fallback.
@@ -66,26 +73,29 @@ Passing with the bundled Node runtime:
 - pnpm format
 - pnpm lint
 - pnpm typecheck
-- pnpm test — 4 files, 11 tests
+- pnpm test — 5 files, 14 tests
 - pnpm build
 - pnpm schema:validate — 7 schemas and representative fixtures
 - pnpm version:check
 - Rust cargo fmt --check
+- Rust cargo check --locked
+- Rust cargo check --tests --locked
+- Rust cargo clippy --all-targets -- -D warnings
+- Rust cargo test --locked — 19 tests passed
+- pnpm tauri build --bundles deb,appimage — native binary plus `.deb` and
+  `.AppImage` bundles produced
 
-Native validation was attempted with Rust 1.90.0. Host Tauri tests and
-Clippy were blocked before Juniper source compilation because this environment
-does not have the Linux dbus-1.pc, GTK, and WebKit development packages.
-The Android Rust target is installed, but Android compilation was blocked by
-the absent Android NDK clang toolchain. CI workflows now install the Linux
-Tauri packages and Android SDK/NDK explicitly. No Linux package, Android
-build, iOS build, or live provider integration result is claimed here.
+Native validation used Rust 1.90.0 and temporary user-local Linux development
+metadata because the base workspace image does not install the Tauri desktop
+packages globally. The source, test targets, full Rust suite, and Linux bundle
+all passed with that isolated prerequisite set. Android compilation remains
+blocked by the absent Android NDK clang toolchain. CI workflows install the
+required Linux packages and Android SDK/NDK. No live model chat is claimed.
 
 ## Known and accepted limitations
 
-- User-data tool permission dialogs and their durable policy store are not
-  wired into the native chat loop; those tools remain disabled in default chat.
-- Managed llama.cpp process ownership/import and GGUF execution are not enabled.
-  A user can connect an already-running llama.cpp-compatible server.
+- Managed llama.cpp process ownership remains unavailable. A user can connect
+  an already-running llama.cpp-compatible server.
 - MCP client calls remain explicitly unavailable in this candidate.
 - Mobile secure credential vault integration, mobile file reads, and iOS
   validation require platform-specific workspaces.

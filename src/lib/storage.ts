@@ -19,6 +19,13 @@ export function saveAppData(data: AppData): void {
   const persistent = {
     ...data,
     conversations: data.conversations.filter((chat) => !chat.privateChat),
+    permissions: data.permissions.filter(
+      (grant) =>
+        grant.scope !== 'chat' ||
+        !data.conversations.some(
+          (conversation) => conversation.privateChat && conversation.id === grant.conversationId,
+        ),
+    ),
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(persistent))
 }
@@ -84,6 +91,7 @@ export function normalizeAppData(value: unknown): AppData {
       ? parsed.conversations
       : defaults.conversations,
     memories: Array.isArray(parsed.memories) ? parsed.memories : defaults.memories,
+    permissions: Array.isArray(parsed.permissions) ? parsed.permissions : defaults.permissions,
     settings: { ...defaults.settings, ...parsedSettings },
   }
 }

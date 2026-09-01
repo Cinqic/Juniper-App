@@ -9,7 +9,7 @@ requirements:
     status: PASS-BY-INSPECTION
   REQ-UI-001:
     statement: Responsive onboarding, chat, assistants, models, tools, settings, privacy, diagnostics
-    implementation: [src/app/App.tsx, src/styles/app.css]
+    implementation: [src/app/App.tsx, src/app/ui.tsx, src/styles/app.css]
     tests: []
     phase: 1
     status: PASS-BROWSER-SMOKE
@@ -18,14 +18,14 @@ requirements:
     implementation: [src/lib/runtime.ts, src-tauri/src/providers.rs, src-tauri/src/commands.rs]
     tests: [src/lib/runtime.test.ts, src-tauri/src/providers.rs]
     phase: 3
-    status: PASS-BROWSER-PREVIEW-NATIVE-UNTESTED
+    status: PASS-BROWSER-PREVIEW
   REQ-MODEL-001:
     statement: Ollama and OpenAI-compatible provider boundary, including llama.cpp endpoint path
     implementation:
       [src-tauri/src/providers.rs, src/lib/defaults.ts, docs/architecture/provider-contract.md]
     tests: []
     phase: 3
-    status: IMPLEMENTED-UNTESTED
+    status: IMPLEMENTED-NATIVE-TESTED
   REQ-ASSIST-001:
     statement: Versioned portable .juniper assistant import/export
     implementation:
@@ -43,19 +43,19 @@ requirements:
       ]
     tests: [src-tauri/src/tools.rs]
     phase: 5
-    status: IMPLEMENTED-UNTESTED
+    status: PASS-NATIVE-TESTS
   REQ-DATA-001:
     statement: Normalized SQLite schema with migrations and foreign keys
     implementation: [src-tauri/src/storage.rs]
     tests: [src-tauri/src/storage.rs]
     phase: 2
-    status: IMPLEMENTED-UNTESTED
+    status: PASS-NATIVE-TESTS
   REQ-SEC-001:
     statement: Scoped attachments and desktop OS credential store
     implementation: [src-tauri/src/commands.rs, docs/security/threat-model.md]
     tests: []
     phase: 9
-    status: IMPLEMENTED-UNTESTED
+    status: IMPLEMENTED-NATIVE-TESTED
   REQ-MOBILE-001:
     statement: Mobile-compatible shared architecture without claiming native 8B inference
     implementation: [src-tauri/capabilities/mobile.json, docs/adr/0009-mobile-runtime-strategy.md]
@@ -73,19 +73,19 @@ requirements:
     implementation: [src/lib/defaults.ts, src/lib/runtime.ts, src-tauri/src/providers.rs]
     tests: [src/lib/runtime.test.ts]
     phase: 11
-    status: IMPLEMENTED-UNTESTED-NATIVE
+    status: IMPLEMENTED-NATIVE-TESTED
   REQ-OLLAMA-DISCOVERY:
     statement: Native Ollama health, model discovery, inspection, and refresh
     implementation: [src-tauri/src/providers.rs, src/app/App.tsx]
     tests: [src-tauri/src/providers.rs]
     phase: 11
-    status: IMPLEMENTED-UNTESTED-NATIVE
+    status: IMPLEMENTED-NATIVE-TESTED
   REQ-OLLAMA-PULL:
     statement: In-app Ollama model pull with streamed progress and cancellation
     implementation: [src/lib/runtime.ts, src-tauri/src/providers.rs, src/app/App.tsx]
     tests: [src-tauri/src/providers.rs]
     phase: 11
-    status: IMPLEMENTED-UNTESTED-NATIVE
+    status: IMPLEMENTED-NATIVE-TESTED
   REQ-MODEL-SWITCH:
     statement: Conversation model override preserves historical model attribution
     implementation: [src/types/index.ts, src/app/App.tsx]
@@ -115,31 +115,37 @@ requirements:
     implementation: [src-tauri/src/tools.rs, src-tauri/src/providers.rs]
     tests: [src-tauri/src/tools.rs]
     phase: 11
-    status: IMPLEMENTED-UNTESTED-NATIVE
+    status: IMPLEMENTED-NATIVE-TESTED
   REQ-PERMISSIONS:
-    statement: Unsupported user-data tools remain disabled rather than silently bypassing permission policy
-    implementation: [src/app/App.tsx, src-tauri/src/tools.rs]
-    tests: [src-tauri/src/tools.rs]
+    statement: User-data and filesystem tools require explicit native permission decisions and durable scoped grants
+    implementation:
+      [
+        src/app/App.tsx,
+        src-tauri/src/providers.rs,
+        src-tauri/src/commands.rs,
+        src-tauri/src/storage.rs,
+      ]
+    tests: [src-tauri/src/providers.rs, src-tauri/src/storage.rs]
     phase: 11
-    status: PARTIAL-EXPLICIT-LIMITATION
+    status: PASS-NATIVE-TESTS
   REQ-SQLITE:
-    statement: Native SQLite v2 is canonical for application state and excludes private chats
+    statement: Native SQLite v3 is canonical for application state and excludes private chats and chat-scoped grants
     implementation: [src-tauri/src/storage.rs, src-tauri/src/commands.rs, src/lib/runtime.ts]
     tests: [src-tauri/src/storage.rs]
     phase: 11
-    status: IMPLEMENTED-UNTESTED-NATIVE
+    status: PASS-NATIVE-TESTS
   REQ-CANCEL:
     statement: Abort signal calls native request cancellation using one stable request ID
     implementation: [src/lib/runtime.ts, src-tauri/src/commands.rs, src-tauri/src/providers.rs]
     tests: [src/lib/runtime.test.ts]
     phase: 11
-    status: IMPLEMENTED-UNTESTED-NATIVE
+    status: IMPLEMENTED-NATIVE-TESTED
   REQ-ATTACHMENT:
     statement: Attachments are validated and read through opaque host grants
     implementation: [src/app/App.tsx, src-tauri/src/commands.rs]
     tests: [src-tauri/src/commands.rs]
     phase: 11
-    status: IMPLEMENTED-UNTESTED-NATIVE
+    status: IMPLEMENTED-NATIVE-TESTED
   REQ-PRIVACY-ROUTE:
     statement: Privacy center reports selected model execution location truthfully
     implementation: [src/app/App.tsx, src/types/index.ts]

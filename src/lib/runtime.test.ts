@@ -8,11 +8,16 @@ describe('deterministic fake provider', () => {
     await streamChat(
       {
         requestId: 'test',
+        assistantId: defaultAssistant.id,
+        conversationId: 'conversation-test',
+        privateChat: false,
         provider: defaultProvider,
         model: modelProfileFromDiscovery(defaultProvider, 'preview-unknown-model:1b'),
         messages: [{ role: 'user', content: 'Who are you?' }],
         tools: [],
         generation: defaultAssistant.generation,
+        permissionGrants: [],
+        hostContext: { memories: [], conversations: [] },
       },
       (event) => {
         if (event.delta) events.push(event.delta)

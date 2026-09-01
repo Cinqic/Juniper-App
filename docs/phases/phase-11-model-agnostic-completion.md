@@ -10,11 +10,12 @@ Working branch: `luna/juniper-model-agnostic-completion`
 - Removed the product-level model default and made Juniper’s assistant binding optional.
 - Added runtime-derived model profiles, capability tri-state handling, execution-location labels, and conversation model overrides.
 - Added native Ollama discovery, inspection, chat, pull progress/cancellation, deletion, and running-model command surfaces.
-- Added native SQLite v2 load/save commands and a transaction-backed repository path; browser localStorage remains preview-only.
+- Added native SQLite v3 load/save commands and a transaction-backed repository path; browser localStorage remains preview-only.
 - Replaced duplicated prompt composition with deterministic personality, memory, tool guidance, history truncation, and current-message handling.
 - Added a real JSON Schema validator script with representative fixtures.
 - Tightened calculator limits, exact tool-argument validation, host result bounds, and dimension-safe unit conversion.
 - Added the scoped desktop file-picker path for text attachments and native cancellation joining.
+- Added the native permission request/decision loop, durable assistant/chat grants, and fixed-command Ollama GGUF import path.
 - Repaired pnpm version consistency and the GitHub Actions pnpm-cache setup order.
 
 ## Validation evidence
@@ -24,13 +25,13 @@ Working branch: `luna/juniper-model-agnostic-completion`
 - Model download performed: none; the contract explicitly forbids an automatic large download.
 - Real model generation: not claimed; pending the owner selecting an installed model.
 - Frontend typecheck, build, lint, formatting, tests, and JSON Schema validation: pass with the bundled Node runtime.
-- Rust/Tauri host compilation: attempted with Rust 1.90, but blocked before source compilation by the missing Linux `dbus-1.pc`/GTK/WebKit development packages.
+- Rust/Tauri host `cargo check`, test compilation, strict Clippy, and the full 19-test suite: pass with temporary user-local Linux development metadata.
+- `pnpm tauri build --bundles deb,appimage`: pass; optimized native binary, `.deb`, and `.AppImage` artifacts produced.
 - Android compilation: the Rust Android target is installed, but the Android NDK clang toolchain is absent in this environment.
 
 ## Known limitations
 
-- User-data tool permission prompts and their durable policy store are not yet wired into the native chat loop; those tools are not sent by the default chat path.
-- GGUF selection now has a scoped, header-validating picker; managed llama.cpp import/execution remains unavailable.
+- User-data tool permission prompts and their durable policy store are wired into the native chat loop. Managed llama.cpp process ownership remains unavailable; Ollama GGUF import is supported through a fixed native command.
 - MCP is explicitly unavailable in this candidate.
 - Mobile build and iOS validation require platform toolchains not present in the workspace.
 

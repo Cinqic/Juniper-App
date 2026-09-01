@@ -7,6 +7,7 @@ mod storage;
 mod tools;
 
 use commands::AppState;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -29,10 +30,13 @@ pub fn run() {
             commands::inspect_model,
             commands::pull_model,
             commands::cancel_model_pull,
+            commands::import_gguf,
+            commands::cancel_gguf_import,
             commands::delete_model,
             commands::running_models,
             commands::chat_stream,
             commands::cancel_chat,
+            commands::resolve_permission,
             commands::pick_attachment,
             commands::pick_gguf,
             commands::read_attachment,

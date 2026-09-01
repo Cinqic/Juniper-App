@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ChangeEvent, FormEvent, ReactNode } from 'react'
-import { buildContext } from '../lib/context'
+import type { ChangeEvent, FormEvent } from 'react'
+import { buildContext, type ContextSummary } from '../lib/context'
 import {
   defaultAssistant,
   defaultProvider,
@@ -15,6 +15,7 @@ import {
   deleteProviderCredential,
   deleteProviderModel,
   getDiagnostics,
+  importGguf,
   inspectProviderModel,
   loadNativeAppData,
   modelFromInspection,
@@ -22,14 +23,18 @@ import {
   pickAttachment,
   pullProviderModel,
   readAttachment,
+  resolvePermission,
   runningInTauri,
+  runningProviderModels,
   saveNativeAppData,
   listProviderModels,
   saveProviderCredential,
   streamChat,
 } from '../lib/runtime'
 import { loadAppData, saveAppData } from '../lib/storage'
-import { Markdown } from '../lib/markdown'
+import { MessageBubble } from './MessageBubble'
+import { ToolsPage } from './ToolsPage'
+import { PageHeading, Sidebar } from './ui'
 import type {
   AppData,
   Assistant,
@@ -37,19 +42,14 @@ import type {
   ChatStreamEvent,
   Conversation,
   GgufSelection,
+  HostToolResult,
   MessagePart,
   ModelProfile,
   Page,
+  PermissionDecision,
+  PermissionRequest,
   ProviderProfile,
 } from '../types'
-
-const navItems: Array<{ id: Page; label: string; icon: string }> = [
-  { id: 'chats', label: 'Chats', icon: '✦' },
-  { id: 'assistants', label: 'Assistants', icon: '◌' },
-  { id: 'models', label: 'Models', icon: '◈' },
-  { id: 'tools', label: 'Tools', icon: '⌘' },
-  { id: 'settings', label: 'Settings', icon: '⚙' },
-]
 
 function uid(prefix: string): string {
   return `${prefix}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`
@@ -126,6 +126,26 @@ function applyStreamEvent(message: ChatMessage, event: ChatStreamEvent): ChatMes
     parts,
     usage: event.usage ? { ...message.usage, ...event.usage } : message.usage,
   }
+}
+
+function applyHostToolResult(data: AppData, result: HostToolResult): AppData {
+  if (result.status !== 'success' || !result.result) return data
+  const payload = result.result
+  if (result.name === 'memory.save' && payload.memory && typeof payload.memory === 'object') {
+    const memory = payload.memory as AppData['memories'][number]
+    if (!memory.id || typeof memory.content !== 'string') return data
+    return {
+      ...data,
+      memories: [...data.memories.filter((item) => item.id !== memory.id), memory],
+    }
+  }
+  if (result.name === 'memory.delete' && typeof payload.deletedId === 'string') {
+    return {
+      ...data,
+      memories: data.memories.filter((memory) => memory.id !== payload.deletedId),
+    }
+  }
+  return data
 }
 
 export default function App() {
@@ -319,88 +339,6 @@ export default function App() {
   )
 }
 
-function Sidebar({
-  page,
-  setPage,
-  onNewChat,
-}: {
-  page: Page
-  setPage: (page: Page) => void
-  onNewChat: () => void
-}) {
-  return (
-    <aside className="sidebar">
-      <div className="brand">
-        <span className="leaf-mark">J</span>
-        <div>
-          <strong>Juniper</strong>
-          <small>your AI, your machine</small>
-        </div>
-      </div>
-      <button className="new-chat" onClick={onNewChat}>
-        <span>＋</span> New chat
-      </button>
-      <nav aria-label="Primary navigation">
-        {navItems.map((item) => (
-          <button
-            key={item.id}
-            className={`nav-item ${page === item.id ? 'active' : ''}`}
-            onClick={() => setPage(item.id)}
-          >
-            <span className="nav-icon">{item.icon}</span>
-            {item.label}
-          </button>
-        ))}
-      </nav>
-      <div className="sidebar-spacer" />
-      <div className="sidebar-footer">
-        <button
-          className={`nav-item ${page === 'privacy' ? 'active' : ''}`}
-          onClick={() => setPage('privacy')}
-        >
-          <span className="nav-icon">◒</span>Privacy center
-        </button>
-        <button
-          className={`nav-item ${page === 'diagnostics' ? 'active' : ''}`}
-          onClick={() => setPage('diagnostics')}
-        >
-          <span className="nav-icon">⌁</span>Diagnostics
-        </button>
-        <div className="privacy-note">
-          <span className="shield">✓</span>
-          <div>
-            <strong>Private by default</strong>
-            <small>No telemetry is active</small>
-          </div>
-        </div>
-      </div>
-    </aside>
-  )
-}
-
-function PageHeading({
-  eyebrow,
-  title,
-  description,
-  action,
-}: {
-  eyebrow: string
-  title: string
-  description: string
-  action?: ReactNode
-}) {
-  return (
-    <div className="page-heading">
-      <div>
-        <span className="eyebrow">{eyebrow}</span>
-        <h1>{title}</h1>
-        <p>{description}</p>
-      </div>
-      {action}
-    </div>
-  )
-}
-
 function ChatPage({
   data,
   update,
@@ -413,7 +351,7 @@ function ChatPage({
   data: AppData
   update: (change: (current: AppData) => AppData) => void
   selectedChatId: string | null
-  setSelectedChatId: (id: string) => void
+  setSelectedChatId: (id: string | null) => void
   createChat: (privateChat?: boolean) => Conversation
   activeAssistant: Assistant
   activeModel?: ModelProfile
@@ -434,10 +372,35 @@ function ChatPage({
     ? data.providers.find((provider) => provider.id === effectiveModel.providerId)
     : undefined
   const filtered = data.conversations.filter((chat) =>
-    chat.title.toLowerCase().includes(query.toLowerCase()),
+    [chat.title, ...chat.messages.map(textPart)]
+      .join(' ')
+      .toLowerCase()
+      .includes(query.toLowerCase()),
   )
   function choose(chat: Conversation) {
     setSelectedChatId(chat.id)
+  }
+  function renameConversation() {
+    if (!conversation) return
+    const title = window.prompt('Conversation name', conversation.title)?.trim()
+    if (!title) return
+    update((current) => ({
+      ...current,
+      conversations: current.conversations.map((chat) =>
+        chat.id === conversation.id ? { ...chat, title, updatedAt: now() } : chat,
+      ),
+    }))
+  }
+  function deleteConversation() {
+    if (!conversation || !window.confirm(`Delete “${conversation.title}”?`)) return
+    update((current) => ({
+      ...current,
+      conversations: current.conversations.filter((chat) => chat.id !== conversation.id),
+      permissions: current.permissions.filter(
+        (grant) => grant.scope !== 'chat' || grant.conversationId !== conversation.id,
+      ),
+    }))
+    setSelectedChatId(null)
   }
   return (
     <div className="chat-layout">
@@ -478,7 +441,11 @@ function ChatPage({
                 <span>
                   <strong>{chat.title}</strong>
                   <small>
-                    {chat.messages.length ? `${chat.messages.length} messages` : 'Just now'}
+                    {chat.privateChat
+                      ? 'Private · session only'
+                      : chat.messages.length
+                        ? `${chat.messages.length} messages`
+                        : 'Just now'}
                   </small>
                 </span>
                 <span className="chevron">›</span>
@@ -502,6 +469,8 @@ function ChatPage({
             activeProvider={effectiveProvider}
             privateMode={conversation.privateChat === true}
             modelUnavailable={modelUnavailable}
+            onRename={renameConversation}
+            onDelete={deleteConversation}
             onSelectModel={(modelId) =>
               update((current) => ({
                 ...current,
@@ -542,6 +511,8 @@ function ConversationView({
   activeProvider,
   privateMode,
   modelUnavailable,
+  onRename,
+  onDelete,
   onSelectModel,
 }: {
   data: AppData
@@ -552,15 +523,25 @@ function ConversationView({
   activeProvider?: ProviderProfile
   privateMode: boolean
   modelUnavailable: boolean
+  onRename: () => void
+  onDelete: () => void
   onSelectModel: (modelId: string | null) => void
 }) {
   const [draft, setDraft] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
+  const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null)
+  const [lastContext, setLastContext] = useState<ContextSummary | null>(null)
   const controller = useRef<AbortController | null>(null)
   const requestId = useRef<string | null>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
   const [attachments, setAttachments] = useState<
-    Array<{ id: string; name: string; content: string }>
+    Array<{
+      id: string
+      name: string
+      content: string
+      sizeBytes?: number
+      contentType?: string
+    }>
   >([])
   const messages = conversation.messages
   function updateConversation(change: (chat: Conversation) => Conversation) {
@@ -589,14 +570,18 @@ function ConversationView({
       role: 'assistant',
       parts: [{ id: uid('part'), type: 'text', text: '' }],
       createdAt: now(),
-      modelId: activeModel.id,
+      modelId: activeModel.modelId,
       providerId: activeProvider?.id,
       isStreaming: true,
     }
     const nextMessages = [...messages, user, assistantMessage]
     const enabledTools =
       activeAssistant.toolPolicy !== 'disabled' && activeModel.capabilities.tools === 'supported'
-        ? builtinTools.filter((tool) => tool.enabled && tool.risk === 'automatic-safe')
+        ? builtinTools.filter(
+            (tool) =>
+              tool.enabled &&
+              (tool.risk === 'automatic-safe' || activeAssistant.toolPolicy === 'ask'),
+          )
         : []
     const context = buildContext(
       activeAssistant,
@@ -605,7 +590,9 @@ function ConversationView({
       enabledTools,
       activeModel.contextLength,
       content,
+      attachments,
     )
+    setLastContext(context)
     setDraft('')
     const requestAttachments = attachments
     setAttachments([])
@@ -623,6 +610,9 @@ function ConversationView({
       await streamChat(
         {
           requestId: currentRequestId,
+          assistantId: activeAssistant.id,
+          conversationId: conversation.id,
+          privateChat: privateMode,
           provider: activeProvider,
           model: activeModel,
           messages: [
@@ -632,9 +622,17 @@ function ConversationView({
           ],
           tools: enabledTools,
           generation: activeAssistant.generation,
+          permissionGrants: data.permissions,
+          hostContext: {
+            memories: data.memories,
+            conversations: data.conversations.filter((chat) => !chat.privateChat),
+          },
           attachments: requestAttachments,
         },
         (streamEvent) => {
+          if (streamEvent.permissionRequest) {
+            setPermissionRequest(streamEvent.permissionRequest)
+          }
           if (
             streamEvent.delta ||
             streamEvent.reasoning ||
@@ -649,6 +647,9 @@ function ConversationView({
                   : message,
               ),
             }))
+          for (const result of streamEvent.toolResults ?? []) {
+            update((current) => applyHostToolResult(current, result))
+          }
           if (streamEvent.error)
             updateConversation((chat) => ({
               ...chat,
@@ -693,6 +694,7 @@ function ConversationView({
       }))
     } finally {
       setIsGenerating(false)
+      setPermissionRequest(null)
       controller.current = null
       requestId.current = null
       composer.current?.focus()
@@ -709,11 +711,54 @@ function ConversationView({
       const content = await readAttachment(attachment.id)
       setAttachments((current) => [
         ...current,
-        { id: attachment.id, name: attachment.name, content },
+        {
+          id: attachment.id,
+          name: attachment.name,
+          content,
+          sizeBytes: attachment.sizeBytes,
+          contentType: attachment.contentType,
+        },
       ])
       setDraft((current) => `${current}${current ? '\n\n' : ''}[Attached: ${attachment.name}]`)
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Could not attach that file.')
+    }
+  }
+  async function decidePermission(decision: PermissionDecision) {
+    const pending = permissionRequest
+    if (!pending) return
+    try {
+      await resolvePermission(pending.requestId, pending.callId, decision)
+      if (decision === 'allow-chat' || decision === 'allow-assistant') {
+        const timestamp = now()
+        update((current) => ({
+          ...current,
+          permissions: [
+            ...current.permissions.filter(
+              (grant) =>
+                !(
+                  grant.toolName === pending.toolName &&
+                  grant.assistantId === pending.assistantId &&
+                  grant.scope === (decision === 'allow-chat' ? 'chat' : 'assistant') &&
+                  (decision === 'allow-assistant' ||
+                    grant.conversationId === pending.conversationId)
+                ),
+            ),
+            {
+              id: uid('permission'),
+              toolName: pending.toolName,
+              scope: decision === 'allow-chat' ? 'chat' : 'assistant',
+              assistantId: pending.assistantId,
+              ...(decision === 'allow-chat' ? { conversationId: pending.conversationId } : {}),
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          ],
+        }))
+      }
+      setPermissionRequest(null)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Could not record that permission.')
     }
   }
   function regenerate() {
@@ -776,8 +821,34 @@ function ConversationView({
           <button className="text-button" onClick={exportMarkdown}>
             Export
           </button>
+          <button className="text-button" onClick={onRename}>
+            Rename
+          </button>
+          <button className="text-button" onClick={onDelete}>
+            Delete
+          </button>
         </div>
       </div>
+      {data.settings.developerMode && lastContext && (
+        <details className="context-inspector">
+          <summary>Context inspector</summary>
+          <div className="context-inspector-meta">
+            <span>
+              Estimated {lastContext.estimatedTokens.toLocaleString()} /{' '}
+              {lastContext.contextLimit.toLocaleString()} tokens
+            </span>
+            <span>
+              {lastContext.contextLimitAssumed ? 'Context limit assumed' : 'Runtime limit'}
+            </span>
+            <span>{lastContext.truncated ? 'Older history truncated' : 'No truncation'}</span>
+          </div>
+          <div className="context-inspector-grid">
+            <pre>{`[Juniper system]\n${lastContext.system}`}</pre>
+            <pre>{`[Conversation]\n${lastContext.conversation.map((item) => `${item.role}: ${item.content}`).join('\n\n')}`}</pre>
+            <pre>{`[Files]\n${lastContext.attachments.join('\n') || 'None'}\n\n[Current user]\n${lastContext.currentUserMessage}`}</pre>
+          </div>
+        </details>
+      )}
       <div className="message-scroll">
         {messages.length === 0 ? (
           <div className="conversation-welcome">
@@ -901,76 +972,47 @@ function ConversationView({
           </button>
         </div>
       </form>
-    </div>
-  )
-}
-
-function MessageBubble({ message, assistant }: { message: ChatMessage; assistant: Assistant }) {
-  const user = message.role === 'user'
-  const content = textPart(message)
-  const reasoning = message.parts
-    .filter((part) => part.type === 'reasoning')
-    .map((part) => part.text ?? '')
-    .join('')
-  const toolCalls = message.parts.filter((part) => part.type === 'tool-call')
-  const toolResults = message.parts.filter((part) => part.type === 'tool-result')
-  const error = message.parts.find((part) => part.type === 'error')?.text
-  return (
-    <article className={`message-row ${user ? 'user' : 'assistant'}`}>
-      <div className="message-label">
-        {user ? (
-          'You'
-        ) : (
-          <>
-            <span className="mini-avatar" style={{ background: assistant.accent }}>
-              {assistant.avatar}
-            </span>
-            {assistant.name}
-          </>
-        )}
-      </div>
-      <div className={`${error ? 'message-card message-error' : 'message-card'}`}>
-        {reasoning && (
-          <details className="reasoning-details">
-            <summary>Reasoning</summary>
-            <p>{reasoning}</p>
-          </details>
-        )}
-        {toolCalls.map((part) => (
-          <div className="tool-call-card" key={part.id}>
-            <span>Tool requested</span>
-            <strong>{part.name}</strong>
-            <small>
-              {part.status === 'unavailable' ? 'Waiting for host runtime' : part.status}
-            </small>
+      {permissionRequest && (
+        <div className="permission-backdrop" role="presentation">
+          <div
+            className="permission-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="permission-title"
+          >
+            <span className="eyebrow">Juniper permission</span>
+            <h2 id="permission-title">Allow {permissionRequest.toolName}?</h2>
+            <p>
+              The model requested a host capability. Juniper will not allow it unless you choose a
+              scope below.
+            </p>
+            <div className="permission-actions">
+              <button
+                className="primary-button"
+                onClick={() => void decidePermission('allow-once')}
+              >
+                Allow once
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => void decidePermission('allow-chat')}
+              >
+                Allow for this chat
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => void decidePermission('allow-assistant')}
+              >
+                Always allow for this assistant
+              </button>
+              <button className="text-button" onClick={() => void decidePermission('deny')}>
+                Deny
+              </button>
+            </div>
           </div>
-        ))}
-        {toolResults.map((part) => (
-          <div className="tool-result-card" key={part.id}>
-            <span>Host result</span>
-            <strong>{part.name}</strong>
-            <small className={part.status === 'success' ? 'result-success' : 'result-error'}>
-              {part.status}
-            </small>
-            <p>{part.text}</p>
-          </div>
-        ))}
-        {error ? <p>{error}</p> : content ? <Markdown content={content} /> : null}
-      </div>
-      {!user && (
-        <div className="message-tools">
-          {message.modelId && <small>Model: {message.modelId}</small>}
-          {message.usage && (
-            <small>
-              {message.usage.totalTokens
-                ? `${message.usage.totalTokens.toLocaleString()} tokens`
-                : 'Usage reported'}
-            </small>
-          )}
-          <button onClick={() => void navigator.clipboard?.writeText(content)}>Copy</button>
         </div>
       )}
-    </article>
+    </div>
   )
 }
 
@@ -1271,6 +1313,84 @@ function AssistantBuilder({
             </label>
           </div>
         </section>
+        <details className="builder-card compact-card">
+          <summary className="section-heading">
+            <span className="section-number">04</span>
+            <div>
+              <h2>Advanced generation</h2>
+              <p>Only supported controls are sent to the selected runtime.</p>
+            </div>
+          </summary>
+          <div className="choice-row advanced-generation-grid">
+            <label>
+              Temperature
+              <input
+                type="number"
+                min="0"
+                max="2"
+                step="0.05"
+                value={assistant.generation.temperature ?? ''}
+                onChange={(event) =>
+                  set('generation', {
+                    ...assistant.generation,
+                    temperature: event.target.value ? Number(event.target.value) : undefined,
+                  })
+                }
+              />
+            </label>
+            <label>
+              Top P
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                value={assistant.generation.topP ?? ''}
+                onChange={(event) =>
+                  set('generation', {
+                    ...assistant.generation,
+                    topP: event.target.value ? Number(event.target.value) : undefined,
+                  })
+                }
+              />
+            </label>
+            <label>
+              Max output tokens
+              <input
+                type="number"
+                min="1"
+                max="32768"
+                step="1"
+                value={assistant.generation.maxOutput ?? ''}
+                onChange={(event) =>
+                  set('generation', {
+                    ...assistant.generation,
+                    maxOutput: event.target.value ? Number(event.target.value) : undefined,
+                  })
+                }
+              />
+            </label>
+            <label>
+              Thinking
+              <select
+                value={assistant.generation.thinking ?? 'auto'}
+                onChange={(event) =>
+                  set('generation', {
+                    ...assistant.generation,
+                    thinking: event.target.value as Assistant['generation']['thinking'],
+                  })
+                }
+              >
+                <option value="auto">Auto</option>
+                <option value="off">Off</option>
+                <option value="on">On</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+          </div>
+        </details>
       </div>
     </div>
   )
@@ -1284,8 +1404,10 @@ function ModelsPage({
   update: (change: (current: AppData) => AppData) => void
 }) {
   const [showProvider, setShowProvider] = useState(false)
+  const [editingProvider, setEditingProvider] = useState<ProviderProfile | null>(null)
   const [providerName, setProviderName] = useState('Local llama.cpp server')
   const [baseUrl, setBaseUrl] = useState('http://127.0.0.1:8080/v1')
+  const [providerKind, setProviderKind] = useState<ProviderProfile['kind']>('openai-compatible')
   const [apiKey, setApiKey] = useState('')
   const [checkingProvider, setCheckingProvider] = useState<string | null>(null)
   const [refreshingModels, setRefreshingModels] = useState(false)
@@ -1294,9 +1416,60 @@ function ModelsPage({
   const [pullProgress, setPullProgress] = useState<{ completed?: number; total?: number }>({})
   const pullController = useRef<AbortController | null>(null)
   const [ggufSelection, setGgufSelection] = useState<GgufSelection | null>(null)
-  async function addProvider() {
-    const providerId = uid('provider')
-    const apiKeyRef = apiKey.trim() ? uid('credential') : undefined
+  const [ggufModelName, setGgufModelName] = useState('local-gguf')
+  const [ggufImportStatus, setGgufImportStatus] = useState<string | null>(null)
+  const ggufImportController = useRef<AbortController | null>(null)
+  const [runningModelIds, setRunningModelIds] = useState<Record<string, string[]>>({})
+  const [hostMemory, setHostMemory] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!runningInTauri) return
+    let active = true
+    void Promise.all(
+      data.providers
+        .filter((provider) => provider.enabled)
+        .map(async (provider) => {
+          try {
+            const models = await runningProviderModels(provider)
+            return [
+              provider.id,
+              models.flatMap((model) => {
+                const name = model.name ?? model.model
+                return typeof name === 'string' ? [name] : []
+              }),
+            ] as const
+          } catch {
+            return [provider.id, []] as const
+          }
+        }),
+    ).then((entries) => {
+      if (active) setRunningModelIds(Object.fromEntries(entries))
+    })
+    void getDiagnostics().then((info) => {
+      if (active) setHostMemory(info.memory ?? null)
+    })
+    return () => {
+      active = false
+    }
+  }, [data.providers])
+
+  function startProviderForm(provider?: ProviderProfile) {
+    setEditingProvider(provider ?? null)
+    setProviderName(provider?.name ?? 'Local llama.cpp server')
+    setBaseUrl(provider?.baseUrl ?? 'http://127.0.0.1:8080/v1')
+    setProviderKind(provider?.kind ?? 'openai-compatible')
+    setApiKey('')
+    setShowProvider(true)
+  }
+
+  async function saveProvider() {
+    const name = providerName.trim()
+    const url = baseUrl.trim()
+    if (!name || !url) return
+    const providerId = editingProvider?.id ?? uid('provider')
+    const apiKeyRef = apiKey.trim()
+      ? (editingProvider?.apiKeyRef ?? uid('credential'))
+      : editingProvider?.apiKeyRef
     if (apiKeyRef) {
       try {
         await saveProviderCredential(apiKeyRef, apiKey.trim())
@@ -1307,40 +1480,44 @@ function ModelsPage({
         return
       }
     }
+    const location = locationForUrl(url)
     const provider: ProviderProfile = {
+      ...(editingProvider ?? {}),
       id: providerId,
-      name: providerName,
-      kind: baseUrl.includes('11434') ? 'ollama' : 'openai-compatible',
-      baseUrl,
-      locality:
-        locationForUrl(baseUrl) === 'remote'
-          ? 'remote'
-          : locationForUrl(baseUrl) === 'unknown'
-            ? 'unknown'
-            : 'local',
-      transportLocation: locationForUrl(baseUrl),
+      name,
+      kind: providerKind,
+      baseUrl: url,
+      locality: location === 'remote' ? 'remote' : location === 'unknown' ? 'unknown' : 'local',
+      transportLocation: location,
       apiKeyRef,
-      enabled: true,
+      enabled: editingProvider?.enabled ?? true,
       status: 'unknown',
       capabilities: {
-        ...(data.providers[0]?.capabilities ?? {
-          chat: 'supported',
-          text: 'supported',
-          streaming: 'supported',
-          systemPrompt: 'supported',
-          tools: 'unknown',
-          parallelTools: 'unknown',
-          thinking: 'unknown',
-          structuredOutput: 'unknown',
-          images: 'unknown',
-          embeddings: 'unknown',
-          generationParameters: ['temperature'],
-        }),
+        ...(editingProvider?.capabilities ??
+          data.providers[0]?.capabilities ?? {
+            chat: 'supported',
+            text: 'supported',
+            streaming: 'supported',
+            systemPrompt: 'supported',
+            tools: 'unknown',
+            parallelTools: 'unknown',
+            thinking: 'unknown',
+            structuredOutput: 'unknown',
+            images: 'unknown',
+            embeddings: 'unknown',
+            generationParameters: ['temperature'],
+          }),
       },
     }
-    update((current) => ({ ...current, providers: [...current.providers, provider] }))
+    update((current) => ({
+      ...current,
+      providers: current.providers.some((item) => item.id === provider.id)
+        ? current.providers.map((item) => (item.id === provider.id ? provider : item))
+        : [...current.providers, provider],
+    }))
     setApiKey('')
     setShowProvider(false)
+    setEditingProvider(null)
   }
   async function testProvider(provider: ProviderProfile) {
     setCheckingProvider(provider.id)
@@ -1493,10 +1670,43 @@ function ModelsPage({
   async function chooseGguf() {
     try {
       const selection = await pickGguf()
-      if (selection) setGgufSelection(selection)
+      if (selection) {
+        setGgufSelection(selection)
+        setGgufModelName(selection.name.replace(/\.gguf$/i, '').replace(/[^a-z0-9._/-]+/gi, '-'))
+      }
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Could not select that GGUF file.')
     }
+  }
+  async function importSelectedGguf() {
+    if (!ggufSelection || !ggufModelName.trim()) return
+    ggufImportController.current?.abort()
+    const controller = new AbortController()
+    ggufImportController.current = controller
+    setGgufImportStatus('Preparing import')
+    try {
+      await importGguf(
+        ggufSelection.id,
+        ggufModelName.trim(),
+        (progress) => setGgufImportStatus(progress.status),
+        controller.signal,
+      )
+      setGgufImportStatus('Complete')
+      await refreshModels()
+    } catch (error) {
+      setGgufImportStatus(
+        controller.signal.aborted
+          ? 'Cancelled'
+          : error instanceof Error
+            ? error.message
+            : 'Import failed',
+      )
+    } finally {
+      ggufImportController.current = null
+    }
+  }
+  function cancelGguf() {
+    ggufImportController.current?.abort()
   }
   async function deleteModel(model: ModelProfile) {
     const provider = data.providers.find((item) => item.id === model.providerId)
@@ -1526,7 +1736,10 @@ function ModelsPage({
         title="Models"
         description="Models provide inference. Juniper provides the environment around them."
         action={
-          <button className="secondary-button" onClick={() => setShowProvider((value) => !value)}>
+          <button
+            className="secondary-button"
+            onClick={() => (showProvider ? setShowProvider(false) : startProviderForm())}
+          >
             ＋ Add provider
           </button>
         }
@@ -1536,6 +1749,17 @@ function ModelsPage({
           <label>
             Provider name
             <input value={providerName} onChange={(event) => setProviderName(event.target.value)} />
+          </label>
+          <label>
+            Provider type
+            <select
+              value={providerKind}
+              onChange={(event) => setProviderKind(event.target.value as ProviderProfile['kind'])}
+            >
+              <option value="ollama">Ollama</option>
+              <option value="openai-compatible">OpenAI-compatible</option>
+              <option value="llama-cpp">llama.cpp-compatible</option>
+            </select>
           </label>
           <label>
             Base URL
@@ -1550,9 +1774,14 @@ function ModelsPage({
               placeholder="Optional"
             />
           </label>
-          <button className="primary-button" onClick={() => void addProvider()}>
-            Save provider
-          </button>
+          <div className="inline-form-actions">
+            <button className="primary-button" onClick={() => void saveProvider()}>
+              {editingProvider ? 'Update provider' : 'Save provider'}
+            </button>
+            <button className="text-button" onClick={() => setShowProvider(false)}>
+              Cancel
+            </button>
+          </div>
         </div>
       )}
       <div className="provider-stack">
@@ -1582,6 +1811,9 @@ function ModelsPage({
                   disabled={checkingProvider === provider.id}
                 >
                   {checkingProvider === provider.id ? 'Checking…' : 'Test connection →'}
+                </button>
+                <button className="text-button" onClick={() => startProviderForm(provider)}>
+                  Edit
                 </button>
                 <button className="text-button" onClick={() => toggleProvider(provider)}>
                   {provider.enabled ? 'Disable' : 'Enable'}
@@ -1663,6 +1895,12 @@ function ModelsPage({
                   <i />
                   {labelExecutionLocation(model.executionLocation)}
                 </span>
+                {runningModelIds[model.providerId]?.includes(model.modelId) && (
+                  <span className="status-pill on-device">
+                    <i />
+                    Loaded in runtime
+                  </span>
+                )}
               </div>
               <p>{model.description}</p>
               <div className="model-tags">
@@ -1691,7 +1929,11 @@ function ModelsPage({
               )}
             </div>
             <div className="model-right">
-              <strong>{modelStatusLabel(model)}</strong>
+              <strong>
+                {runningModelIds[model.providerId]?.includes(model.modelId)
+                  ? 'Running'
+                  : modelStatusLabel(model)}
+              </strong>
               <small>
                 {
                   data.assistants.filter((assistant) => assistant.modelProfileId === model.id)
@@ -1722,8 +1964,44 @@ function ModelsPage({
             <button className="secondary-button" onClick={() => void chooseGguf()}>
               {ggufSelection ? 'Choose another .gguf' : 'Choose .gguf'}
             </button>
-            <small className="muted-note">Managed llama.cpp execution is not enabled yet.</small>
+            {ggufSelection && (
+              <div className="gguf-import-form">
+                <label>
+                  Ollama model name
+                  <input
+                    value={ggufModelName}
+                    onChange={(event) => setGgufModelName(event.target.value)}
+                    maxLength={128}
+                  />
+                </label>
+                {ggufImportController.current ? (
+                  <button className="secondary-button" onClick={cancelGguf}>
+                    Cancel import
+                  </button>
+                ) : (
+                  <button
+                    className="primary-button"
+                    onClick={() => void importSelectedGguf()}
+                    disabled={!ggufModelName.trim()}
+                  >
+                    Import into Ollama
+                  </button>
+                )}
+                {ggufImportStatus && <small role="status">{ggufImportStatus}</small>}
+              </div>
+            )}
           </div>
+        </div>
+        <div className="hardware-note">
+          <strong>Fit guidance</strong>
+          <span>
+            {hostMemory
+              ? `Detected host memory: ${hostMemory}. Model fit still depends on quantization and runtime overhead.`
+              : 'Host memory is unavailable here. Juniper will not guess whether a model fits.'}
+          </span>
+          <small>
+            GPU acceleration and throughput remain unknown unless the provider reports them.
+          </small>
         </div>
       </div>
     </>
@@ -1762,93 +2040,6 @@ function locationForUrl(value: string): 'on-device' | 'local-network' | 'remote'
   } catch {
     return 'unknown'
   }
-}
-
-function ToolsPage({
-  data,
-  update,
-}: {
-  data: AppData
-  update: (change: (current: AppData) => AppData) => void
-}) {
-  const [selected, setSelected] = useState<string | null>(null)
-  const availableTools = builtinTools.filter((tool) => tool.risk === 'automatic-safe')
-  return (
-    <>
-      <PageHeading
-        eyebrow="Host capabilities"
-        title="Tools"
-        description="Models can request tools. Only Juniper’s host runtime can execute them and author real results."
-        action={<span className="protocol-badge">juniper-tool-protocol-v1</span>}
-      />
-      <div className="trust-banner">
-        <span className="shield">✓</span>
-        <div>
-          <strong>Permission boundary is active</strong>
-          <p>
-            Attached files, model output, MCP results, and imported assistants are untrusted data.
-            They cannot grant permissions. User-data tools remain disabled until their permission
-            dialog is wired into the native loop.
-          </p>
-        </div>
-      </div>
-      <div className="tool-grid">
-        {availableTools.map((tool) => (
-          <div className={`tool-card ${selected === tool.name ? 'expanded' : ''}`} key={tool.name}>
-            <div className="tool-card-top">
-              <div className="tool-icon">
-                {tool.risk === 'automatic-safe' ? '✓' : tool.risk === 'filesystem-read' ? '□' : '◌'}
-              </div>
-              <span className="risk-label">{tool.risk.replace('-', ' ')}</span>
-            </div>
-            <h3>{tool.displayName}</h3>
-            <p>{tool.description}</p>
-            <div className="tool-card-bottom">
-              <span className="tool-name">{tool.name}</span>
-              <button
-                className="tool-toggle"
-                aria-label={`Toggle ${tool.displayName}`}
-                onClick={() => setSelected(selected === tool.name ? null : tool.name)}
-              >
-                {selected === tool.name ? 'On' : 'Details'}
-              </button>
-            </div>
-            {selected === tool.name && (
-              <pre className="schema-preview">{JSON.stringify(tool.schema, null, 2)}</pre>
-            )}
-          </div>
-        ))}
-      </div>
-      <div className="tool-policy-row">
-        <div>
-          <span className="eyebrow">Assistant default</span>
-          <h3>{data.assistants[0]?.name ?? 'Juniper'} asks before user-data changes</h3>
-          <p>
-            Safe deterministic tools may run automatically; memory, chat, and file tools require a
-            clear policy.
-          </p>
-        </div>
-        <button
-          className="secondary-button"
-          onClick={() =>
-            update((current) => ({
-              ...current,
-              assistants: current.assistants.map((assistant, index) =>
-                index === 0
-                  ? {
-                      ...assistant,
-                      toolPolicy: assistant.toolPolicy === 'ask' ? 'safe-automatic' : 'ask',
-                    }
-                  : assistant,
-              ),
-            }))
-          }
-        >
-          Change policy
-        </button>
-      </div>
-    </>
-  )
 }
 
 function SettingsPage({
@@ -2116,7 +2307,11 @@ function PrivacyPage({
   const provider = activeProvider
   function clearChats() {
     if (window.confirm('Clear all saved chats?'))
-      update((current) => ({ ...current, conversations: [] }))
+      update((current) => ({
+        ...current,
+        conversations: [],
+        permissions: current.permissions.filter((grant) => grant.scope !== 'chat'),
+      }))
   }
   function clearMemory() {
     if (window.confirm('Clear all curated memories?'))
@@ -2234,7 +2429,7 @@ function DiagnosticsPage({ data }: { data: AppData }) {
           </div>
           {Object.entries({
             ...diagnostics,
-            database: 'SQLite schema v2',
+            database: 'SQLite schema v3',
             telemetry: 'Off',
             models: `${data.models.length} profile(s)`,
           }).map(([key, value]) => (

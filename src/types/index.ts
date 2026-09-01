@@ -1,6 +1,8 @@
 export type Locality = 'local' | 'remote' | 'unknown'
 export type ExecutionLocation = 'on-device' | 'local-network' | 'remote' | 'unknown'
 export type SupportLevel = 'supported' | 'unsupported' | 'unknown'
+export type PermissionDecision = 'allow-once' | 'allow-chat' | 'allow-assistant' | 'deny'
+export type PermissionGrantScope = 'chat' | 'assistant'
 export type Page =
   | 'chats'
   | 'assistants'
@@ -166,6 +168,31 @@ export interface Attachment {
   contentType: string
 }
 
+export interface PermissionGrant {
+  id: string
+  toolName: string
+  scope: PermissionGrantScope
+  assistantId: string
+  conversationId?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PermissionRequest {
+  requestId: string
+  callId: string
+  toolName: string
+  displayName: string
+  risk: ToolDefinition['risk']
+  assistantId: string
+  conversationId: string
+}
+
+export interface HostToolContext {
+  memories: Memory[]
+  conversations: Conversation[]
+}
+
 export interface GgufSelection {
   id: string
   name: string
@@ -205,17 +232,29 @@ export interface AppData {
   providers: ProviderProfile[]
   conversations: Conversation[]
   memories: Memory[]
+  permissions: PermissionGrant[]
   settings: AppSettings
 }
 
 export interface ChatRequest {
   requestId: string
+  assistantId: string
+  conversationId: string
+  privateChat: boolean
   provider: ProviderProfile
   model: ModelProfile
   messages: Array<{ role: MessageRole; content: string }>
   tools: ToolDefinition[]
   generation: GenerationOverrides
-  attachments?: Array<{ id: string; name: string; content: string }>
+  permissionGrants: PermissionGrant[]
+  hostContext: HostToolContext
+  attachments?: Array<{
+    id: string
+    name: string
+    content: string
+    sizeBytes?: number
+    contentType?: string
+  }>
 }
 
 export interface DiscoveredModel {
@@ -280,6 +319,7 @@ export interface ChatStreamEvent {
   reasoning?: string
   toolCalls?: NormalizedToolCall[]
   toolResults?: HostToolResult[]
+  permissionRequest?: PermissionRequest
   usage?: GenerationUsage
   done?: boolean
   error?: { code: string; message: string }

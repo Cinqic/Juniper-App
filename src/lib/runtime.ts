@@ -10,6 +10,7 @@ import type {
   ModelInspection,
   ModelProfile,
   ModelPullProgress,
+  PermissionDecision,
   ProviderProfile,
 } from '../types'
 import { normalizeAppData } from './storage'
@@ -70,6 +71,15 @@ async function fakeStream(
 
 export async function cancelChat(requestId: string): Promise<void> {
   if (runningInTauri) await invoke('cancel_chat', { requestId })
+}
+
+export async function resolvePermission(
+  requestId: string,
+  callId: string,
+  decision: PermissionDecision,
+): Promise<void> {
+  if (!runningInTauri) return
+  await invoke('resolve_permission', { requestId, callId, decision })
 }
 
 export async function checkProviderConnection(provider: ProviderProfile): Promise<string> {
@@ -171,6 +181,31 @@ export async function readAttachment(attachmentId: string): Promise<string> {
 export async function pickGguf(): Promise<GgufSelection | null> {
   if (!runningInTauri) throw new Error('GGUF selection requires the Tauri desktop runtime.')
   return invoke<GgufSelection | null>('pick_gguf')
+}
+
+export async function importGguf(
+  selectionId: string,
+  modelName: string,
+  onProgress: (progress: ModelPullProgress) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  if (!runningInTauri) throw new Error('GGUF import requires the Tauri desktop runtime.')
+  const requestId = `gguf-${crypto.randomUUID()}`
+  const topic = `juniper://gguf-import/${requestId}`
+  const unlisten = await listen<ModelPullProgress>(topic, (event) => onProgress(event.payload))
+  const cancel = () => void cancelGgufImport(requestId)
+  signal.addEventListener('abort', cancel, { once: true })
+  try {
+    await invoke('import_gguf', { selectionId, modelName, requestId })
+    if (signal.aborted) throw abortError()
+  } finally {
+    signal.removeEventListener('abort', cancel)
+    await unlisten()
+  }
+}
+
+export async function cancelGgufImport(requestId: string): Promise<void> {
+  if (runningInTauri) await invoke('cancel_gguf_import', { requestId })
 }
 
 export async function loadNativeAppData(): Promise<AppData | null> {

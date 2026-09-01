@@ -2,7 +2,7 @@ use rusqlite::{Connection, OptionalExtension, Result, params, types::Type};
 use serde_json::Value;
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 const INITIAL_SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -102,7 +102,20 @@ CREATE TABLE IF NOT EXISTS app_state (
 );
 "#;
 
+const MIGRATION_V3: &str = r#"
+CREATE TABLE IF NOT EXISTS permissions (
+    id TEXT PRIMARY KEY,
+    tool_name TEXT NOT NULL,
+    scope TEXT NOT NULL CHECK(scope IN ('chat', 'assistant')),
+    assistant_id TEXT NOT NULL REFERENCES assistants(id) ON DELETE CASCADE,
+    conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"#;
+
 fn migrate(connection: &Connection) -> Result<()> {
+    debug_assert_eq!(SCHEMA_VERSION, 3);
     connection.pragma_update(None, "foreign_keys", "ON")?;
     connection.execute_batch(INITIAL_SCHEMA)?;
     let version: i64 = connection.query_row(
@@ -114,6 +127,13 @@ fn migrate(connection: &Connection) -> Result<()> {
         connection.execute_batch(MIGRATION_V2)?;
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(2, datetime('now'))",
+            [],
+        )?;
+    }
+    if version < 3 {
+        connection.execute_batch(MIGRATION_V3)?;
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(3, datetime('now'))",
             [],
         )?;
     }
@@ -151,12 +171,27 @@ pub fn save_app_data(path: &Path, data: &Value) -> Result<()> {
     let connection = connection(path)?;
     let mut persisted = data.clone();
     if let Some(object) = persisted.as_object_mut() {
+        let private_conversation_ids = object
+            .get("conversations")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|conversation| conversation["privateChat"].as_bool().unwrap_or(false))
+            .filter_map(|conversation| conversation["id"].as_str().map(str::to_owned))
+            .collect::<std::collections::HashSet<_>>();
         if let Some(conversations) = object
             .get_mut("conversations")
             .and_then(Value::as_array_mut)
         {
             conversations
                 .retain(|conversation| !conversation["privateChat"].as_bool().unwrap_or(false));
+        }
+        if let Some(permissions) = object.get_mut("permissions").and_then(Value::as_array_mut) {
+            permissions.retain(|permission| {
+                permission["scope"] != "chat"
+                    || !private_conversation_ids
+                        .contains(permission["conversationId"].as_str().unwrap_or_default())
+            });
         }
     }
     let payload = serde_json::to_string(&persisted).unwrap_or_else(|_| "{}".into());
@@ -171,6 +206,7 @@ pub fn save_app_data(path: &Path, data: &Value) -> Result<()> {
         params![serde_json::to_string(&settings).unwrap_or_else(|_| "{}".into())],
     )?;
     for table in [
+        "permissions",
         "tool_results",
         "tool_calls",
         "message_parts",
@@ -259,6 +295,31 @@ pub fn save_app_data(path: &Path, data: &Value) -> Result<()> {
             }
         }
     }
+    for permission in persisted
+        .get("permissions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let id = permission["id"].as_str().unwrap_or_default();
+        let assistant_id = permission["assistantId"].as_str().unwrap_or_default();
+        let scope = permission["scope"].as_str().unwrap_or_default();
+        if id.is_empty() || assistant_id.is_empty() || !matches!(scope, "chat" | "assistant") {
+            continue;
+        }
+        transaction.execute(
+            "INSERT INTO permissions(id, tool_name, scope, assistant_id, conversation_id, created_at, updated_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                id,
+                permission["toolName"].as_str().unwrap_or_default(),
+                scope,
+                assistant_id,
+                permission["conversationId"].as_str(),
+                permission["createdAt"].as_str().unwrap_or_default(),
+                permission["updatedAt"].as_str().unwrap_or_default()
+            ],
+        )?;
+    }
     transaction.commit()
 }
 
@@ -287,6 +348,15 @@ mod tests {
                 )
                 .is_ok()
         );
+        assert!(
+            connection
+                .query_row::<String, _, _>(
+                    "SELECT sql FROM sqlite_master WHERE name = 'permissions'",
+                    [],
+                    |row| row.get(0)
+                )
+                .is_ok()
+        );
         Ok(())
     }
 
@@ -307,6 +377,14 @@ mod tests {
             "providers": [{ "id": "provider-1" }],
             "models": [{ "id": "model-1", "providerId": "provider-1" }],
             "memories": [],
+            "permissions": [{
+                "id": "permission-1",
+                "toolName": "memory.list",
+                "scope": "assistant",
+                "assistantId": "assistant-1",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "updatedAt": "2026-01-01T00:00:00Z"
+            }],
             "conversations": [
                 {
                     "id": "chat-saved",
@@ -342,6 +420,11 @@ mod tests {
         assert_eq!(
             connection
                 .query_row::<i64, _, _>("SELECT COUNT(*) FROM assistants", [], |row| row.get(0))?,
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row::<i64, _, _>("SELECT COUNT(*) FROM permissions", [], |row| row.get(0))?,
             1
         );
         assert_eq!(

@@ -3,19 +3,29 @@ use serde_json::Value;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct ChatRequest {
     pub request_id: String,
+    pub assistant_id: String,
+    pub conversation_id: String,
+    #[serde(default)]
+    pub private_chat: bool,
     pub provider: ProviderProfile,
     pub model: ModelProfile,
     pub messages: Vec<ChatMessage>,
     pub tools: Vec<ToolDefinition>,
     pub generation: GenerationOverrides,
     #[serde(default)]
+    pub permission_grants: Vec<PermissionGrant>,
+    #[serde(default)]
+    pub host_context: HostToolContext,
+    #[serde(default)]
     pub attachments: Vec<AttachmentContext>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct ProviderProfile {
     pub id: String,
     pub name: String,
@@ -29,6 +39,7 @@ pub struct ProviderProfile {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct ModelProfile {
     pub id: String,
     pub model_id: String,
@@ -89,6 +100,7 @@ pub struct ChatStreamEvent {
     pub done: Option<bool>,
     pub usage: Option<Usage>,
     pub error: Option<RuntimeError>,
+    pub permission_request: Option<PermissionRequest>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -137,6 +149,42 @@ pub struct AttachmentContext {
     pub id: String,
     pub name: String,
     pub content: String,
+    #[serde(default)]
+    pub size_bytes: Option<u64>,
+    #[serde(default)]
+    pub content_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct HostToolContext {
+    #[serde(default)]
+    pub memories: Vec<Value>,
+    #[serde(default)]
+    pub conversations: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub struct PermissionGrant {
+    pub id: String,
+    pub tool_name: String,
+    pub scope: String,
+    pub assistant_id: String,
+    pub conversation_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionRequest {
+    pub request_id: String,
+    pub call_id: String,
+    pub tool_name: String,
+    pub display_name: String,
+    pub risk: String,
+    pub assistant_id: String,
+    pub conversation_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

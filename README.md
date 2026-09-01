@@ -20,7 +20,7 @@ Juniper’s provider boundary follows the documented [Ollama OpenAI-compatible A
 Install Node.js 22+, pnpm 11, Rust 1.90+, and the platform prerequisites listed in the [Tauri prerequisite guide](https://tauri.app/start/prerequisites/). Then:
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm validate
 pnpm tauri dev
 ```
@@ -63,7 +63,7 @@ tests/fixtures/        Optional model qualification fixtures and release metadat
 
 ## Qualification and known limitations
 
-The repository contains optional model-qualification fixtures, but no real-model result is claimed until the owner selects an installed model. Native Tauri, Android, iOS, and provider integration tests remain subject to the toolchains available in the validation environment. GGUF selection is securely scoped and validated, but managed llama.cpp import/execution and MCP client calls are explicitly unavailable in this release. Desktop attachments use a scoped native picker; browser preview attachments are development-only.
+The repository contains optional model-qualification fixtures, but no real-model result is claimed until the owner selects an installed model. Native Tauri source/tests and Linux packaging have been validated in the release-candidate environment. Android, iOS, live-provider, and real-model qualification still depend on platform/runtime availability. GGUF selection is securely scoped and validated, and Ollama GGUF import uses a fixed native command; managed llama.cpp process ownership and MCP client calls are explicitly unavailable in this release. Desktop attachments use a scoped native picker; browser preview attachments are development-only.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), [PRIVACY.md](PRIVACY.md), [SECURITY.md](SECURITY.md), and [docs/recovery/README.md](docs/recovery/README.md) before making release decisions.
 

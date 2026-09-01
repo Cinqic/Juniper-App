@@ -4,16 +4,27 @@
 formatting, lint, TypeScript, frontend tests, Rust formatting/clippy/tests,
 and JSON schema syntax checks in one sequence.
 
-Deterministic frontend tests cover assistant import/export, context order and
-truncation, private persistence, and browser-preview streaming. Rust tests
-cover the safe calculator, unit conversion, protocol result shape, loop
-bounds, and schema version. Provider integration uses a fake HTTP server in
-future CI work; real-model qualification is reserved for an owner-selected
-installed model. The historical Qwen fixture is optional.
+Deterministic frontend tests cover the zero-model shell, assistant
+import/export, context order and truncation, private persistence, and
+browser-preview streaming. Rust tests cover the safe calculator, unit
+conversion, protocol result shape, loop bounds, permission scope matching,
+provider JSON/SSE/pull parsing, fake HTTP discovery/inspection, and schema
+version (19 tests).
+Real-model qualification is reserved for an owner-selected installed model.
+The historical Qwen fixture is optional.
 
 Frontend build, lint, formatting, schema validation, deterministic tests, and
 browser UI smoke checks were completed with the bundled Node runtime. Ollama
 was reachable but had no installed models, so no real-model generation is
-claimed. Native Tauri tests are blocked in this environment by missing Linux
-DBus/GTK/WebKit development packages; Android tests additionally require the
-Android NDK clang toolchain.
+claimed. Native `cargo check`, test compilation, strict Clippy, and the full
+Rust test suite pass with temporary user-local Linux development metadata. The
+Linux Tauri `.deb` and `.AppImage` bundles also build in that isolated
+prerequisite environment. Android tests additionally require the Android NDK
+clang toolchain.
+
+The fault-injection review targets malformed provider records, unknown tool
+names, invalid arguments, private-chat leakage, attachment IDs outside the
+picker grant set, denied permissions, oversized results, and tool-loop
+overruns. These invariants are represented by the provider, tool, storage, and
+frontend tests; a release reviewer should run the same fixtures against any
+adapter change.

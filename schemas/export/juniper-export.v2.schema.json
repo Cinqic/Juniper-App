@@ -10,6 +10,7 @@
     "assistants",
     "conversations",
     "memories",
+    "permissions",
     "models",
     "providers",
     "settings"
@@ -20,6 +21,7 @@
     "assistants": { "type": "array" },
     "conversations": { "type": "array" },
     "memories": { "type": "array" },
+    "permissions": { "type": "array" },
     "models": { "type": "array" },
     "providers": { "type": "array" },
     "settings": { "type": "object" }
