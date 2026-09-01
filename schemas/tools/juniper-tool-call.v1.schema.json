@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Juniper tool call",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "id", "name", "arguments"],
+  "properties": {
+    "protocolVersion": { "const": "juniper-tool-protocol-v1" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9.-]{1,95}$" },
+    "arguments": { "type": "object", "maxProperties": 32 }
+  }
+}

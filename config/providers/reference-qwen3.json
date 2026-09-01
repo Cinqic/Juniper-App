@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "provider": "ollama-local",
+  "modelId": "qwen3:8b",
+  "displayName": "Qwen3 8B",
+  "qualification": "tests/fixtures/qwen3-8b-qualification.yaml"
+}

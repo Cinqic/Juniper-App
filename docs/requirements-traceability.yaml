@@ -1,0 +1,71 @@
+format: juniper-requirements-traceability-v1
+status: candidate
+requirements:
+  REQ-PRIV-001:
+    statement: No telemetry or automatic Cinqic upload in v0.1
+    implementation: [PRIVACY.md, docs/privacy/network-policy.md, src/lib/defaults.ts]
+    tests: [src/lib/storage.test.ts]
+    phase: 0
+    status: PASS-BY-INSPECTION
+  REQ-UI-001:
+    statement: Responsive onboarding, chat, assistants, models, tools, settings, privacy, diagnostics
+    implementation: [src/app/App.tsx, src/styles/app.css]
+    tests: []
+    phase: 1
+    status: PASS-BROWSER-SMOKE
+  REQ-CHAT-001:
+    statement: Streaming normalized chat path with cancellation
+    implementation: [src/lib/runtime.ts, src-tauri/src/providers.rs, src-tauri/src/commands.rs]
+    tests: [src/lib/runtime.test.ts, src-tauri/src/providers.rs]
+    phase: 3
+    status: PASS-BROWSER-PREVIEW-NATIVE-UNTESTED
+  REQ-MODEL-001:
+    statement: Ollama and OpenAI-compatible provider boundary, including llama.cpp endpoint path
+    implementation:
+      [src-tauri/src/providers.rs, src/lib/defaults.ts, docs/architecture/provider-contract.md]
+    tests: []
+    phase: 3
+    status: IMPLEMENTED-UNTESTED
+  REQ-ASSIST-001:
+    statement: Versioned portable .juniper assistant import/export
+    implementation:
+      [src/lib/assistant.ts, schemas/assistant/juniper-assistant.v1.schema.json, src/app/App.tsx]
+    tests: [src/lib/assistant.test.ts]
+    phase: 2
+    status: PASS-BY-STATIC-TESTS
+  REQ-TOOL-001:
+    statement: Host-authored tool results, safe calculator, conversion, loop and payload bounds
+    implementation:
+      [
+        src-tauri/src/tools.rs,
+        schemas/tools/juniper-tool-result.v1.schema.json,
+        docs/architecture/permissions.md,
+      ]
+    tests: [src-tauri/src/tools.rs]
+    phase: 5
+    status: IMPLEMENTED-UNTESTED
+  REQ-DATA-001:
+    statement: Normalized SQLite schema with migrations and foreign keys
+    implementation: [src-tauri/src/storage.rs]
+    tests: [src-tauri/src/storage.rs]
+    phase: 2
+    status: IMPLEMENTED-UNTESTED
+  REQ-SEC-001:
+    statement: Scoped attachments and desktop OS credential store
+    implementation: [src-tauri/src/commands.rs, docs/security/threat-model.md]
+    tests: []
+    phase: 9
+    status: IMPLEMENTED-UNTESTED
+  REQ-MOBILE-001:
+    statement: Mobile-compatible shared architecture without claiming native 8B inference
+    implementation: [src-tauri/capabilities/mobile.json, docs/adr/0009-mobile-runtime-strategy.md]
+    tests: []
+    phase: 8
+    status: ACCEPTED-LIMITATION
+  REQ-QWEN-001:
+    statement: Qwen3 8B reference profile and qualification fixture
+    implementation:
+      [config/providers/reference-qwen3.json, tests/fixtures/qwen3-8b-qualification.yaml]
+    tests: []
+    phase: 10
+    status: PENDING-REAL-RUNTIME

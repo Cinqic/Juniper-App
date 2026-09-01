@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "telemetry": "off",
+  "maxToolRounds": 4,
+  "maxToolCallsPerRound": 8,
+  "maxToolResultBytes": 65536,
+  "maxAttachmentBytes": 1048576,
+  "privateChatsPersist": false
+}
