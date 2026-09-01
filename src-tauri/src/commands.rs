@@ -359,9 +359,7 @@ pub fn resolve_permission(
         .map_err(|_| "The permission request is no longer active.".into())
 }
 
-#[tauri::command]
-fn register_attachment(state: State<'_, AppState>, path: String) -> Result<Attachment, String> {
-    let path = PathBuf::from(path);
+fn register_attachment_path(state: &AppState, path: PathBuf) -> Result<Attachment, String> {
     let metadata = std::fs::metadata(&path).map_err(|_| "The selected file is not available.")?;
     if !metadata.is_file() {
         return Err("Only files can be attached.".into());
@@ -423,7 +421,7 @@ pub fn pick_attachment(
     let path = file
         .into_path()
         .map_err(|_| "The selected file path is not available.")?;
-    register_attachment(state, path.to_string_lossy().into_owned()).map(Some)
+    register_attachment_path(state.inner(), path).map(Some)
 }
 
 fn register_gguf(state: &AppState, path: PathBuf) -> Result<GgufSelection, String> {
@@ -491,11 +489,15 @@ pub fn read_attachment(
     state: State<'_, AppState>,
     attachment_id: String,
 ) -> Result<String, String> {
+    read_attachment_grant(state.inner(), &attachment_id)
+}
+
+fn read_attachment_grant(state: &AppState, attachment_id: &str) -> Result<String, String> {
     let path = state
         .attachments
         .lock()
         .map_err(|_| "Attachment state unavailable.")?
-        .get(&attachment_id)
+        .get(attachment_id)
         .cloned()
         .ok_or_else(|| "This attachment is no longer granted.".to_owned())?;
     let contents = std::fs::read_to_string(path)
@@ -584,4 +586,76 @@ pub fn tool_execute(
     calls_this_round: u32,
 ) -> Value {
     tools::execute_call(&call_id, &name, &arguments, round, calls_this_round)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temporary_path(extension: &str) -> PathBuf {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock is before the Unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("juniper-command-test-{suffix}.{extension}"))
+    }
+
+    #[test]
+    fn attachment_picker_grant_is_opaque_and_reads_only_granted_text() {
+        let path = temporary_path("txt");
+        std::fs::write(&path, "approved attachment content").expect("fixture should write");
+        let state = AppState::default();
+        let attachment = register_attachment_path(&state, path.clone()).expect("grant should work");
+        assert_eq!(attachment.name, path.file_name().unwrap().to_string_lossy());
+        assert_eq!(
+            read_attachment_grant(&state, &attachment.id).expect("granted content should read"),
+            "approved attachment content"
+        );
+        assert!(read_attachment_grant(&state, "not-granted").is_err());
+        std::fs::remove_file(path).expect("temporary attachment should be removable");
+    }
+
+    #[test]
+    fn attachment_grant_rejects_unsupported_types_and_oversized_files() {
+        let unsupported = temporary_path("bin");
+        std::fs::write(&unsupported, b"not text").expect("fixture should write");
+        let state = AppState::default();
+        let error = register_attachment_path(&state, unsupported.clone())
+            .expect_err("unsupported attachment should be rejected");
+        assert!(error.contains("not supported"));
+        std::fs::remove_file(unsupported).expect("temporary attachment should be removable");
+
+        let oversized = temporary_path("txt");
+        std::fs::write(&oversized, vec![b'x'; 1024 * 1024 + 1]).expect("fixture should write");
+        let error = register_attachment_path(&state, oversized.clone())
+            .expect_err("oversized attachment should be rejected");
+        assert!(error.contains("too large"));
+        std::fs::remove_file(oversized).expect("temporary attachment should be removable");
+    }
+
+    #[test]
+    fn gguf_picker_requires_extension_and_magic_header() {
+        let invalid = temporary_path("gguf");
+        std::fs::write(&invalid, b"NOPE").expect("fixture should write");
+        let state = AppState::default();
+        let error = register_gguf(&state, invalid.clone()).expect_err("invalid GGUF should fail");
+        assert!(error.contains("valid GGUF header"));
+        std::fs::remove_file(invalid).expect("temporary GGUF should be removable");
+
+        let valid = temporary_path("gguf");
+        std::fs::write(&valid, b"GGUFfixture").expect("fixture should write");
+        let selection = register_gguf(&state, valid.clone()).expect("valid GGUF should pass");
+        assert_eq!(selection.name, valid.file_name().unwrap().to_string_lossy());
+        assert!(state.gguf_files.lock().unwrap().contains_key(&selection.id));
+        std::fs::remove_file(valid).expect("temporary GGUF should be removable");
+    }
+
+    #[test]
+    fn imported_model_reference_is_not_a_shell_fragment() {
+        assert!(valid_model_reference("future-model:7b"));
+        assert!(!valid_model_reference("library/model@sha256:abc"));
+        assert!(!valid_model_reference("model; rm -rf /"));
+        assert!(!valid_model_reference("model name"));
+        assert!(!valid_model_reference(""));
+    }
 }

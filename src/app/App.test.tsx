@@ -1,6 +1,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { initialAppData, modelProfileFromDiscovery } from '../lib/defaults'
 import App from './App'
 
 function buttonByText(container: HTMLElement, text: string): HTMLButtonElement {
@@ -70,5 +71,65 @@ describe('Juniper application shell', () => {
     await act(async () => buttonByText(container, 'Diagnostics').click())
     expect(container.textContent).toContain('Diagnostics')
     expect(container.textContent).toContain('SQLite schema v3')
+  })
+
+  it('switches the conversation model without rewriting historical attribution', async () => {
+    const data = initialAppData()
+    data.settings.onboardingComplete = true
+    const provider = data.providers[0]!
+    const modelA = modelProfileFromDiscovery(provider, 'future-model-a:7b', {
+      displayName: 'Future Model A',
+      status: 'ready',
+      compatibilityStatus: 'chat-compatible',
+    })
+    const modelB = modelProfileFromDiscovery(provider, 'future-model-b:7b', {
+      displayName: 'Future Model B',
+      status: 'ready',
+      compatibilityStatus: 'chat-compatible',
+    })
+    data.models = [modelA, modelB]
+    data.assistants[0] = { ...data.assistants[0]!, modelProfileId: modelA.id }
+    data.conversations = [
+      {
+        id: 'chat-model-switch',
+        title: 'Model switch',
+        assistantId: data.assistants[0]!.id,
+        createdAt: '',
+        updatedAt: '',
+        modelProfileId: modelA.id,
+        messages: [
+          {
+            id: 'historical-assistant-message',
+            conversationId: 'chat-model-switch',
+            role: 'assistant',
+            modelId: modelA.id,
+            providerId: provider.id,
+            parts: [{ id: 'historical-text', type: 'text', text: 'Answered by model A.' }],
+            createdAt: '',
+          },
+        ],
+      },
+    ]
+    localStorage.setItem('juniper.app-data.v1', JSON.stringify(data))
+    act(() => root.unmount())
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<App />)
+    })
+
+    const selector = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Conversation model"]',
+    )
+    if (!selector) throw new Error('Conversation model selector not found')
+    await act(async () => {
+      selector.value = modelB.id
+      selector.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(selector.value).toBe(modelB.id)
+    const saved = JSON.parse(localStorage.getItem('juniper.app-data.v1') ?? '{}')
+    expect(saved.conversations[0].modelProfileId).toBe(modelB.id)
+    expect(saved.conversations[0].messages[0].modelId).toBe(modelA.id)
   })
 })

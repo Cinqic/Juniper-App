@@ -18,6 +18,10 @@ inspected through runtime metadata, with tri-state capabilities and explicit
 execution locations: ON DEVICE, LOCAL NETWORK, REMOTE, or UNKNOWN. An
 unknown-compatible model can be used without a model-family source-code branch.
 
+The React shell and chat orchestration remain in `src/app/App.tsx`; assistants,
+models, settings, privacy, diagnostics, and onboarding pages live in
+`src/app/pages.tsx`.
+
 The supported provider classes are native Ollama, llama.cpp through its
 OpenAI-compatible server contract, and generic OpenAI-compatible servers.
 Ollama uses its native chat, discovery, inspection, pull, delete, and running
@@ -74,7 +78,7 @@ Passing with the bundled Node runtime:
 - pnpm format
 - pnpm lint
 - pnpm typecheck
-- pnpm test — 5 files, 15 tests
+- pnpm test — 5 files, 16 tests
 - pnpm build
 - pnpm schema:validate — 7 schemas and representative fixtures
 - pnpm version:check
@@ -82,9 +86,11 @@ Passing with the bundled Node runtime:
 - Rust cargo check --locked
 - Rust cargo check --tests --locked
 - Rust cargo clippy --all-targets -- -D warnings
-- Rust cargo test --locked — 22 tests passed
+- Rust cargo test --locked — 32 tests passed
 - pnpm tauri build --bundles deb,appimage — native binary plus `.deb` and
   `.AppImage` bundles produced
+- bounded pnpm tauri dev smoke — Vite and the compiled Tauri binary launched
+  successfully until the headless timeout; no GUI interaction is claimed
 
 Native validation used Rust 1.90.0 and temporary user-local Linux development
 metadata because the base workspace image does not install the Tauri desktop

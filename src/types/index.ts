@@ -12,7 +12,7 @@ export type Page =
   | 'privacy'
   | 'diagnostics'
 
-export type ProviderKind = 'ollama' | 'openai-compatible' | 'llama-cpp' | 'fake'
+export type ProviderKind = 'ollama' | 'openai-compatible' | 'llama-cpp'
 
 export interface ProviderCapabilities {
   chat: SupportLevel

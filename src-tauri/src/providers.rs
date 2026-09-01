@@ -262,6 +262,12 @@ async fn execute_request(
     request: reqwest::RequestBuilder,
     cancellation: &Cancellation,
 ) -> Result<Response, ProviderError> {
+    if cancellation.is_cancelled() {
+        return Err(ProviderError::new(
+            "REQUEST_CANCELLED",
+            "Generation cancelled.",
+        ));
+    }
     tokio::select! {
         response = request.send() => response.map_err(|_| ProviderError::new("PROVIDER_UNREACHABLE", "The provider is not responding.")),
         _ = cancellation.wait() => Err(ProviderError::new("REQUEST_CANCELLED", "Generation cancelled.")),
@@ -877,6 +883,7 @@ async fn stream_one_openai_turn<R: Runtime>(
         let delta = choice["delta"]["content"].as_str().map(str::to_owned);
         let reasoning = choice["delta"]["reasoning_content"]
             .as_str()
+            .or_else(|| choice["delta"]["reasoning"].as_str())
             .map(str::to_owned);
         if delta.is_some() || reasoning.is_some() {
             let _ = app.emit(
@@ -1085,6 +1092,7 @@ async fn stream_one_ollama_turn<R: Runtime>(
             .map(str::to_owned);
         let reasoning = message["thinking"]
             .as_str()
+            .or_else(|| message["reasoning"].as_str())
             .filter(|value| !value.is_empty())
             .map(str::to_owned);
         if delta.is_some() || reasoning.is_some() {
@@ -1392,8 +1400,8 @@ fn parse_ollama_pull_line(
     }))
 }
 
-pub async fn pull_model(
-    app: AppHandle,
+pub async fn pull_model<R: Runtime>(
+    app: AppHandle<R>,
     provider_kind: &str,
     base_url: &str,
     model_reference: &str,
@@ -1505,8 +1513,8 @@ pub async fn pull_model(
     Ok(())
 }
 
-fn emit_pull_progress(
-    app: &AppHandle,
+fn emit_pull_progress<R: Runtime>(
+    app: &AppHandle<R>,
     topic: &str,
     request_id: &str,
     status: &str,
@@ -1876,6 +1884,33 @@ mod tests {
     }
 
     #[test]
+    fn provider_buffer_handles_utf8_split_across_arbitrary_chunks() {
+        let line = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello 🌿\"}}]}\n";
+        let bytes = line.as_bytes();
+        let split = line.find('🌿').expect("fixture should contain Unicode") + 1;
+        let chunks = [
+            &bytes[..split],
+            &bytes[split..split + 1],
+            &bytes[split + 1..],
+        ];
+        let mut buffer = Vec::new();
+        let mut values = Vec::new();
+        for chunk in chunks {
+            buffer.extend_from_slice(chunk);
+            drain_provider_buffer(&mut buffer, &mut |record| {
+                values.push(parse_openai_sse_line(record)?);
+                Ok(())
+            })
+            .expect("split UTF-8 record should parse");
+        }
+        assert!(buffer.is_empty());
+        let ProviderStreamRecord::Json(value) = &values[0] else {
+            panic!("expected a JSON stream record");
+        };
+        assert_eq!(value["choices"][0]["delta"]["content"], "Hello 🌿");
+    }
+
+    #[test]
     fn ollama_pull_records_handle_progress_errors_and_final_chunks() {
         let progress = parse_ollama_pull_line(
             r#"{"status":"pulling manifest","digest":"sha256:abc","completed":3,"total":9}"#,
@@ -1924,6 +1959,62 @@ mod tests {
                     .write_all(response.as_bytes())
                     .expect("fake server should write");
             }
+        });
+        (format!("http://{address}"), handle)
+    }
+
+    fn fake_delayed_stream_server(
+        first: &'static str,
+        second: &'static str,
+        delay_ms: u64,
+    ) -> (String, std::thread::JoinHandle<()>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fake server should bind");
+        let address = listener
+            .local_addr()
+            .expect("fake server should have an address");
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("fake server should accept");
+            let mut request = [0u8; 4096];
+            let _ = stream.read(&mut request);
+            let body_length = first.len() + second.len();
+            let response = format!(
+                "HTTP/1.1 200 Test\r\nContent-Type: text/event-stream\r\nContent-Length: {body_length}\r\nConnection: close\r\n\r\n"
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("fake server should write headers");
+            stream
+                .write_all(first.as_bytes())
+                .expect("fake server should write first chunk");
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            let _ = stream.write_all(second.as_bytes());
+        });
+        (format!("http://{address}"), handle)
+    }
+
+    fn fake_slow_response_server(
+        body: &'static str,
+        delay_ms: u64,
+    ) -> (String, std::thread::JoinHandle<()>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fake server should bind");
+        let address = listener
+            .local_addr()
+            .expect("fake server should have an address");
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("fake server should accept");
+            let mut request = [0u8; 4096];
+            let _ = stream.read(&mut request);
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            let response = format!(
+                "HTTP/1.1 200 Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(response.as_bytes());
         });
         (format!("http://{address}"), handle)
     }
@@ -2064,6 +2155,150 @@ data: [DONE]"#,
         };
         assert_eq!(error.code, "PROVIDER_ERROR");
         assert!(error.message.contains("HTTP 429"));
+        server.join().expect("fake server should stop");
+    }
+
+    #[test]
+    fn cancelled_provider_requests_stop_before_network_io() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let request = request();
+        let tools = tool_payload(&request);
+        let cancellation = Cancellation::default();
+        cancellation.cancel();
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let result = runtime.block_on(async {
+            stream_one_openai_turn(
+                &request,
+                "http://127.0.0.1:1/v1/chat/completions",
+                &[],
+                &tools,
+                &handle,
+                "test-topic",
+                &cancellation,
+            )
+            .await
+        });
+        let Err(error) = result else {
+            panic!("cancelled request should stop before sending");
+        };
+        assert_eq!(error.code, "REQUEST_CANCELLED");
+    }
+
+    #[test]
+    fn fake_ollama_http_server_covers_pull_success_and_running_models() {
+        let (base_url, server) = fake_http_server(vec![
+            (
+                200,
+                "{\"status\":\"pulling manifest\",\"digest\":\"sha256:abc\",\"completed\":3,\"total\":9}\n{\"status\":\"success\",\"digest\":\"sha256:abc\"}",
+            ),
+            (200, r#"{}"#),
+            (
+                200,
+                r#"{"models":[{"name":"future-unknown-model-123:7b"}]}"#,
+            ),
+        ]);
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        runtime.block_on(async {
+            pull_model(
+                handle.clone(),
+                "ollama",
+                &base_url,
+                "future-unknown-model-123:7b",
+                "pull-1",
+                None,
+                Cancellation::default(),
+            )
+            .await
+            .expect("fake pull should complete");
+            delete_model("ollama", &base_url, "future-unknown-model-123:7b", None)
+                .await
+                .expect("fake delete should complete");
+            let running = running_models("ollama", &base_url, None)
+                .await
+                .expect("fake running-model query should complete");
+            assert_eq!(running[0]["name"], "future-unknown-model-123:7b");
+        });
+        server.join().expect("fake server should stop");
+    }
+
+    #[test]
+    fn fake_ollama_http_server_surfaces_pull_errors() {
+        let (base_url, server) = fake_http_server(vec![(200, r#"{"error":"model not found"}"#)]);
+        let app = tauri::test::mock_app();
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let result = runtime.block_on(async {
+            pull_model(
+                app.handle().clone(),
+                "ollama",
+                &base_url,
+                "missing-model",
+                "pull-error",
+                None,
+                Cancellation::default(),
+            )
+            .await
+        });
+        let error = result.expect_err("fake pull error should be surfaced");
+        assert!(error.contains("model not found"));
+        server.join().expect("fake server should stop");
+    }
+
+    #[test]
+    fn streaming_cancellation_stops_consuming_provider_data() {
+        let (base_url, server) = fake_delayed_stream_server(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n",
+            "data: [DONE]\n",
+            150,
+        );
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let request = request();
+        let tools = tool_payload(&request);
+        let cancellation = Cancellation::default();
+        let later = cancellation.clone();
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let result = runtime.block_on(async {
+            let cancel_task = tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(15)).await;
+                later.cancel();
+            });
+            let result = stream_one_openai_turn(
+                &request,
+                &format!("{base_url}/v1/chat/completions"),
+                &[],
+                &tools,
+                &handle,
+                "test-topic",
+                &cancellation,
+            )
+            .await;
+            cancel_task.await.expect("cancellation task should finish");
+            result
+        });
+        let Err(error) = result else {
+            panic!("streaming cancellation should stop the turn");
+        };
+        assert_eq!(error.code, "REQUEST_CANCELLED");
+        server.join().expect("fake server should stop");
+    }
+
+    #[test]
+    fn provider_request_timeout_is_reported_as_unreachable() {
+        let (base_url, server) = fake_slow_response_server("{}", 100);
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let result = runtime.block_on(execute_request(
+            Client::new()
+                .get(base_url)
+                .timeout(std::time::Duration::from_millis(15)),
+            &Cancellation::default(),
+        ));
+        let Err(error) = result else {
+            panic!("slow provider should time out");
+        };
+        assert_eq!(error.code, "PROVIDER_UNREACHABLE");
         server.join().expect("fake server should stop");
     }
 }

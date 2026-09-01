@@ -16,6 +16,7 @@ Working branch: `luna/juniper-model-agnostic-completion`
 - Tightened calculator limits, exact tool-argument validation, host result bounds, and dimension-safe unit conversion.
 - Added the scoped desktop file-picker path for text attachments and native cancellation joining.
 - Added the native permission request/decision loop, durable assistant/chat grants, and fixed-command Ollama GGUF import path.
+- Split the remaining feature pages out of `App.tsx` into `src/app/pages.tsx`, leaving the shell and chat orchestration in the app entrypoint.
 - Repaired pnpm version consistency and the GitHub Actions pnpm-cache setup order.
 
 ## Validation evidence
@@ -25,8 +26,9 @@ Working branch: `luna/juniper-model-agnostic-completion`
 - Model download performed: none; the contract explicitly forbids an automatic large download.
 - Real model generation: not claimed; pending the owner selecting an installed model.
 - Frontend typecheck, build, lint, formatting, tests, and JSON Schema validation: pass with the bundled Node runtime.
-- Rust/Tauri host `cargo check`, test compilation, strict Clippy, and the full 22-test suite: pass with temporary user-local Linux development metadata.
+- Rust/Tauri host `cargo check`, test compilation, strict Clippy, and the full 32-test suite: pass with temporary user-local Linux development metadata.
 - `pnpm tauri build --bundles deb,appimage`: pass; optimized native binary, `.deb`, and `.AppImage` artifacts produced.
+- Bounded `pnpm tauri dev` smoke: the Vite dev server and compiled Tauri binary launched and remained running until the headless timeout; no GUI interaction is claimed.
 - Android compilation: the Rust Android target is installed, but the Android NDK clang toolchain is absent in this environment.
 
 ## Known limitations

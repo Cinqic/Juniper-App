@@ -9,8 +9,8 @@ requirements:
     status: PASS-BY-INSPECTION
   REQ-UI-001:
     statement: Responsive onboarding, chat, assistants, models, tools, settings, privacy, diagnostics
-    implementation: [src/app/App.tsx, src/app/ui.tsx, src/styles/app.css]
-    tests: []
+    implementation: [src/app/App.tsx, src/app/pages.tsx, src/app/ui.tsx, src/styles/app.css]
+    tests: [src/app/App.test.tsx]
     phase: 1
     status: PASS-BROWSER-SMOKE
   REQ-CHAT-001:
@@ -23,13 +23,13 @@ requirements:
     statement: Ollama and OpenAI-compatible provider boundary, including llama.cpp endpoint path
     implementation:
       [src-tauri/src/providers.rs, src/lib/defaults.ts, docs/architecture/provider-contract.md]
-    tests: []
+    tests: [src-tauri/src/providers.rs]
     phase: 3
     status: IMPLEMENTED-NATIVE-TESTED
   REQ-ASSIST-001:
     statement: Versioned portable .juniper assistant import/export
     implementation:
-      [src/lib/assistant.ts, schemas/assistant/juniper-assistant.v1.schema.json, src/app/App.tsx]
+      [src/lib/assistant.ts, schemas/assistant/juniper-assistant.v1.schema.json, src/app/pages.tsx]
     tests: [src/lib/assistant.test.ts]
     phase: 2
     status: PASS-BY-STATIC-TESTS
@@ -53,7 +53,7 @@ requirements:
   REQ-SEC-001:
     statement: Scoped attachments and desktop OS credential store
     implementation: [src-tauri/src/commands.rs, docs/security/threat-model.md]
-    tests: []
+    tests: [src-tauri/src/commands.rs]
     phase: 9
     status: IMPLEMENTED-NATIVE-TESTED
   REQ-MOBILE-001:
@@ -71,12 +71,12 @@ requirements:
   REQ-MODEL-AGNOSTIC:
     statement: Unknown compatible model can be discovered and used without a source-code branch
     implementation: [src/lib/defaults.ts, src/lib/runtime.ts, src-tauri/src/providers.rs]
-    tests: [src/lib/runtime.test.ts]
+    tests: [src/lib/runtime.test.ts, src-tauri/src/providers.rs]
     phase: 11
     status: IMPLEMENTED-NATIVE-TESTED
   REQ-OLLAMA-DISCOVERY:
     statement: Native Ollama health, model discovery, inspection, and refresh
-    implementation: [src-tauri/src/providers.rs, src/app/App.tsx]
+    implementation: [src-tauri/src/providers.rs, src/app/pages.tsx]
     tests: [src-tauri/src/providers.rs]
     phase: 11
     status: IMPLEMENTED-NATIVE-TESTED
@@ -89,9 +89,9 @@ requirements:
   REQ-MODEL-SWITCH:
     statement: Conversation model override preserves historical model attribution
     implementation: [src/types/index.ts, src/app/App.tsx]
-    tests: [src/lib/storage.test.ts]
+    tests: [src/app/App.test.tsx, src/lib/storage.test.ts]
     phase: 11
-    status: IMPLEMENTED
+    status: PASS-FRONTEND
   REQ-CONTEXT-CORRECTNESS:
     statement: Deterministic prompt compilation includes the current user message once
     implementation: [src/lib/context.ts]
@@ -137,7 +137,7 @@ requirements:
   REQ-CANCEL:
     statement: Abort signal calls native request cancellation using one stable request ID
     implementation: [src/lib/runtime.ts, src-tauri/src/commands.rs, src-tauri/src/providers.rs]
-    tests: [src/lib/runtime.test.ts]
+    tests: [src/lib/runtime.test.ts, src-tauri/src/providers.rs]
     phase: 11
     status: IMPLEMENTED-NATIVE-TESTED
   REQ-ATTACHMENT:
@@ -149,7 +149,7 @@ requirements:
   REQ-PRIVACY-ROUTE:
     statement: Privacy center reports selected model execution location truthfully
     implementation: [src/app/App.tsx, src/types/index.ts]
-    tests: [src/lib/storage.test.ts]
+    tests: [src/app/App.test.tsx, src/lib/storage.test.ts]
     phase: 11
     status: IMPLEMENTED
   REQ-NO-TELEMETRY:
