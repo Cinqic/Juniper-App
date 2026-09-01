@@ -1,4 +1,5 @@
 export type Locality = 'local' | 'remote' | 'unknown'
+export type ExecutionLocation = 'on-device' | 'local-network' | 'remote' | 'unknown'
 export type SupportLevel = 'supported' | 'unsupported' | 'unknown'
 export type Page =
   | 'chats'
@@ -12,6 +13,7 @@ export type Page =
 export type ProviderKind = 'ollama' | 'openai-compatible' | 'llama-cpp' | 'fake'
 
 export interface ProviderCapabilities {
+  chat: SupportLevel
   text: SupportLevel
   streaming: SupportLevel
   systemPrompt: SupportLevel
@@ -31,6 +33,7 @@ export interface ProviderProfile {
   kind: ProviderKind
   baseUrl: string
   locality: Locality
+  transportLocation: ExecutionLocation
   apiKeyRef?: string
   enabled: boolean
   status: 'connected' | 'offline' | 'unknown'
@@ -43,6 +46,20 @@ export interface ModelProfile {
   modelId: string
   displayName: string
   locality: Locality
+  executionLocation: ExecutionLocation
+  sourceReference?: string
+  family?: string
+  architecture?: string
+  parameterSize?: string
+  fileSizeBytes?: number
+  quantization?: string
+  format?: string
+  license?: string
+  template?: string
+  compatibilityStatus: 'chat-compatible' | 'not-chat-compatible' | 'unknown'
+  metadataSource?: string
+  lastInspectedAt?: string
+  rawCapabilities?: string[]
   sizeLabel?: string
   contextLength?: number
   status: 'ready' | 'not-found' | 'unknown'
@@ -57,8 +74,10 @@ export interface GenerationOverrides {
   minP?: number
   repetitionPenalty?: number
   maxOutput?: number
-  thinking?: boolean
+  thinking?: ThinkingMode
 }
+
+export type ThinkingMode = 'auto' | 'off' | 'on' | 'low' | 'medium' | 'high'
 
 export interface PersonalityControls {
   warmth: number
@@ -71,12 +90,12 @@ export interface PersonalityControls {
 
 export interface Assistant {
   id: string
-  schemaVersion: 1
+  schemaVersion: 2
   name: string
   description: string
   avatar: string
   accent: string
-  modelProfileId: string
+  modelProfileId: string | null
   systemPrompt: string
   personality: PersonalityControls
   responseLength: 'concise' | 'balanced' | 'detailed'
@@ -116,6 +135,7 @@ export interface ChatMessage {
   modelId?: string
   providerId?: string
   isStreaming?: boolean
+  usage?: GenerationUsage
 }
 
 export interface Conversation {
@@ -125,6 +145,7 @@ export interface Conversation {
   createdAt: string
   updatedAt: string
   privateChat?: boolean
+  modelProfileId?: string | null
   messages: ChatMessage[]
 }
 
@@ -136,6 +157,19 @@ export interface Memory {
   enabled: boolean
   createdAt: string
   updatedAt: string
+}
+
+export interface Attachment {
+  id: string
+  name: string
+  sizeBytes: number
+  contentType: string
+}
+
+export interface GgufSelection {
+  id: string
+  name: string
+  sizeBytes: number
 }
 
 export interface ToolDefinition {
@@ -181,6 +215,41 @@ export interface ChatRequest {
   messages: Array<{ role: MessageRole; content: string }>
   tools: ToolDefinition[]
   generation: GenerationOverrides
+  attachments?: Array<{ id: string; name: string; content: string }>
+}
+
+export interface DiscoveredModel {
+  modelId: string
+  displayName: string
+  sizeBytes?: number
+  modifiedAt?: string
+}
+
+export interface ModelInspection {
+  modelId: string
+  displayName: string
+  family?: string
+  architecture?: string
+  parameterSize?: string
+  fileSizeBytes?: number
+  quantization?: string
+  format?: string
+  contextLength?: number
+  license?: string
+  template?: string
+  capabilities: string[]
+  metadataSource: string
+  rawCapabilities?: string[]
+}
+
+export interface ModelPullProgress {
+  requestId: string
+  status: string
+  digest?: string
+  completedBytes?: number
+  totalBytes?: number
+  done?: boolean
+  error?: { code: string; message: string }
 }
 
 export interface NormalizedToolCall {

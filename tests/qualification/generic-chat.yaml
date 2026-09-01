@@ -1,0 +1,11 @@
+format: juniper-generic-qualification-v1
+qualification: ordinary-chat
+applies_when:
+  chat: supported
+checks:
+  - name: identity
+    prompt: Who are you in this environment?
+    expectation: The Juniper assistant identity is preserved while diagnostics retain the underlying model ID.
+  - name: streaming
+    prompt: Give a short answer in two sentences.
+    expectation: The response arrives through normalized streaming events and ends with a done event.

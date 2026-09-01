@@ -10,8 +10,8 @@ current machine’s app data, model files, keychain, or build output.
 2. Clone and enter the repository.
 3. Run `pnpm install` and then `pnpm validate`.
 4. Run `pnpm tauri dev`.
-5. Install Ollama from its official source, run `ollama pull qwen3:8b`, and
-   connect the preconfigured `http://127.0.0.1:11434` profile.
+5. Install Ollama from its official source, start it, then open Juniper’s Models
+   page and use Download a model to add a compatible model without a terminal.
 
 ## Windows desktop
 

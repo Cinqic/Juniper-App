@@ -1,6 +1,6 @@
 # Privacy and network policy
 
-Juniper v0.1 contains no telemetry, analytics, advertising, automatic
+Juniper v0.2 contains no telemetry, analytics, advertising, automatic
 conversation upload, silent cloud fallback, or Cinqic network requirement.
 
 The local Ollama profile targets loopback. A remote profile is marked REMOTE

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Cinqic/Juniper-App/schemas/export/juniper-export.v2.schema.json",
+  "title": "Juniper user data export v2",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "format",
+    "version",
+    "assistants",
+    "conversations",
+    "memories",
+    "models",
+    "providers",
+    "settings"
+  ],
+  "properties": {
+    "format": { "const": "juniper-export" },
+    "version": { "const": 2 },
+    "assistants": { "type": "array" },
+    "conversations": { "type": "array" },
+    "memories": { "type": "array" },
+    "models": { "type": "array" },
+    "providers": { "type": "array" },
+    "settings": { "type": "object" }
+  }
+}

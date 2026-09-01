@@ -1,0 +1,8 @@
+format: juniper-generic-qualification-v1
+qualification: thinking
+applies_when:
+  thinking: supported
+checks:
+  - name: thinking-metadata
+    prompt: Explain a short arithmetic answer.
+    expectation: Thinking metadata is kept separate from final answer content when the runtime reports it.

@@ -10,6 +10,8 @@ pub struct ChatRequest {
     pub messages: Vec<ChatMessage>,
     pub tools: Vec<ToolDefinition>,
     pub generation: GenerationOverrides,
+    #[serde(default)]
+    pub attachments: Vec<AttachmentContext>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -20,6 +22,8 @@ pub struct ProviderProfile {
     pub kind: String,
     pub base_url: String,
     pub locality: String,
+    #[serde(default = "default_execution_location")]
+    pub transport_location: String,
     pub api_key_ref: Option<String>,
 }
 
@@ -29,6 +33,21 @@ pub struct ModelProfile {
     pub id: String,
     pub model_id: String,
     pub display_name: String,
+    #[serde(default = "default_execution_location")]
+    pub execution_location: String,
+    #[serde(default)]
+    pub capabilities: ModelCapabilities,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCapabilities {
+    #[serde(default)]
+    pub generation_parameters: Vec<String>,
+    #[serde(default = "default_support_level")]
+    pub tools: String,
+    #[serde(default = "default_support_level")]
+    pub thinking: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -46,7 +65,7 @@ pub struct GenerationOverrides {
     pub min_p: Option<f32>,
     pub repetition_penalty: Option<f32>,
     pub max_output: Option<u32>,
-    pub thinking: Option<bool>,
+    pub thinking: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -102,4 +121,68 @@ pub struct Attachment {
     pub name: String,
     pub size_bytes: u64,
     pub content_type: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GgufSelection {
+    pub id: String,
+    pub name: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentContext {
+    pub id: String,
+    pub name: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredModel {
+    pub model_id: String,
+    pub display_name: String,
+    pub size_bytes: Option<u64>,
+    pub modified_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelInspection {
+    pub model_id: String,
+    pub display_name: String,
+    pub family: Option<String>,
+    pub architecture: Option<String>,
+    pub parameter_size: Option<String>,
+    pub file_size_bytes: Option<u64>,
+    pub quantization: Option<String>,
+    pub format: Option<String>,
+    pub context_length: Option<u64>,
+    pub license: Option<String>,
+    pub template: Option<String>,
+    pub capabilities: Vec<String>,
+    pub metadata_source: String,
+    pub raw_capabilities: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelPullProgress {
+    pub request_id: String,
+    pub status: String,
+    pub digest: Option<String>,
+    pub completed_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
+    pub done: Option<bool>,
+    pub error: Option<RuntimeError>,
+}
+
+fn default_execution_location() -> String {
+    "unknown".into()
+}
+
+fn default_support_level() -> String {
+    "unknown".into()
 }

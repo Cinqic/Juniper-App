@@ -4,5 +4,5 @@
   "description": "Narrow default capability: no blanket filesystem or shell permissions are granted.",
   "windows": ["main"],
   "platforms": ["linux", "windows", "macOS"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "dialog:default"]
 }

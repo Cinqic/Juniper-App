@@ -1,12 +1,14 @@
-use crate::domain::{Attachment, ChatRequest};
+use crate::domain::{Attachment, ChatRequest, DiscoveredModel, GgufSelection, ModelInspection};
 use crate::{providers, tools};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet},
+    io::Read,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
 use tauri::{AppHandle, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 use tokio::sync::Notify;
 use uuid::Uuid;
 
@@ -14,6 +16,7 @@ use uuid::Uuid;
 pub struct AppState {
     pub cancellations: Mutex<HashMap<String, Cancellation>>,
     pub attachments: Mutex<HashMap<String, PathBuf>>,
+    pub gguf_files: Mutex<HashMap<String, PathBuf>>,
 }
 
 #[derive(Clone, Default)]
@@ -33,24 +36,31 @@ impl Cancellation {
     pub fn is_cancelled(&self) -> bool {
         self.flag.lock().map(|flag| *flag).unwrap_or(true)
     }
+
+    pub async fn wait(&self) {
+        self.notify.notified().await;
+    }
 }
 
 #[tauri::command]
 pub fn system_info() -> HashMap<String, String> {
     let mut result = HashMap::from([
-        (String::from("application"), String::from("Juniper 0.1.0-rc.1")),
+        (
+            String::from("application"),
+            String::from("Juniper 0.2.0-rc.1"),
+        ),
         (String::from("os"), std::env::consts::OS.to_owned()),
-        (String::from("architecture"), std::env::consts::ARCH.to_owned()),
+        (
+            String::from("architecture"),
+            std::env::consts::ARCH.to_owned(),
+        ),
         (String::from("runtime"), String::from("Tauri 2 / Rust")),
         (String::from("telemetry"), String::from("Off")),
     ]);
     #[cfg(target_os = "linux")]
     if let Ok(contents) = std::fs::read_to_string("/proc/meminfo") {
         if let Some(line) = contents.lines().find(|line| line.starts_with("MemTotal:")) {
-            result.insert(
-                "memory".into(),
-                line.replace("MemTotal:", "").trim().into(),
-            );
+            result.insert("memory".into(), line.replace("MemTotal:", "").trim().into());
         }
     }
     result
@@ -65,13 +75,109 @@ pub fn app_data_directory(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn health_check(kind: String, base_url: String) -> Result<String, String> {
-    providers::health_check(&kind, &base_url).await
+pub fn load_app_data(app: AppHandle) -> Result<Option<Value>, String> {
+    let path = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("juniper.db");
+    crate::storage::load_app_data(&path).map_err(|error| format!("DATABASE_ERROR: {error}"))
 }
 
 #[tauri::command]
-pub async fn list_models(kind: String, base_url: String) -> Result<Vec<String>, String> {
-    providers::list_models(&kind, &base_url).await
+pub fn save_app_data(app: AppHandle, data: Value) -> Result<(), String> {
+    let path = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("juniper.db");
+    crate::storage::save_app_data(&path, &data).map_err(|error| format!("DATABASE_ERROR: {error}"))
+}
+
+#[tauri::command]
+pub async fn health_check(
+    kind: String,
+    base_url: String,
+    api_key_ref: Option<String>,
+) -> Result<String, String> {
+    providers::health_check(&kind, &base_url, api_key_ref.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn list_models(
+    kind: String,
+    base_url: String,
+    api_key_ref: Option<String>,
+) -> Result<Vec<DiscoveredModel>, String> {
+    providers::list_models(&kind, &base_url, api_key_ref.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn inspect_model(
+    kind: String,
+    base_url: String,
+    model_id: String,
+    api_key_ref: Option<String>,
+) -> Result<ModelInspection, String> {
+    providers::inspect_model(&kind, &base_url, &model_id, api_key_ref.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn pull_model(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    kind: String,
+    base_url: String,
+    model_reference: String,
+    request_id: String,
+    api_key_ref: Option<String>,
+) -> Result<(), String> {
+    let cancellation = Cancellation::default();
+    state
+        .cancellations
+        .lock()
+        .map_err(|_| "Cancellation state unavailable.")?
+        .insert(request_id.clone(), cancellation.clone());
+    let result = providers::pull_model(
+        app,
+        &kind,
+        &base_url,
+        &model_reference,
+        &request_id,
+        api_key_ref.as_deref(),
+        cancellation,
+    )
+    .await;
+    state
+        .cancellations
+        .lock()
+        .map_err(|_| "Cancellation state unavailable.")?
+        .remove(&request_id);
+    result
+}
+
+#[tauri::command]
+pub fn cancel_model_pull(state: State<'_, AppState>, request_id: String) -> Result<(), String> {
+    cancel_chat(state, request_id)
+}
+
+#[tauri::command]
+pub async fn delete_model(
+    kind: String,
+    base_url: String,
+    model_id: String,
+    api_key_ref: Option<String>,
+) -> Result<(), String> {
+    providers::delete_model(&kind, &base_url, &model_id, api_key_ref.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn running_models(
+    kind: String,
+    base_url: String,
+    api_key_ref: Option<String>,
+) -> Result<Vec<Value>, String> {
+    providers::running_models(&kind, &base_url, api_key_ref.as_deref()).await
 }
 
 #[tauri::command]
@@ -109,13 +215,9 @@ pub fn cancel_chat(state: State<'_, AppState>, request_id: String) -> Result<(),
 }
 
 #[tauri::command]
-pub fn register_attachment(
-    state: State<'_, AppState>,
-    path: String,
-) -> Result<Attachment, String> {
+fn register_attachment(state: State<'_, AppState>, path: String) -> Result<Attachment, String> {
     let path = PathBuf::from(path);
-    let metadata = std::fs::metadata(&path)
-        .map_err(|_| "The selected file is not available.")?;
+    let metadata = std::fs::metadata(&path).map_err(|_| "The selected file is not available.")?;
     if !metadata.is_file() {
         return Err("Only files can be attached.".into());
     }
@@ -128,13 +230,13 @@ pub fn register_attachment(
         .unwrap_or_default()
         .to_ascii_lowercase();
     let allowed: HashSet<&str> = [
-        "txt", "md", "json", "csv", "toml", "yaml", "yml", "rs", "ts", "tsx", "js",
-        "jsx", "py", "css", "html",
+        "txt", "md", "json", "csv", "toml", "yaml", "yml", "rs", "ts", "tsx", "js", "jsx", "py",
+        "css", "html",
     ]
     .into_iter()
     .collect();
     if !allowed.contains(extension.as_str()) {
-        return Err("This attachment type is not supported as text in v0.1.".into());
+        return Err("This attachment type is not supported as text in v0.2.".into());
     }
     let id = Uuid::new_v4().to_string();
     state
@@ -152,6 +254,91 @@ pub fn register_attachment(
         size_bytes: metadata.len(),
         content_type: "text/plain".into(),
     })
+}
+
+#[tauri::command]
+pub fn pick_attachment(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<Attachment>, String> {
+    let selected = app
+        .dialog()
+        .file()
+        .add_filter(
+            "Text files",
+            &[
+                "txt", "md", "json", "csv", "toml", "yaml", "yml", "rs", "ts", "tsx", "js", "jsx",
+                "py", "css", "html",
+            ],
+        )
+        .blocking_pick_file();
+    let Some(file) = selected else {
+        return Ok(None);
+    };
+    let path = file
+        .into_path()
+        .map_err(|_| "The selected file path is not available.")?;
+    register_attachment(state, path.to_string_lossy().into_owned()).map(Some)
+}
+
+fn register_gguf(state: &AppState, path: PathBuf) -> Result<GgufSelection, String> {
+    let metadata = std::fs::metadata(&path).map_err(|_| "The selected file is not available.")?;
+    if !metadata.is_file() || metadata.len() == 0 {
+        return Err("Only non-empty regular GGUF files can be selected.".into());
+    }
+    if metadata.len() > 2 * 1024 * 1024 * 1024 * 1024u64 {
+        return Err("The selected GGUF file is larger than the supported limit.".into());
+    }
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if !extension.eq_ignore_ascii_case("gguf") {
+        return Err("Select a file with the .gguf extension.".into());
+    }
+    let mut file =
+        std::fs::File::open(&path).map_err(|_| "The selected GGUF file is not readable.")?;
+    let mut magic = [0u8; 4];
+    file.read_exact(&mut magic)
+        .map_err(|_| "The selected GGUF file is too short or not readable.")?;
+    if &magic != b"GGUF" {
+        return Err("The selected file does not have a valid GGUF header.".into());
+    }
+    let id = Uuid::new_v4().to_string();
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("model.gguf")
+        .to_owned();
+    state
+        .gguf_files
+        .lock()
+        .map_err(|_| "GGUF selection state unavailable.")?
+        .insert(id.clone(), path);
+    Ok(GgufSelection {
+        id,
+        name,
+        size_bytes: metadata.len(),
+    })
+}
+
+#[tauri::command]
+pub fn pick_gguf(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<GgufSelection>, String> {
+    let selected = app
+        .dialog()
+        .file()
+        .add_filter("GGUF models", &["gguf"])
+        .blocking_pick_file();
+    let Some(file) = selected else {
+        return Ok(None);
+    };
+    let path = file
+        .into_path()
+        .map_err(|_| "The selected GGUF path is not available.")?;
+    register_gguf(state.inner(), path).map(Some)
 }
 
 #[tauri::command]
@@ -237,11 +424,7 @@ pub fn tool_evaluate(expression: String) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub fn tool_convert(
-    value: f64,
-    from: String,
-    to: String,
-) -> Result<serde_json::Value, String> {
+pub fn tool_convert(value: f64, from: String, to: String) -> Result<serde_json::Value, String> {
     tools::convert(value, &from, &to)
         .map(|result| json!({ "value": result, "from": from, "to": to }))
         .map_err(|error| error.to_string())

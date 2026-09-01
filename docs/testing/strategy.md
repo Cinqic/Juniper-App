@@ -8,9 +8,12 @@ Deterministic frontend tests cover assistant import/export, context order and
 truncation, private persistence, and browser-preview streaming. Rust tests
 cover the safe calculator, unit conversion, protocol result shape, loop
 bounds, and schema version. Provider integration uses a fake HTTP server in
-future CI work; real Qwen3 is reserved for the qualification fixture.
+future CI work; real-model qualification is reserved for an owner-selected
+installed model. The historical Qwen fixture is optional.
 
-Frontend build, lint, formatting, schema syntax checks, deterministic tests,
-and browser UI smoke checks were completed with the bundled Node runtime. No
-real Qwen3, Tauri, Android, or desktop test is claimed because Rust, Java,
-Android SDK/NDK, and Ollama were not available in this environment.
+Frontend build, lint, formatting, schema validation, deterministic tests, and
+browser UI smoke checks were completed with the bundled Node runtime. Ollama
+was reachable but had no installed models, so no real-model generation is
+claimed. Native Tauri tests are blocked in this environment by missing Linux
+DBus/GTK/WebKit development packages; Android tests additionally require the
+Android NDK clang toolchain.

@@ -1,0 +1,11 @@
+format: juniper-generic-qualification-v1
+qualification: structured-tools
+applies_when:
+  tools: supported
+checks:
+  - name: host-authored-result
+    prompt: Calculate 847291 * 19347.
+    expectation: Only a host tool result is trusted; model-authored numbers are not treated as execution.
+  - name: malformed-call
+    prompt: Request a tool with malformed JSON arguments.
+    expectation: The host returns MALFORMED_TOOL_CALL or INVALID_TOOL_ARGUMENT without coercing arguments to an empty object.

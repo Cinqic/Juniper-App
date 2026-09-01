@@ -290,6 +290,14 @@ button:disabled {
   color: var(--success);
   border-color: color-mix(in srgb, var(--success) 28%, var(--line));
 }
+.status-pill.on-device {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 28%, var(--line));
+}
+.status-pill.local-network {
+  color: #8c6f2c;
+  border-color: color-mix(in srgb, #8c6f2c 28%, var(--line));
+}
 .status-pill.remote {
   color: var(--warning);
   border-color: color-mix(in srgb, var(--warning) 28%, var(--line));
@@ -1360,6 +1368,20 @@ select {
   margin-top: 3px;
   color: var(--muted);
   font-size: 10px;
+}
+.model-details {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.model-details summary {
+  cursor: pointer;
+  color: var(--accent-dark);
+}
+.model-details small {
+  display: block;
+  margin-top: 4px;
+  line-height: 1.5;
 }
 .inline-form {
   display: flex;

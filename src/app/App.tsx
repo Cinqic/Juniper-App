@@ -1,11 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent, ReactNode } from 'react'
 import { buildContext } from '../lib/context'
-import { defaultAssistant, builtinTools, initialAppData, qwenModel } from '../lib/defaults'
+import {
+  defaultAssistant,
+  defaultProvider,
+  builtinTools,
+  initialAppData,
+  modelProfileFromDiscovery,
+} from '../lib/defaults'
 import { parseAssistant, serializeAssistant } from '../lib/assistant'
 import {
   checkProviderConnection,
+  cancelChat,
+  deleteProviderCredential,
+  deleteProviderModel,
   getDiagnostics,
+  inspectProviderModel,
+  loadNativeAppData,
+  modelFromInspection,
+  pickGguf,
+  pickAttachment,
+  pullProviderModel,
+  readAttachment,
+  runningInTauri,
+  saveNativeAppData,
   listProviderModels,
   saveProviderCredential,
   streamChat,
@@ -18,6 +36,7 @@ import type {
   ChatMessage,
   ChatStreamEvent,
   Conversation,
+  GgufSelection,
   MessagePart,
   ModelProfile,
   Page,
@@ -102,11 +121,18 @@ function applyStreamEvent(message: ChatMessage, event: ChatStreamEvent): ChatMes
       metadata: { callId: result.callId },
     })
   }
-  return { ...message, parts }
+  return {
+    ...message,
+    parts,
+    usage: event.usage ? { ...message.usage, ...event.usage } : message.usage,
+  }
 }
 
 export default function App() {
-  const [data, setData] = useState<AppData>(loadAppData)
+  const [data, setData] = useState<AppData>(() =>
+    runningInTauri ? initialAppData() : loadAppData(),
+  )
+  const [hydrated, setHydrated] = useState(!runningInTauri)
   const [page, setPage] = useState<Page>(data.settings.onboardingComplete ? 'chats' : 'chats')
   const [selectedChatId, setSelectedChatId] = useState<string | null>(
     data.conversations[0]?.id ?? null,
@@ -117,24 +143,94 @@ export default function App() {
   const [onboardingOpen, setOnboardingOpen] = useState(!data.settings.onboardingComplete)
 
   useEffect(() => {
-    saveAppData(data)
+    if (!hydrated) return
+    if (runningInTauri) void saveNativeAppData(data)
+    else saveAppData(data)
     document.documentElement.dataset.theme = data.settings.theme
     document.documentElement.style.setProperty('--accent', data.settings.accent)
     document.documentElement.style.setProperty('--font-scale', String(data.settings.fontScale))
     document.documentElement.dataset.reducedMotion = String(data.settings.reducedMotion)
-  }, [data])
+  }, [data, hydrated])
+
+  useEffect(() => {
+    if (!runningInTauri) return
+    void loadNativeAppData()
+      .then((stored) => {
+        if (stored) setData(stored)
+      })
+      .catch((error) => {
+        window.alert(error instanceof Error ? error.message : 'Could not load the SQLite state.')
+      })
+      .finally(() => setHydrated(true))
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated) return
+    setActiveAssistantId((current) =>
+      data.assistants.some((assistant) => assistant.id === current)
+        ? current
+        : (data.assistants[0]?.id ?? defaultAssistant.id),
+    )
+    setSelectedChatId((current) =>
+      current && data.conversations.some((chat) => chat.id === current)
+        ? current
+        : (data.conversations[0]?.id ?? null),
+    )
+    setOnboardingOpen(!data.settings.onboardingComplete)
+  }, [data.assistants, data.conversations, data.settings.onboardingComplete, hydrated])
+
+  useEffect(() => {
+    if (!runningInTauri || !hydrated) return
+    const provider = data.providers.find((item) => item.enabled && item.kind === 'ollama')
+    if (!provider) return
+    void checkProviderConnection(provider)
+      .then(() => {
+        if (provider.status !== 'connected') {
+          update((current) => ({
+            ...current,
+            providers: current.providers.map((item) =>
+              item.id === provider.id ? { ...item, status: 'connected' } : item,
+            ),
+          }))
+        }
+        return listProviderModels(provider)
+      })
+      .then((models) => {
+        if (!models) return
+        update((current) => {
+          const next = [...current.models]
+          for (const discovered of models) {
+            const existing = next.find(
+              (model) => model.providerId === provider.id && model.modelId === discovered.modelId,
+            )
+            if (existing) {
+              existing.status = 'ready'
+              continue
+            }
+            next.push(
+              modelProfileFromDiscovery(provider, discovered.modelId, {
+                displayName: discovered.displayName,
+                fileSizeBytes: discovered.sizeBytes,
+              }),
+            )
+          }
+          return { ...current, models: next }
+        })
+      })
+      .catch(() => undefined)
+  }, [data.providers, hydrated])
 
   const update = (change: (current: AppData) => AppData) => setData((current) => change(current))
   const activeAssistant =
     data.assistants.find((assistant) => assistant.id === activeAssistantId) ??
     data.assistants[0] ??
     defaultAssistant
-  const activeModel =
-    data.models.find((model) => model.id === activeAssistant.modelProfileId) ??
-    data.models[0] ??
-    qwenModel
-  const activeProvider =
-    data.providers.find((provider) => provider.id === activeModel.providerId) ?? data.providers[0]
+  const activeModel = data.models.find(
+    (model) => model.id === activeAssistant.modelProfileId && isChatSelectable(model),
+  )
+  const activeProvider = activeModel
+    ? data.providers.find((provider) => provider.id === activeModel.providerId)
+    : undefined
 
   function createChat(privateChat = false): Conversation {
     const conversation: Conversation = {
@@ -171,9 +267,9 @@ export default function App() {
           </div>
           <div className="topbar-context">
             <span className="eyebrow">{page === 'chats' ? 'Personal space' : page}</span>
-            <span className={`status-pill ${activeProvider?.locality ?? 'unknown'}`}>
+            <span className={`status-pill ${activeModel?.executionLocation ?? 'unknown'}`}>
               <i />
-              {activeProvider?.locality === 'remote' ? 'REMOTE' : 'LOCAL'}
+              {labelExecutionLocation(activeModel?.executionLocation ?? 'unknown')}
             </span>
           </div>
           <button
@@ -194,7 +290,6 @@ export default function App() {
               createChat={createChat}
               activeAssistant={activeAssistant}
               activeModel={activeModel}
-              activeProvider={activeProvider}
             />
           )}
           {page === 'assistants' && (
@@ -208,7 +303,14 @@ export default function App() {
           {page === 'models' && <ModelsPage data={data} update={update} />}
           {page === 'tools' && <ToolsPage data={data} update={update} />}
           {page === 'settings' && <SettingsPage data={data} update={update} />}
-          {page === 'privacy' && <PrivacyPage data={data} update={update} />}
+          {page === 'privacy' && (
+            <PrivacyPage
+              data={data}
+              update={update}
+              activeModel={activeModel}
+              activeProvider={activeProvider}
+            />
+          )}
           {page === 'diagnostics' && <DiagnosticsPage data={data} />}
         </div>
       </main>
@@ -307,7 +409,6 @@ function ChatPage({
   createChat,
   activeAssistant,
   activeModel,
-  activeProvider,
 }: {
   data: AppData
   update: (change: (current: AppData) => AppData) => void
@@ -315,13 +416,23 @@ function ChatPage({
   setSelectedChatId: (id: string) => void
   createChat: (privateChat?: boolean) => Conversation
   activeAssistant: Assistant
-  activeModel: ModelProfile
-  activeProvider?: ProviderProfile
+  activeModel?: ModelProfile
 }) {
   const [query, setQuery] = useState('')
-  const [privateMode, setPrivateMode] = useState(false)
   const conversation =
     data.conversations.find((chat) => chat.id === selectedChatId) ?? data.conversations[0]
+  const conversationModel = conversation?.modelProfileId
+    ? data.models.find((model) => model.id === conversation.modelProfileId)
+    : undefined
+  const effectiveModel = conversation?.modelProfileId
+    ? conversationModel && isChatSelectable(conversationModel)
+      ? conversationModel
+      : undefined
+    : activeModel
+  const modelUnavailable = Boolean(conversation?.modelProfileId && !effectiveModel)
+  const effectiveProvider = effectiveModel
+    ? data.providers.find((provider) => provider.id === effectiveModel.providerId)
+    : undefined
   const filtered = data.conversations.filter((chat) =>
     chat.title.toLowerCase().includes(query.toLowerCase()),
   )
@@ -375,15 +486,9 @@ function ChatPage({
             ))
           )}
         </div>
-        <button
-          className="private-toggle"
-          onClick={() => {
-            if (!privateMode) createChat(true)
-            setPrivateMode((value) => !value)
-          }}
-        >
-          <span className="lock">{privateMode ? '●' : '○'}</span>
-          {privateMode ? 'Private chat on' : 'Start private chat'}
+        <button className="private-toggle" onClick={() => createChat(true)}>
+          <span className="lock">●</span>
+          Start private chat
         </button>
       </section>
       <section className="chat-main">
@@ -393,9 +498,18 @@ function ChatPage({
             update={update}
             conversation={conversation}
             activeAssistant={activeAssistant}
-            activeModel={activeModel}
-            activeProvider={activeProvider}
-            privateMode={privateMode}
+            activeModel={effectiveModel}
+            activeProvider={effectiveProvider}
+            privateMode={conversation.privateChat === true}
+            modelUnavailable={modelUnavailable}
+            onSelectModel={(modelId) =>
+              update((current) => ({
+                ...current,
+                conversations: current.conversations.map((chat) =>
+                  chat.id === conversation.id ? { ...chat, modelProfileId: modelId } : chat,
+                ),
+              }))
+            }
           />
         ) : (
           <EmptyChat onCreate={() => createChat()} />
@@ -427,19 +541,27 @@ function ConversationView({
   activeModel,
   activeProvider,
   privateMode,
+  modelUnavailable,
+  onSelectModel,
 }: {
   data: AppData
   update: (change: (current: AppData) => AppData) => void
   conversation: Conversation
   activeAssistant: Assistant
-  activeModel: ModelProfile
+  activeModel?: ModelProfile
   activeProvider?: ProviderProfile
   privateMode: boolean
+  modelUnavailable: boolean
+  onSelectModel: (modelId: string | null) => void
 }) {
   const [draft, setDraft] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const controller = useRef<AbortController | null>(null)
+  const requestId = useRef<string | null>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
+  const [attachments, setAttachments] = useState<
+    Array<{ id: string; name: string; content: string }>
+  >([])
   const messages = conversation.messages
   function updateConversation(change: (chat: Conversation) => Conversation) {
     update((current) => ({
@@ -453,6 +575,7 @@ function ConversationView({
     event?.preventDefault()
     const content = draft.trim()
     if (!content || isGenerating) return
+    if (!activeModel || !activeProvider) return
     const user: ChatMessage = {
       id: uid('message'),
       conversationId: conversation.id,
@@ -481,8 +604,11 @@ function ConversationView({
       nextMessages,
       enabledTools,
       activeModel.contextLength,
+      content,
     )
     setDraft('')
+    const requestAttachments = attachments
+    setAttachments([])
     setIsGenerating(true)
     controller.current = new AbortController()
     updateConversation((chat) => ({
@@ -491,25 +617,22 @@ function ConversationView({
       updatedAt: now(),
       messages: nextMessages,
     }))
+    const currentRequestId = uid('request')
+    requestId.current = currentRequestId
     try {
       await streamChat(
         {
-          requestId: uid('request'),
-          provider: activeProvider ?? data.providers[0]!,
+          requestId: currentRequestId,
+          provider: activeProvider,
           model: activeModel,
           messages: [
             { role: 'system', content: context.system },
-            ...context.conversation.map((item) => {
-              const split = item.indexOf(': ')
-              return {
-                role: (split > 0 ? item.slice(0, split) : 'user') as 'user' | 'assistant',
-                content: split > 0 ? item.slice(split + 2) : item,
-              }
-            }),
-            { role: 'user', content },
+            ...context.conversation,
+            { role: 'user', content: context.currentUserMessage },
           ],
           tools: enabledTools,
           generation: activeAssistant.generation,
+          attachments: requestAttachments,
         },
         (streamEvent) => {
           if (
@@ -571,11 +694,27 @@ function ConversationView({
     } finally {
       setIsGenerating(false)
       controller.current = null
+      requestId.current = null
       composer.current?.focus()
     }
   }
   function stop() {
+    if (requestId.current) void cancelChat(requestId.current)
     controller.current?.abort()
+  }
+  async function attachFromHost() {
+    try {
+      const attachment = await pickAttachment()
+      if (!attachment) return
+      const content = await readAttachment(attachment.id)
+      setAttachments((current) => [
+        ...current,
+        { id: attachment.id, name: attachment.name, content },
+      ])
+      setDraft((current) => `${current}${current ? '\n\n' : ''}[Attached: ${attachment.name}]`)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Could not attach that file.')
+    }
   }
   function regenerate() {
     const lastUser = [...messages].reverse().find((message) => message.role === 'user')
@@ -603,19 +742,39 @@ function ConversationView({
           <div>
             <strong>{activeAssistant.name}</strong>
             <span>
-              {activeModel.displayName} ·{' '}
+              {modelUnavailable
+                ? 'Model unavailable'
+                : (activeModel?.displayName ?? 'Model not selected')}{' '}
+              ·{' '}
               <span className="local-text">
-                {activeProvider?.locality === 'remote' ? 'Remote' : 'Local'}
+                {labelExecutionLocation(activeModel?.executionLocation ?? 'unknown')}
               </span>
             </span>
           </div>
         </div>
         <div className="conversation-actions">
+          <label className="model-select-label">
+            <span>Model</span>
+            <select
+              value={conversation.modelProfileId ?? activeModel?.id ?? ''}
+              onChange={(event) => onSelectModel(event.target.value || null)}
+              aria-label="Conversation model"
+            >
+              <option value="">Assistant default</option>
+              {modelUnavailable && conversation.modelProfileId && (
+                <option value={conversation.modelProfileId} disabled>
+                  Model unavailable
+                </option>
+              )}
+              {data.models.filter(isChatSelectable).map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
           <button className="text-button" onClick={exportMarkdown}>
             Export
-          </button>
-          <button className="icon-button" aria-label="Conversation details">
-            ···
           </button>
         </div>
       </div>
@@ -624,7 +783,13 @@ function ConversationView({
           <div className="conversation-welcome">
             <div className="welcome-orb small">J</div>
             <h2>{activeAssistant.welcomeMessage}</h2>
-            <p>Choose a prompt below or write whatever is on your mind.</p>
+            <p>
+              {modelUnavailable
+                ? 'This chat’s model is unavailable. Choose another model or edit the assistant.'
+                : activeModel
+                  ? 'Choose a prompt below or write whatever is on your mind.'
+                  : 'No model selected. Choose or download one in Models to begin chatting.'}
+            </p>
             <div className="suggestions">
               {activeAssistant.suggestedPrompts.map((prompt) => (
                 <button key={prompt} onClick={() => setDraft(prompt)}>
@@ -653,7 +818,16 @@ function ConversationView({
       </div>
       <form className="composer-wrap" onSubmit={send}>
         <div className="composer">
-          <label className="composer-icon" aria-label="Attach a file">
+          <label
+            className="composer-icon"
+            aria-label="Attach a file"
+            onClick={(event) => {
+              if (runningInTauri) {
+                event.preventDefault()
+                void attachFromHost()
+              }
+            }}
+          >
             ＋
             <input
               type="file"
@@ -661,10 +835,14 @@ function ConversationView({
               accept=".txt,.md,.json,.csv,.toml,.yaml,.yml,.rs,.ts,.tsx,.js,.jsx,.py,.css,.html,text/plain,application/json,text/markdown"
               onChange={(event) => {
                 const file = event.target.files?.[0]
-                if (file && file.size <= 1024 * 1024)
+                if (!file || file.size > 1024 * 1024) return
+                void file.text().then((content) => {
+                  const attachment = { id: uid('attachment'), name: file.name, content }
+                  setAttachments((current) => [...current, attachment])
                   setDraft(
                     (current) => `${current}${current ? '\n\n' : ''}[Attached: ${file.name}]`,
                   )
+                })
               }}
             />
           </label>
@@ -696,7 +874,7 @@ function ConversationView({
               <button
                 type="submit"
                 className="send-button"
-                disabled={!draft.trim()}
+                disabled={!draft.trim() || !activeModel || !activeProvider}
                 aria-label="Send message"
               >
                 ↑
@@ -706,9 +884,13 @@ function ConversationView({
         </div>
         <div className="composer-meta">
           <span>
-            {privateMode
-              ? 'Private chat · not saved after this session'
-              : 'Shift + Enter for a new line'}
+            {modelUnavailable
+              ? 'Model unavailable · choose another model or edit the assistant'
+              : !activeModel
+                ? 'No model selected · choose one in Models'
+                : privateMode
+                  ? 'Private chat · not saved after this session'
+                  : 'Shift + Enter for a new line'}
           </span>
           <button
             type="button"
@@ -777,8 +959,15 @@ function MessageBubble({ message, assistant }: { message: ChatMessage; assistant
       </div>
       {!user && (
         <div className="message-tools">
+          {message.modelId && <small>Model: {message.modelId}</small>}
+          {message.usage && (
+            <small>
+              {message.usage.totalTokens
+                ? `${message.usage.totalTokens.toLocaleString()} tokens`
+                : 'Usage reported'}
+            </small>
+          )}
           <button onClick={() => void navigator.clipboard?.writeText(content)}>Copy</button>
-          <button>Good response</button>
         </div>
       )}
     </article>
@@ -1033,10 +1222,11 @@ function AssistantBuilder({
             <label>
               Model
               <select
-                value={assistant.modelProfileId}
-                onChange={(event) => set('modelProfileId', event.target.value)}
+                value={assistant.modelProfileId ?? ''}
+                onChange={(event) => set('modelProfileId', event.target.value || null)}
               >
-                {models.map((model) => (
+                <option value="">Not selected</option>
+                {models.filter(isChatSelectable).map((model) => (
                   <option key={model.id} value={model.id}>
                     {model.displayName}
                   </option>
@@ -1099,6 +1289,11 @@ function ModelsPage({
   const [apiKey, setApiKey] = useState('')
   const [checkingProvider, setCheckingProvider] = useState<string | null>(null)
   const [refreshingModels, setRefreshingModels] = useState(false)
+  const [modelReference, setModelReference] = useState('')
+  const [pullStatus, setPullStatus] = useState<string | null>(null)
+  const [pullProgress, setPullProgress] = useState<{ completed?: number; total?: number }>({})
+  const pullController = useRef<AbortController | null>(null)
+  const [ggufSelection, setGgufSelection] = useState<GgufSelection | null>(null)
   async function addProvider() {
     const providerId = uid('provider')
     const apiKeyRef = apiKey.trim() ? uid('credential') : undefined
@@ -1117,12 +1312,19 @@ function ModelsPage({
       name: providerName,
       kind: baseUrl.includes('11434') ? 'ollama' : 'openai-compatible',
       baseUrl,
-      locality: baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost') ? 'local' : 'remote',
+      locality:
+        locationForUrl(baseUrl) === 'remote'
+          ? 'remote'
+          : locationForUrl(baseUrl) === 'unknown'
+            ? 'unknown'
+            : 'local',
+      transportLocation: locationForUrl(baseUrl),
       apiKeyRef,
       enabled: true,
       status: 'unknown',
       capabilities: {
         ...(data.providers[0]?.capabilities ?? {
+          chat: 'supported',
           text: 'supported',
           streaming: 'supported',
           systemPrompt: 'supported',
@@ -1162,9 +1364,46 @@ function ModelsPage({
       setCheckingProvider(null)
     }
   }
+  function toggleProvider(provider: ProviderProfile) {
+    update((current) => ({
+      ...current,
+      providers: current.providers.map((item) =>
+        item.id === provider.id ? { ...item, enabled: !item.enabled } : item,
+      ),
+    }))
+  }
+  async function removeProvider(provider: ProviderProfile) {
+    const dependentModels = data.models.filter((model) => model.providerId === provider.id)
+    if (
+      !window.confirm(
+        `Remove ${provider.name}? ${dependentModels.length} model profile(s) will remain unavailable.`,
+      )
+    )
+      return
+    if (provider.apiKeyRef && runningInTauri) {
+      try {
+        await deleteProviderCredential(provider.apiKeyRef)
+      } catch (error) {
+        window.alert(
+          error instanceof Error ? error.message : 'Could not remove the provider credential.',
+        )
+        return
+      }
+    }
+    update((current) => ({
+      ...current,
+      providers: current.providers.filter((item) => item.id !== provider.id),
+      models: current.models.map((model) =>
+        model.providerId === provider.id ? { ...model, status: 'not-found' } : model,
+      ),
+    }))
+  }
   async function refreshModels() {
     setRefreshingModels(true)
-    const discovered: Array<{ provider: ProviderProfile; modelIds: string[] }> = []
+    const discovered: Array<{
+      provider: ProviderProfile
+      modelIds: Awaited<ReturnType<typeof listProviderModels>>
+    }> = []
     for (const provider of data.providers.filter((item) => item.enabled)) {
       try {
         discovered.push({ provider, modelIds: await listProviderModels(provider) })
@@ -1172,40 +1411,113 @@ function ModelsPage({
         // A provider can be offline while another provider remains usable.
       }
     }
-    if (discovered.length) {
-      update((current) => {
-        const models = [...current.models]
-        for (const { provider, modelIds } of discovered) {
-          for (const modelId of modelIds) {
-            const existing = models.find(
-              (model) => model.providerId === provider.id && model.modelId === modelId,
-            )
-            if (existing) {
-              existing.status = 'ready'
-              continue
-            }
-            models.push({
-              ...qwenModel,
-              id: `${provider.id}:${modelId}`,
-              providerId: provider.id,
-              modelId,
-              displayName: modelId,
-              locality: provider.locality,
-              status: 'ready',
-              capabilities: {
-                ...qwenModel.capabilities,
-                tools: 'unknown',
-                parallelTools: 'unknown',
-                thinking: 'unknown',
-              },
-              description: `Discovered from ${provider.name}. Verify capabilities before relying on them.`,
-            })
-          }
+    const normalized: ModelProfile[] = []
+    for (const { provider, modelIds } of discovered) {
+      for (const discoveredModel of modelIds) {
+        const existing = data.models.find(
+          (model) => model.providerId === provider.id && model.modelId === discoveredModel.modelId,
+        )
+        try {
+          const inspection = await inspectProviderModel(provider, discoveredModel.modelId)
+          normalized.push(modelFromInspection(provider, inspection, existing))
+        } catch {
+          normalized.push(
+            modelProfileFromDiscovery(provider, discoveredModel.modelId, {
+              ...existing,
+              displayName: discoveredModel.displayName,
+              fileSizeBytes: discoveredModel.sizeBytes,
+            }),
+          )
         }
-        return { ...current, models }
-      })
+      }
+    }
+    const refreshedProviderIds = new Set(discovered.map(({ provider }) => provider.id))
+    const discoveredModelIds = new Set(normalized.map((model) => model.id))
+    if (refreshedProviderIds.size) {
+      update((current) => ({
+        ...current,
+        providers: current.providers.map((provider) =>
+          refreshedProviderIds.has(provider.id) ? { ...provider, status: 'connected' } : provider,
+        ),
+        models: [
+          ...current.models
+            .filter((model) => !normalized.some((item) => item.id === model.id))
+            .map((model) =>
+              refreshedProviderIds.has(model.providerId) && !discoveredModelIds.has(model.id)
+                ? { ...model, status: 'not-found' as const }
+                : model,
+            ),
+          ...normalized,
+        ],
+      }))
     }
     setRefreshingModels(false)
+  }
+  async function downloadModel() {
+    const reference = modelReference.trim()
+    const provider = data.providers.find((item) => item.kind === 'ollama' && item.enabled)
+    if (!provider || !reference) return
+    pullController.current?.abort()
+    const controller = new AbortController()
+    pullController.current = controller
+    setPullStatus('Resolving')
+    setPullProgress({})
+    try {
+      await pullProviderModel(
+        provider,
+        reference,
+        (progress) => {
+          setPullStatus(progress.status)
+          setPullProgress({ completed: progress.completedBytes, total: progress.totalBytes })
+        },
+        controller.signal,
+      )
+      setPullStatus('Complete')
+      setModelReference('')
+      await refreshModels()
+    } catch (error) {
+      setPullStatus(
+        controller.signal.aborted
+          ? 'Cancelled'
+          : error instanceof Error
+            ? error.message
+            : 'Download failed',
+      )
+    } finally {
+      pullController.current = null
+    }
+  }
+  function cancelDownload() {
+    pullController.current?.abort()
+  }
+  async function chooseGguf() {
+    try {
+      const selection = await pickGguf()
+      if (selection) setGgufSelection(selection)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Could not select that GGUF file.')
+    }
+  }
+  async function deleteModel(model: ModelProfile) {
+    const provider = data.providers.find((item) => item.id === model.providerId)
+    if (!provider || !window.confirm(`Delete ${model.modelId} from ${provider.name}?`)) return
+    try {
+      await deleteProviderModel(provider, model.modelId)
+      update((current) => ({
+        ...current,
+        models: current.models.filter((item) => item.id !== model.id),
+        assistants: current.assistants.map((assistant) =>
+          assistant.modelProfileId === model.id
+            ? { ...assistant, modelProfileId: null }
+            : assistant,
+        ),
+        conversations: current.conversations.map((chat) =>
+          chat.modelProfileId === model.id ? { ...chat, modelProfileId: null } : chat,
+        ),
+      }))
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Could not delete the model.')
+    }
   }
   return (
     <>
@@ -1250,15 +1562,19 @@ function ModelsPage({
             <div className="provider-body">
               <div className="provider-title">
                 <h3>{provider.name}</h3>
-                <span className={`status-pill ${provider.locality}`}>
+                <span className={`status-pill ${provider.transportLocation}`}>
                   <i />
-                  {provider.locality === 'remote' ? 'REMOTE' : 'LOCAL'}
+                  {labelExecutionLocation(provider.transportLocation)}
                 </span>
               </div>
               <p>{provider.baseUrl}</p>
               <div className="provider-footer">
                 <span>
-                  {provider.status === 'connected' ? 'Connected' : 'Connection not checked'}
+                  {provider.enabled
+                    ? provider.status === 'connected'
+                      ? 'Connected'
+                      : 'Connection not checked'
+                    : 'Disabled'}
                 </span>
                 <button
                   className="text-button"
@@ -1266,6 +1582,12 @@ function ModelsPage({
                   disabled={checkingProvider === provider.id}
                 >
                   {checkingProvider === provider.id ? 'Checking…' : 'Test connection →'}
+                </button>
+                <button className="text-button" onClick={() => toggleProvider(provider)}>
+                  {provider.enabled ? 'Disable' : 'Enable'}
+                </button>
+                <button className="text-button" onClick={() => void removeProvider(provider)}>
+                  Remove
                 </button>
               </div>
             </div>
@@ -1286,15 +1608,60 @@ function ModelsPage({
             {refreshingModels ? 'Refreshing…' : 'Refresh list ↻'}
           </button>
         </div>
+        <div className="model-download-card">
+          <div>
+            <span className="eyebrow">Ollama model downloader</span>
+            <h3>Download a model</h3>
+            <p>Enter any compatible Ollama model reference. Juniper sends it directly to Ollama.</p>
+          </div>
+          <div className="model-download-form">
+            <input
+              value={modelReference}
+              onChange={(event) => setModelReference(event.target.value)}
+              placeholder="model-name-or-reference"
+              aria-label="Ollama model reference"
+              maxLength={256}
+              disabled={pullController.current !== null}
+            />
+            {pullController.current ? (
+              <button className="secondary-button" onClick={cancelDownload}>
+                Cancel
+              </button>
+            ) : (
+              <button
+                className="primary-button"
+                onClick={() => void downloadModel()}
+                disabled={!modelReference.trim()}
+              >
+                Download
+              </button>
+            )}
+          </div>
+          {pullStatus && (
+            <div className="pull-progress" role="status">
+              <span>{pullStatus}</span>
+              {pullProgress.total ? (
+                <span>
+                  {Math.round(((pullProgress.completed ?? 0) / pullProgress.total) * 100)}%
+                </span>
+              ) : null}
+            </div>
+          )}
+        </div>
+        {data.models.length === 0 && (
+          <div className="empty-small">
+            No models installed yet. Download or add a compatible model to get started.
+          </div>
+        )}
         {data.models.map((model) => (
           <div className="model-row" key={model.id}>
             <div className="model-symbol">✦</div>
             <div className="model-main">
               <div className="model-title">
                 <h3>{model.displayName}</h3>
-                <span className={`status-pill ${model.locality}`}>
+                <span className={`status-pill ${model.executionLocation}`}>
                   <i />
-                  {model.locality === 'remote' ? 'REMOTE' : 'LOCAL'}
+                  {labelExecutionLocation(model.executionLocation)}
                 </span>
               </div>
               <p>{model.description}</p>
@@ -1302,10 +1669,29 @@ function ModelsPage({
                 <span>Tools {labelCapability(model.capabilities.tools)}</span>
                 <span>Thinking {labelCapability(model.capabilities.thinking)}</span>
                 <span>{model.contextLength?.toLocaleString() ?? '—'} context</span>
+                <span>
+                  {model.compatibilityStatus === 'not-chat-compatible'
+                    ? 'Not chat-compatible'
+                    : 'Chat status unknown or ready'}
+                </span>
               </div>
+              {data.settings.developerMode && (
+                <details className="model-details">
+                  <summary>Developer details</summary>
+                  <small>
+                    {[model.family, model.architecture, model.parameterSize, model.quantization]
+                      .filter(Boolean)
+                      .join(' · ') || 'No additional runtime metadata'}
+                    {model.template ? ` · template: ${model.template}` : ''}
+                    {model.rawCapabilities?.length
+                      ? ` · capabilities: ${model.rawCapabilities.join(', ')}`
+                      : ''}
+                  </small>
+                </details>
+              )}
             </div>
             <div className="model-right">
-              <strong>{model.status === 'ready' ? 'Ready' : 'Not checked'}</strong>
+              <strong>{modelStatusLabel(model)}</strong>
               <small>
                 {
                   data.assistants.filter((assistant) => assistant.modelProfileId === model.id)
@@ -1313,6 +1699,12 @@ function ModelsPage({
                 }{' '}
                 assistants
               </small>
+              {data.providers.find((provider) => provider.id === model.providerId)?.kind ===
+                'ollama' && (
+                <button className="text-button" onClick={() => void deleteModel(model)}>
+                  Delete
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -1320,18 +1712,18 @@ function ModelsPage({
           <span>⌁</span>
           <div>
             <strong>Bring a local GGUF model</strong>
-            <small>Desktop runtime manager · validate, scope, and launch llama-server</small>
+            <small>
+              {ggufSelection
+                ? `${ggufSelection.name} · ${(ggufSelection.sizeBytes / 1_000_000).toFixed(1)} MB selected`
+                : 'Desktop picker validates and scopes the selected file'}
+            </small>
           </div>
-          <button
-            className="secondary-button"
-            onClick={() =>
-              window.alert(
-                'The desktop file picker will be available when running the Tauri shell.',
-              )
-            }
-          >
-            Choose .gguf
-          </button>
+          <div>
+            <button className="secondary-button" onClick={() => void chooseGguf()}>
+              {ggufSelection ? 'Choose another .gguf' : 'Choose .gguf'}
+            </button>
+            <small className="muted-note">Managed llama.cpp execution is not enabled yet.</small>
+          </div>
         </div>
       </div>
     </>
@@ -1339,6 +1731,37 @@ function ModelsPage({
 }
 function labelCapability(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function isChatSelectable(model: ModelProfile): boolean {
+  return model.status === 'ready' && model.compatibilityStatus !== 'not-chat-compatible'
+}
+
+function modelStatusLabel(model: ModelProfile): string {
+  if (model.status === 'not-found') return 'Unavailable'
+  if (model.compatibilityStatus === 'not-chat-compatible') return 'Not chat-compatible'
+  if (model.compatibilityStatus === 'unknown') return 'Compatibility unknown'
+  return 'Ready'
+}
+
+function labelExecutionLocation(value: string): string {
+  if (value === 'on-device') return 'ON DEVICE'
+  if (value === 'local-network') return 'LOCAL NETWORK'
+  if (value === 'remote') return 'REMOTE'
+  return 'UNKNOWN'
+}
+
+function locationForUrl(value: string): 'on-device' | 'local-network' | 'remote' | 'unknown' {
+  try {
+    const host = new URL(value).hostname.toLowerCase()
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return 'on-device'
+    if (host.endsWith('.local') || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) {
+      return 'local-network'
+    }
+    return 'remote'
+  } catch {
+    return 'unknown'
+  }
 }
 
 function ToolsPage({
@@ -1349,6 +1772,7 @@ function ToolsPage({
   update: (change: (current: AppData) => AppData) => void
 }) {
   const [selected, setSelected] = useState<string | null>(null)
+  const availableTools = builtinTools.filter((tool) => tool.risk === 'automatic-safe')
   return (
     <>
       <PageHeading
@@ -1363,12 +1787,13 @@ function ToolsPage({
           <strong>Permission boundary is active</strong>
           <p>
             Attached files, model output, MCP results, and imported assistants are untrusted data.
-            They cannot grant permissions.
+            They cannot grant permissions. User-data tools remain disabled until their permission
+            dialog is wired into the native loop.
           </p>
         </div>
       </div>
       <div className="tool-grid">
-        {builtinTools.map((tool) => (
+        {availableTools.map((tool) => (
           <div className={`tool-card ${selected === tool.name ? 'expanded' : ''}`} key={tool.name}>
             <div className="tool-card-top">
               <div className="tool-icon">
@@ -1605,11 +2030,14 @@ function SettingsPage({
             >
               Open developer mode <span>→</span>
             </button>
-            <button>
-              Runtime and process limits <span>→</span>
+            <button disabled title="Runtime limits are managed by the provider in this release">
+              Runtime and process limits <small>Unavailable</small>
             </button>
-            <button>
-              MCP servers <span>→</span>
+            <button
+              disabled
+              title="MCP is an explicitly unavailable advanced feature in this release"
+            >
+              MCP servers <small>Unavailable</small>
             </button>
           </div>
         </section>
@@ -1676,11 +2104,16 @@ function SettingsPage({
 function PrivacyPage({
   data,
   update,
+  activeModel,
+  activeProvider,
 }: {
   data: AppData
   update: (change: (current: AppData) => AppData) => void
+  activeModel?: ModelProfile
+  activeProvider?: ProviderProfile
 }) {
-  const provider = data.providers[0]
+  const model = activeModel
+  const provider = activeProvider
   function clearChats() {
     if (window.confirm('Clear all saved chats?'))
       update((current) => ({ ...current, conversations: [] }))
@@ -1703,7 +2136,7 @@ function PrivacyPage({
             <span className="eyebrow">Telemetry</span>
             <h2>Off</h2>
             <p>
-              Juniper v0.1 has no analytics, advertising, crash reporting, or automatic conversation
+              Juniper v0.2 has no analytics, advertising, crash reporting, or automatic conversation
               uploads.
             </p>
           </div>
@@ -1711,22 +2144,28 @@ function PrivacyPage({
         <section className="privacy-card">
           <span className="eyebrow">Current route</span>
           <div className="privacy-stat">
-            <strong>{provider?.name ?? 'No provider'}</strong>
-            <span className={`status-pill ${provider?.locality ?? 'unknown'}`}>
+            <strong>{model?.displayName ?? 'No model selected'}</strong>
+            <span className={`status-pill ${model?.executionLocation ?? 'unknown'}`}>
               <i />
-              {provider?.locality === 'remote' ? 'REMOTE' : 'LOCAL'}
+              {labelExecutionLocation(model?.executionLocation ?? 'unknown')}
             </span>
           </div>
           <p>
-            {provider?.locality === 'remote'
-              ? 'Prompts sent to this provider leave the device. This is explicit and visible.'
-              : 'Prompts remain on this machine while using this local provider.'}
+            {model?.executionLocation === 'remote'
+              ? `Prompts sent to ${provider?.name ?? 'this provider'} leave the device. This is explicit and visible.`
+              : model?.executionLocation === 'on-device'
+                ? 'Prompts remain on this device while using this model.'
+                : model?.executionLocation === 'local-network'
+                  ? 'Prompts are sent to another device on your local network.'
+                  : 'Execution location is UNKNOWN until the provider reports enough information.'}
           </p>
         </section>
         <section className="privacy-card">
           <span className="eyebrow">Persistence</span>
           <div className="privacy-stat">
-            <strong>{data.conversations.length} saved chats</strong>
+            <strong>
+              {data.conversations.filter((chat) => !chat.privateChat).length} saved chats
+            </strong>
             <span>{data.memories.filter((memory) => memory.enabled).length} memories on</span>
           </div>
           <p>Private chats are not written to the persistent data store after this session.</p>
@@ -1747,7 +2186,7 @@ function PrivacyPage({
                 JSON.stringify(
                   {
                     format: 'juniper-export',
-                    version: 1,
+                    version: 2,
                     ...data,
                     providers: data.providers.map(redactProvider),
                   },
@@ -1795,7 +2234,7 @@ function DiagnosticsPage({ data }: { data: AppData }) {
           </div>
           {Object.entries({
             ...diagnostics,
-            database: 'SQLite schema v1',
+            database: 'SQLite schema v2',
             telemetry: 'Off',
             models: `${data.models.length} profile(s)`,
           }).map(([key, value]) => (
@@ -1819,15 +2258,15 @@ function DiagnosticsPage({ data }: { data: AppData }) {
                 <strong>{provider.name}</strong>
                 <small>{provider.baseUrl}</small>
               </div>
-              <span className={`status-pill ${provider.locality}`}>
+              <span className={`status-pill ${provider.transportLocation}`}>
                 <i />
-                {provider.locality}
+                {labelExecutionLocation(provider.transportLocation)}
               </span>
             </div>
           ))}
           <div className="diagnostic-note">
-            Qwen3 8B is the reference qualification profile. Real-model qualification is pending a
-            local Ollama installation.
+            Model qualification is capability-aware. Real generation qualification is pending until
+            the owner chooses an installed model.
           </div>
         </section>
       </div>
@@ -1837,6 +2276,21 @@ function DiagnosticsPage({ data }: { data: AppData }) {
 
 function Onboarding({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(0)
+  const [runtimeStatus, setRuntimeStatus] = useState('Checking for supported local runtimes…')
+  useEffect(() => {
+    if (!runningInTauri) {
+      setRuntimeStatus('Browser development preview')
+      return
+    }
+    void checkProviderConnection(defaultProvider)
+      .then(() => listProviderModels(defaultProvider))
+      .then((models) =>
+        setRuntimeStatus(
+          `Ollama detected · ${models.length} installed model${models.length === 1 ? '' : 's'}`,
+        ),
+      )
+      .catch(() => setRuntimeStatus('Ollama not detected · add a provider in Models'))
+  }, [])
   const steps = [
     {
       eyebrow: 'Welcome to Juniper',
@@ -1853,7 +2307,7 @@ function Onboarding({ onDone }: { onDone: () => void }) {
     {
       eyebrow: 'Start with a model',
       title: 'Bring the intelligence you trust.',
-      copy: 'Juniper ships with an Ollama profile and a Qwen3 8B reference profile. You can add providers later in Models.',
+      copy: `${runtimeStatus}. Juniper works with compatible models through supported runtimes; add one in Models when you are ready.`,
       art: '◈',
     },
     {
