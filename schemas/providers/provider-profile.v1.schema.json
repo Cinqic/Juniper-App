@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Juniper provider profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "kind", "baseUrl", "locality", "enabled"],
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "kind": { "enum": ["ollama", "openai-compatible", "llama-cpp", "fake"] },
+    "baseUrl": { "type": "string", "format": "uri" },
+    "locality": { "enum": ["local", "remote", "unknown"] },
+    "enabled": { "type": "boolean" },
+    "apiKeyRef": { "type": "string", "maxLength": 160 }
+  }
+}

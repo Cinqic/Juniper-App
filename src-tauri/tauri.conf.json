@@ -1,0 +1,37 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Juniper",
+  "version": "0.1.0-rc.1",
+  "identifier": "com.cinqic.juniper",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Juniper",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 360,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "category": "Productivity",
+    "shortDescription": "Your AI, your models, your machine.",
+    "longDescription": "A local-first AI environment that turns compatible models into personal Juniper assistants.",
+    "publisher": "Cinqic",
+    "targets": ["deb", "appimage", "msi", "dmg", "app", "android"]
+  }
+}

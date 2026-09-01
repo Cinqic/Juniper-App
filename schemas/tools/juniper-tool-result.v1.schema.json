@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Juniper host-authored tool result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "callId", "name", "status", "result", "error"],
+  "properties": {
+    "protocolVersion": { "const": "juniper-tool-protocol-v1" },
+    "callId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "name": { "type": "string" },
+    "status": { "enum": ["success", "error", "denied", "unavailable", "unsupported", "cancelled"] },
+    "result": { "type": ["object", "null"] },
+    "error": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string", "maxLength": 1000 }
+      }
+    }
+  }
+}

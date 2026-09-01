@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Juniper user data export",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "format",
+    "version",
+    "assistants",
+    "conversations",
+    "memories",
+    "models",
+    "providers"
+  ],
+  "properties": {
+    "format": { "const": "juniper-export" },
+    "version": { "const": 1 },
+    "assistants": { "type": "array" },
+    "conversations": { "type": "array" },
+    "memories": { "type": "array" },
+    "models": { "type": "array" },
+    "providers": { "type": "array" }
+  }
+}

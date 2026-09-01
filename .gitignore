@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.vite/
+.env
+.env.*
+!.env.example
+src-tauri/target/
+src-tauri/gen/
+*.log
+*.hold
+*.db
+*.db-shm
+*.db-wal
+models/
+runtime/
+.DS_Store

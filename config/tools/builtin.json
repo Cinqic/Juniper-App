@@ -1,0 +1,16 @@
+{
+  "protocolVersion": "juniper-tool-protocol-v1",
+  "resultAuthority": "host-only",
+  "tools": [
+    "calculator.evaluate",
+    "datetime.current",
+    "unit.convert",
+    "memory.list",
+    "memory.save",
+    "memory.delete",
+    "chat.search",
+    "file.read",
+    "file.metadata",
+    "system.info"
+  ]
+}

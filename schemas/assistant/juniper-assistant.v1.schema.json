@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Cinqic/Juniper-App/schemas/assistant/juniper-assistant.v1.schema.json",
+  "title": "Juniper assistant file",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "version", "assistant"],
+  "properties": {
+    "format": { "const": "juniper-assistant" },
+    "version": { "const": 1 },
+    "assistant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "schemaVersion",
+        "name",
+        "description",
+        "avatar",
+        "accent",
+        "modelProfileId",
+        "systemPrompt",
+        "personality",
+        "responseLength",
+        "generation",
+        "toolPolicy",
+        "memoryPolicy",
+        "welcomeMessage",
+        "suggestedPrompts",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "schemaVersion": { "const": 1 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 300 },
+        "avatar": { "type": "string", "maxLength": 2 },
+        "accent": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "modelProfileId": { "type": "string", "minLength": 1 },
+        "systemPrompt": { "type": "string", "maxLength": 20000 },
+        "personality": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["warmth", "directness", "playfulness", "detail", "creativity", "formality"],
+          "properties": {
+            "warmth": { "type": "number", "minimum": 0, "maximum": 100 },
+            "directness": { "type": "number", "minimum": 0, "maximum": 100 },
+            "playfulness": { "type": "number", "minimum": 0, "maximum": 100 },
+            "detail": { "type": "number", "minimum": 0, "maximum": 100 },
+            "creativity": { "type": "number", "minimum": 0, "maximum": 100 },
+            "formality": { "type": "number", "minimum": 0, "maximum": 100 }
+          }
+        },
+        "responseLength": { "enum": ["concise", "balanced", "detailed"] },
+        "generation": { "type": "object" },
+        "toolPolicy": { "enum": ["safe-automatic", "ask", "disabled"] },
+        "memoryPolicy": { "enum": ["off", "curated"] },
+        "welcomeMessage": { "type": "string", "maxLength": 500 },
+        "suggestedPrompts": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "type": "string", "maxLength": 200 }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

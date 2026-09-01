@@ -1,0 +1,24 @@
+# Dependency and platform research
+
+Research date: 2026-09-01. Choices below are pinned in `package.json` and
+`src-tauri/Cargo.toml`; they must be rechecked before a future release.
+
+| Area              | Decision and evidence                                                                                                                                                                                                                                                                                                                                 |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application shell | Tauri 2. Tauri documents one frontend architecture for desktop and mobile and a capability system for narrowing webview privileges. See https://v2.tauri.app/start/ and https://v2.tauri.app/security/capabilities/.                                                                                                                                  |
+| Frontend          | React 19 + TypeScript strict mode + Vite 7. React’s official docs recommend a current framework or a build-from-scratch setup; Vite provides the dev server/build pipeline. TypeScript `strict` enables the strictness family. See https://react.dev/learn/installation, https://vite.dev/guide/, and https://www.typescriptlang.org/tsconfig/strict. |
+| Native            | Rust 2024 edition with Rust 1.90 minimum, matching the current Rust book baseline. See https://doc.rust-lang.org/book/.                                                                                                                                                                                                                               |
+| Persistence       | SQLite through `rusqlite`, with foreign keys explicitly enabled on each connection and a migration table. SQLite documents that foreign-key enforcement is off by default unless enabled with `PRAGMA foreign_keys = ON`. See https://www.sqlite.org/foreignkeys.html.                                                                                |
+| Ollama            | Ollama’s OpenAI-compatible `/v1/chat/completions` API supports streaming and tools; the native API also exposes thinking and usage metadata. See https://docs.ollama.com/api/openai-compatibility and https://docs.ollama.com/api/usage.                                                                                                              |
+| llama.cpp         | Use its OpenAI-compatible server interface. The official server docs describe streaming chat completions, function calling with `--jinja`, and reasoning metadata. See https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md.                                                                                                      |
+| Secrets           | Desktop credentials use the OS credential store through the Rust `keyring` abstraction. No plaintext provider secret is placed in app data or frontend state. The mobile boundary is explicit and currently returns an unsupported result until a platform vault is integrated.                                                                       |
+| MCP               | The client boundary is versioned and intentionally advanced-only. The current official specification is `2026-07-28`; v0.1 keeps MCP registration out of startup-critical paths. See https://blog.modelcontextprotocol.io/posts/2026-07-28/ and https://modelcontextprotocol.io/specification/.                                                       |
+| Accessibility     | WCAG 2.2 is the guidance target. Keyboard use, focus, semantic controls, contrast, reduced motion, labels, and touch sizing are release concerns. See https://www.w3.org/TR/WCAG22/.                                                                                                                                                                  |
+| Android           | Tauri’s Android prerequisites and Android’s build docs were checked. Android compilation is not claimed until a JDK/SDK/NDK environment executes it. See https://tauri.app/start/prerequisites/ and https://developer.android.com/build.                                                                                                              |
+
+## Version discipline
+
+Dependencies are pinned to explicit versions and the checked-in lockfile was
+generated with pnpm 11.19.0 using `pnpm install --lockfile-only --ignore-scripts`.
+That generation is dependency-resolution evidence, not a build or runtime
+result; CI still installs and validates on a clean runner.

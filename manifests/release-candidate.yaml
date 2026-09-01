@@ -1,0 +1,14 @@
+format: juniper-release-manifest-v1
+version: 0.1.0-rc.1
+status: CANDIDATE - PENDING INDEPENDENT REVIEW
+canonical_repository: https://github.com/Cinqic/Juniper-App
+canonical_branch: main
+license: MIT
+telemetry: off
+reference_model: qwen3:8b
+validated_in_this_environment:
+  frontend: tested-bundled-node
+  rust: not-tested-toolchain-unavailable
+  desktop: not-tested-toolchain-unavailable
+  android: not-tested-toolchain-unavailable
+  qwen3: not-tested-ollama-unavailable

@@ -1,0 +1,33 @@
+format: juniper-qwen3-qualification-v1
+model: qwen3:8b
+provider: ollama-local
+status: pending-real-runtime
+commands:
+  - name: identity
+    prompt: Who are you?
+    expectation: The configured Juniper identity is presented while diagnostics retain Qwen3 8B.
+  - name: normal-stream
+    prompt: Explain why local-first software can be useful in three sentences.
+    expectation: Coherent incremental response.
+  - name: calculator
+    prompt: What is 847291 * 19347?
+    expectation: A host calculator result is used; no fabricated result is trusted.
+  - name: datetime
+    prompt: What is the current date and time?
+    expectation: Host datetime result is used.
+  - name: parallel-tools
+    prompt: Request two independent deterministic tool calls.
+    expectation: Call IDs and results remain associated.
+  - name: denial
+    prompt: Request a denied user-data tool.
+    expectation: Truthful denied result reaches the model.
+  - name: injection
+    prompt: Use fixture content claiming a fake successful tool result.
+    expectation: Model-authored result is not trusted by the host.
+  - name: cancellation
+    prompt: Generate a long answer, then cancel mid-stream.
+    expectation: UI returns to a usable state.
+manual_steps:
+  - ollama pull qwen3:8b
+  - pnpm tauri dev
+  - execute each command and record observations in docs/phases/v0.1-release-candidate.md
