@@ -11,9 +11,11 @@ function textPart(message: ChatMessage): string {
 export function MessageBubble({
   message,
   assistant,
+  developerMode = false,
 }: {
   message: ChatMessage
   assistant: Assistant
+  developerMode?: boolean
 }) {
   const user = message.role === 'user'
   const content = textPart(message)
@@ -23,7 +25,8 @@ export function MessageBubble({
     .join('')
   const toolCalls = message.parts.filter((part) => part.type === 'tool-call')
   const toolResults = message.parts.filter((part) => part.type === 'tool-result')
-  const error = message.parts.find((part) => part.type === 'error')?.text
+  const errorPart = message.parts.find((part) => part.type === 'error')
+  const error = errorPart?.text
   return (
     <article className={`message-row ${user ? 'user' : 'assistant'}`}>
       <div className="message-label">
@@ -64,7 +67,16 @@ export function MessageBubble({
             <p>{part.text}</p>
           </div>
         ))}
-        {error ? <p>{error}</p> : content ? <Markdown content={content} /> : null}
+        {error ? (
+          <>
+            <p>{error}</p>
+            {developerMode && errorPart?.metadata?.errorCode && (
+              <small>Internal code: {errorPart.metadata.errorCode}</small>
+            )}
+          </>
+        ) : content ? (
+          <Markdown content={content} />
+        ) : null}
       </div>
       {!user && (
         <div className="message-tools">

@@ -227,6 +227,16 @@ pub struct ModelPullProgress {
     pub error: Option<RuntimeError>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeLogEntry {
+    pub timestamp: String,
+    pub event: String,
+    pub code: Option<String>,
+    pub provider_kind: Option<String>,
+    pub model_id: Option<String>,
+}
+
 fn default_execution_location() -> String {
     "unknown".into()
 }

@@ -7,6 +7,7 @@ import {
   deleteProviderCredential,
   deleteProviderModel,
   getDiagnostics,
+  getRuntimeLogs,
   importGguf,
   inspectProviderModel,
   listProviderModels,
@@ -18,7 +19,14 @@ import {
   saveProviderCredential,
 } from '../lib/runtime'
 import { PageHeading } from './ui'
-import type { AppData, Assistant, GgufSelection, ModelProfile, ProviderProfile } from '../types'
+import type {
+  AppData,
+  Assistant,
+  GgufSelection,
+  ModelProfile,
+  ProviderProfile,
+  RuntimeLogEntry,
+} from '../types'
 
 function uid(prefix: string): string {
   return `${prefix}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`
@@ -593,11 +601,13 @@ export function ModelsPage({
       provider: ProviderProfile
       modelIds: Awaited<ReturnType<typeof listProviderModels>>
     }> = []
+    const failedProviderIds = new Set<string>()
     for (const provider of data.providers.filter((item) => item.enabled)) {
       try {
         discovered.push({ provider, modelIds: await listProviderModels(provider) })
       } catch {
         // A provider can be offline while another provider remains usable.
+        failedProviderIds.add(provider.id)
       }
     }
     const normalized: ModelProfile[] = []
@@ -622,11 +632,15 @@ export function ModelsPage({
     }
     const refreshedProviderIds = new Set(discovered.map(({ provider }) => provider.id))
     const discoveredModelIds = new Set(normalized.map((model) => model.id))
-    if (refreshedProviderIds.size) {
+    if (refreshedProviderIds.size || failedProviderIds.size) {
       update((current) => ({
         ...current,
         providers: current.providers.map((provider) =>
-          refreshedProviderIds.has(provider.id) ? { ...provider, status: 'connected' } : provider,
+          refreshedProviderIds.has(provider.id)
+            ? { ...provider, status: 'connected' }
+            : failedProviderIds.has(provider.id)
+              ? { ...provider, status: 'offline' }
+              : provider,
         ),
         models: [
           ...current.models
@@ -642,8 +656,8 @@ export function ModelsPage({
     }
     setRefreshingModels(false)
   }
-  async function downloadModel() {
-    const reference = modelReference.trim()
+  async function downloadModel(modelReferenceOverride?: string) {
+    const reference = (modelReferenceOverride ?? modelReference).trim()
     const provider = data.providers.find((item) => item.kind === 'ollama' && item.enabled)
     if (!provider || !reference) return
     pullController.current?.abort()
@@ -727,14 +741,8 @@ export function ModelsPage({
       await deleteProviderModel(provider, model.modelId)
       update((current) => ({
         ...current,
-        models: current.models.filter((item) => item.id !== model.id),
-        assistants: current.assistants.map((assistant) =>
-          assistant.modelProfileId === model.id
-            ? { ...assistant, modelProfileId: null }
-            : assistant,
-        ),
-        conversations: current.conversations.map((chat) =>
-          chat.modelProfileId === model.id ? { ...chat, modelProfileId: null } : chat,
+        models: current.models.map((item) =>
+          item.id === model.id ? { ...item, status: 'not-found' } : item,
         ),
       }))
     } catch (error) {
@@ -919,6 +927,7 @@ export function ModelsPage({
                 <span>Tools {labelCapability(model.capabilities.tools)}</span>
                 <span>Thinking {labelCapability(model.capabilities.thinking)}</span>
                 <span>{model.contextLength?.toLocaleString() ?? '—'} context</span>
+                <span>Estimated fit {modelFitLabel(model, hostMemory)}</span>
                 <span>
                   {model.compatibilityStatus === 'not-chat-compatible'
                     ? 'Not chat-compatible'
@@ -955,9 +964,19 @@ export function ModelsPage({
               </small>
               {data.providers.find((provider) => provider.id === model.providerId)?.kind ===
                 'ollama' && (
-                <button className="text-button" onClick={() => void deleteModel(model)}>
-                  Delete
-                </button>
+                <>
+                  {model.status === 'not-found' && (
+                    <button
+                      className="text-button"
+                      onClick={() => void downloadModel(model.modelId)}
+                    >
+                      Re-download
+                    </button>
+                  )}
+                  <button className="text-button" onClick={() => void deleteModel(model)}>
+                    Delete
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -1021,6 +1040,37 @@ export function ModelsPage({
 }
 function labelCapability(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function parseMemoryBytes(value: string | null): number | undefined {
+  if (!value) return undefined
+  const match = value.trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*(kb|mb|gb|tb)$/i)
+  if (!match) return undefined
+  const amount = Number(match[1])
+  const unit = match[2]?.toLowerCase()
+  const multiplier =
+    unit === 'kb'
+      ? 1024
+      : unit === 'mb'
+        ? 1024 ** 2
+        : unit === 'gb'
+          ? 1024 ** 3
+          : unit === 'tb'
+            ? 1024 ** 4
+            : undefined
+  return multiplier && Number.isFinite(amount) ? amount * multiplier : undefined
+}
+
+export function modelFitLabel(model: ModelProfile, hostMemory: string | null): string {
+  const hostBytes = parseMemoryBytes(hostMemory)
+  if (!hostBytes || !model.fileSizeBytes || model.fileSizeBytes <= 0) return 'Unknown'
+  const estimatedBytes = model.fileSizeBytes * 1.35
+  const ratio = estimatedBytes / hostBytes
+  if (ratio <= 0.35) return 'Excellent'
+  if (ratio <= 0.6) return 'Good'
+  if (ratio <= 0.85) return 'May use system RAM'
+  if (ratio <= 1) return 'Memory constrained'
+  return 'Not recommended'
 }
 
 export function isChatSelectable(model: ModelProfile): boolean {
@@ -1421,8 +1471,10 @@ export function PrivacyPage({
 
 export function DiagnosticsPage({ data }: { data: AppData }) {
   const [diagnostics, setDiagnostics] = useState<Record<string, string>>({})
+  const [logs, setLogs] = useState<RuntimeLogEntry[]>([])
   useEffect(() => {
     void getDiagnostics().then(setDiagnostics)
+    void getRuntimeLogs().then(setLogs)
   }, [])
   return (
     <>
@@ -1476,6 +1528,32 @@ export function DiagnosticsPage({ data }: { data: AppData }) {
             Model qualification is capability-aware. Real generation qualification is pending until
             the owner chooses an installed model.
           </div>
+        </section>
+        <section className="diagnostics-card">
+          <div className="section-heading">
+            <span className="section-number">03</span>
+            <div>
+              <h2>Runtime events</h2>
+              <p>Bounded metadata only; private content and credentials are never recorded.</p>
+            </div>
+          </div>
+          {logs.length === 0 ? (
+            <div className="diagnostic-note">
+              No native runtime events recorded in this session.
+            </div>
+          ) : (
+            <div className="diagnostic-log" role="log" aria-label="Runtime events">
+              {[...logs].reverse().map((entry, index) => (
+                <div className="diagnostic-row" key={`${entry.timestamp}-${entry.event}-${index}`}>
+                  <span>{entry.event.replaceAll('_', ' ')}</span>
+                  <strong>
+                    {[entry.providerKind, entry.modelId, entry.code].filter(Boolean).join(' · ') ||
+                      'ok'}
+                  </strong>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       </div>
     </>

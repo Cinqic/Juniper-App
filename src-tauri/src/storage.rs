@@ -439,6 +439,87 @@ mod tests {
     }
 
     #[test]
+    fn migration_preserves_a_v1_database_and_adds_v2_and_v3_state() -> Result<()> {
+        let connection = Connection::open_in_memory()?;
+        connection.execute_batch(
+            r#"
+            CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+            INSERT INTO schema_migrations(version, applied_at) VALUES(1, '2026-01-01');
+            CREATE TABLE assistants (
+                id TEXT PRIMARY KEY,
+                schema_version INTEGER NOT NULL,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE provider_profiles (
+                id TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE model_profiles (
+                id TEXT PRIMARY KEY,
+                provider_id TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE conversations (
+                id TEXT PRIMARY KEY,
+                assistant_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                private_chat INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            INSERT INTO assistants(id, schema_version, payload, created_at, updated_at)
+            VALUES('assistant-v1', 1, '{}', '2026-01-01', '2026-01-01');
+            INSERT INTO conversations(id, assistant_id, title, created_at, updated_at)
+            VALUES('chat-v1', 'assistant-v1', 'Preserved', '2026-01-01', '2026-01-01');
+            "#,
+        )?;
+
+        migrate(&connection)?;
+        let version: i64 =
+            connection.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })?;
+        let title: String = connection.query_row(
+            "SELECT title FROM conversations WHERE id = 'chat-v1'",
+            [],
+            |row| row.get(0),
+        )?;
+        let model_override_column: String = connection.query_row(
+            "SELECT name FROM pragma_table_info('conversations') WHERE name = 'model_profile_id'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(version, SCHEMA_VERSION);
+        assert_eq!(title, "Preserved");
+        assert_eq!(model_override_column, "model_profile_id");
+        assert!(
+            connection
+                .query_row::<String, _, _>(
+                    "SELECT sql FROM sqlite_master WHERE name = 'app_state'",
+                    [],
+                    |row| row.get(0)
+                )
+                .is_ok()
+        );
+        assert!(
+            connection
+                .query_row::<String, _, _>(
+                    "SELECT sql FROM sqlite_master WHERE name = 'permissions'",
+                    [],
+                    |row| row.get(0)
+                )
+                .is_ok()
+        );
+        Ok(())
+    }
+
+    #[test]
     fn app_state_round_trips_and_private_chats_are_excluded() -> Result<()> {
         let suffix = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

@@ -22,6 +22,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::system_info,
+            commands::runtime_logs,
             commands::app_data_directory,
             commands::load_app_data,
             commands::save_app_data,

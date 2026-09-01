@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { initialAppData, modelProfileFromDiscovery } from '../lib/defaults'
 import App from './App'
+import { modelFitLabel } from './pages'
 
 function buttonByText(container: HTMLElement, text: string): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll('button')).find((item) =>
@@ -131,5 +132,52 @@ describe('Juniper application shell', () => {
     const saved = JSON.parse(localStorage.getItem('juniper.app-data.v1') ?? '{}')
     expect(saved.conversations[0].modelProfileId).toBe(modelB.id)
     expect(saved.conversations[0].messages[0].modelId).toBe(modelA.id)
+  })
+
+  it('shows the selected conversation model in the privacy route', async () => {
+    const data = initialAppData()
+    data.settings.onboardingComplete = true
+    const provider = data.providers[0]!
+    const modelA = modelProfileFromDiscovery(provider, 'route-model-a', {
+      displayName: 'Route Model A',
+      status: 'ready',
+      compatibilityStatus: 'chat-compatible',
+    })
+    const modelB = modelProfileFromDiscovery(provider, 'route-model-b', {
+      displayName: 'Route Model B',
+      status: 'ready',
+      compatibilityStatus: 'chat-compatible',
+    })
+    data.models = [modelA, modelB]
+    data.assistants[0] = { ...data.assistants[0]!, modelProfileId: modelA.id }
+    data.conversations = [
+      {
+        id: 'chat-route',
+        title: 'Route check',
+        assistantId: data.assistants[0]!.id,
+        createdAt: '',
+        updatedAt: '',
+        modelProfileId: modelB.id,
+        messages: [],
+      },
+    ]
+    localStorage.setItem('juniper.app-data.v1', JSON.stringify(data))
+    act(() => root.unmount())
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<App />)
+    })
+
+    await act(async () => buttonByText(container, 'Privacy center').click())
+    expect(container.textContent).toContain('Route Model B')
+    expect(container.textContent).not.toContain('Route Model A')
+  })
+
+  it('labels model fit as an estimate and stays unknown without runtime data', () => {
+    const provider = initialAppData().providers[0]!
+    const model = modelProfileFromDiscovery(provider, 'fit-model', { fileSizeBytes: 1024 })
+    expect(modelFitLabel(model, null)).toBe('Unknown')
+    expect(modelFitLabel(model, '16 GB')).toBe('Excellent')
+    expect(modelFitLabel(model, '1 KB')).toBe('Not recommended')
   })
 })

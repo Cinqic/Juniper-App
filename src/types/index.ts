@@ -296,6 +296,14 @@ export interface ModelPullProgress {
   error?: { code: string; message: string }
 }
 
+export interface RuntimeLogEntry {
+  timestamp: string
+  event: string
+  code?: string
+  providerKind?: string
+  modelId?: string
+}
+
 export interface NormalizedToolCall {
   id: string
   name: string

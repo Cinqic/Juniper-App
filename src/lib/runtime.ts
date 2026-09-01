@@ -12,6 +12,7 @@ import type {
   ModelPullProgress,
   PermissionDecision,
   ProviderProfile,
+  RuntimeLogEntry,
 } from '../types'
 import { normalizeAppData } from './storage'
 
@@ -237,6 +238,11 @@ export async function getDiagnostics(): Promise<Record<string, string>> {
     provider: 'Not connected',
     telemetry: 'Off',
   }
+}
+
+export async function getRuntimeLogs(): Promise<RuntimeLogEntry[]> {
+  if (runningInTauri) return invoke<RuntimeLogEntry[]>('runtime_logs')
+  return []
 }
 
 export function modelFromInspection(

@@ -1,8 +1,10 @@
-use crate::domain::{Attachment, ChatRequest, DiscoveredModel, GgufSelection, ModelInspection};
+use crate::domain::{
+    Attachment, ChatRequest, DiscoveredModel, GgufSelection, ModelInspection, RuntimeLogEntry,
+};
 use crate::{providers, tools};
 use serde_json::{Value, json};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     io::Read,
     path::PathBuf,
     process::Stdio,
@@ -19,6 +21,53 @@ pub struct AppState {
     pub attachments: Mutex<HashMap<String, PathBuf>>,
     pub gguf_files: Mutex<HashMap<String, PathBuf>>,
     pub permission_waiters: Mutex<HashMap<String, oneshot::Sender<String>>>,
+    pub runtime_logs: Mutex<VecDeque<RuntimeLogEntry>>,
+}
+
+pub const MAX_RUNTIME_LOGS: usize = 200;
+
+fn bounded_log_label(value: Option<&str>) -> Option<String> {
+    let value = value?;
+    let bounded: String = value
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(128)
+        .collect();
+    (!bounded.is_empty()).then_some(bounded)
+}
+
+pub fn record_runtime_log(
+    state: &AppState,
+    event: &str,
+    code: Option<&str>,
+    provider_kind: Option<&str>,
+    model_id: Option<&str>,
+) {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs().to_string())
+        .unwrap_or_else(|_| "0".into());
+    if let Ok(mut logs) = state.runtime_logs.lock() {
+        logs.push_back(RuntimeLogEntry {
+            timestamp,
+            event: bounded_log_label(Some(event)).unwrap_or_else(|| "runtime.event".into()),
+            code: bounded_log_label(code),
+            provider_kind: bounded_log_label(provider_kind),
+            model_id: bounded_log_label(model_id),
+        });
+        while logs.len() > MAX_RUNTIME_LOGS {
+            logs.pop_front();
+        }
+    }
+}
+
+#[tauri::command]
+pub fn runtime_logs(state: State<'_, AppState>) -> Vec<RuntimeLogEntry> {
+    state
+        .runtime_logs
+        .lock()
+        .map(|logs| logs.iter().cloned().collect())
+        .unwrap_or_default()
 }
 
 #[derive(Clone, Default)]
@@ -108,30 +157,70 @@ pub fn save_app_data(
 
 #[tauri::command]
 pub async fn health_check(
+    state: State<'_, AppState>,
     kind: String,
     base_url: String,
     api_key_ref: Option<String>,
 ) -> Result<String, String> {
-    providers::health_check(&kind, &base_url, api_key_ref.as_deref()).await
+    let result = providers::health_check(&kind, &base_url, api_key_ref.as_deref()).await;
+    record_runtime_log(
+        state.inner(),
+        if result.is_ok() {
+            "provider.connected"
+        } else {
+            "provider.connection_failed"
+        },
+        None,
+        Some(&kind),
+        None,
+    );
+    result
 }
 
 #[tauri::command]
 pub async fn list_models(
+    state: State<'_, AppState>,
     kind: String,
     base_url: String,
     api_key_ref: Option<String>,
 ) -> Result<Vec<DiscoveredModel>, String> {
-    providers::list_models(&kind, &base_url, api_key_ref.as_deref()).await
+    let result = providers::list_models(&kind, &base_url, api_key_ref.as_deref()).await;
+    record_runtime_log(
+        state.inner(),
+        if result.is_ok() {
+            "provider.models_listed"
+        } else {
+            "provider.model_list_failed"
+        },
+        None,
+        Some(&kind),
+        None,
+    );
+    result
 }
 
 #[tauri::command]
 pub async fn inspect_model(
+    state: State<'_, AppState>,
     kind: String,
     base_url: String,
     model_id: String,
     api_key_ref: Option<String>,
 ) -> Result<ModelInspection, String> {
-    providers::inspect_model(&kind, &base_url, &model_id, api_key_ref.as_deref()).await
+    let result =
+        providers::inspect_model(&kind, &base_url, &model_id, api_key_ref.as_deref()).await;
+    record_runtime_log(
+        state.inner(),
+        if result.is_ok() {
+            "model.inspected"
+        } else {
+            "model.inspection_failed"
+        },
+        None,
+        Some(&kind),
+        Some(&model_id),
+    );
+    result
 }
 
 #[tauri::command]
@@ -145,6 +234,13 @@ pub async fn pull_model(
     api_key_ref: Option<String>,
 ) -> Result<(), String> {
     let cancellation = Cancellation::default();
+    record_runtime_log(
+        state.inner(),
+        "model.pull_started",
+        None,
+        Some(&kind),
+        Some(&model_reference),
+    );
     state
         .cancellations
         .lock()
@@ -165,6 +261,17 @@ pub async fn pull_model(
         .lock()
         .map_err(|_| "Cancellation state unavailable.")?
         .remove(&request_id);
+    record_runtime_log(
+        state.inner(),
+        if result.is_ok() {
+            "model.pull_completed"
+        } else {
+            "model.pull_failed"
+        },
+        None,
+        Some(&kind),
+        Some(&model_reference),
+    );
     result
 }
 
@@ -293,12 +400,25 @@ fn emit_gguf_progress(
 
 #[tauri::command]
 pub async fn delete_model(
+    state: State<'_, AppState>,
     kind: String,
     base_url: String,
     model_id: String,
     api_key_ref: Option<String>,
 ) -> Result<(), String> {
-    providers::delete_model(&kind, &base_url, &model_id, api_key_ref.as_deref()).await
+    let result = providers::delete_model(&kind, &base_url, &model_id, api_key_ref.as_deref()).await;
+    record_runtime_log(
+        state.inner(),
+        if result.is_ok() {
+            "model.deleted"
+        } else {
+            "model.delete_failed"
+        },
+        None,
+        Some(&kind),
+        Some(&model_id),
+    );
+    result
 }
 
 #[tauri::command]
@@ -377,18 +497,7 @@ fn register_attachment_path(state: &AppState, path: PathBuf) -> Result<Attachmen
     if metadata.len() > 1024 * 1024 {
         return Err("The selected file is too large. Text attachments are limited to 1 MB.".into());
     }
-    let extension = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    let allowed: HashSet<&str> = [
-        "txt", "md", "json", "csv", "toml", "yaml", "yml", "rs", "ts", "tsx", "js", "jsx", "py",
-        "css", "html",
-    ]
-    .into_iter()
-    .collect();
-    if !allowed.contains(extension.as_str()) {
+    if !is_supported_attachment_path(&path) {
         return Err("This attachment type is not supported as text in v0.2.".into());
     }
     let id = Uuid::new_v4().to_string();
@@ -407,6 +516,21 @@ fn register_attachment_path(state: &AppState, path: PathBuf) -> Result<Attachmen
         size_bytes: metadata.len(),
         content_type: "text/plain".into(),
     })
+}
+
+fn is_supported_attachment_path(path: &std::path::Path) -> bool {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let allowed: HashSet<&str> = [
+        "txt", "md", "json", "csv", "toml", "yaml", "yml", "rs", "ts", "tsx", "js", "jsx", "py",
+        "css", "html",
+    ]
+    .into_iter()
+    .collect();
+    allowed.contains(extension.as_str())
 }
 
 #[tauri::command]
@@ -510,6 +634,11 @@ fn read_attachment_grant(state: &AppState, attachment_id: &str) -> Result<String
         .get(attachment_id)
         .cloned()
         .ok_or_else(|| "This attachment is no longer granted.".to_owned())?;
+    let metadata =
+        std::fs::metadata(&path).map_err(|_| "The granted attachment is no longer available.")?;
+    if !metadata.is_file() || metadata.len() > 1024 * 1024 || !is_supported_attachment_path(&path) {
+        return Err("The granted attachment is no longer a supported text file.".into());
+    }
     let contents = std::fs::read_to_string(path)
         .map_err(|_| "The selected file could not be decoded as UTF-8 text.".to_owned())?;
     if contents.len() > 1024 * 1024 {
@@ -622,6 +751,8 @@ mod tests {
             "approved attachment content"
         );
         assert!(read_attachment_grant(&state, "not-granted").is_err());
+        std::fs::write(&path, vec![b'x'; 1024 * 1024 + 1]).expect("replacement should write");
+        assert!(read_attachment_grant(&state, &attachment.id).is_err());
         std::fs::remove_file(path).expect("temporary attachment should be removable");
     }
 
@@ -667,5 +798,36 @@ mod tests {
         assert!(!valid_model_reference("model; rm -rf /"));
         assert!(!valid_model_reference("model name"));
         assert!(!valid_model_reference(""));
+    }
+
+    #[test]
+    fn runtime_logs_are_bounded_and_contain_only_event_metadata() {
+        let state = AppState::default();
+        for index in 0..(MAX_RUNTIME_LOGS + 3) {
+            record_runtime_log(
+                &state,
+                &format!("event-{index}"),
+                Some("TEST_CODE"),
+                Some("ollama"),
+                Some("future-model"),
+            );
+        }
+        let logs = state.runtime_logs.lock().expect("runtime logs should lock");
+        assert_eq!(logs.len(), MAX_RUNTIME_LOGS);
+        assert_eq!(
+            logs.front().expect("oldest log should remain").event,
+            "event-3"
+        );
+        assert_eq!(
+            logs.back().expect("newest log should remain").event,
+            "event-202"
+        );
+        assert_eq!(
+            logs.back()
+                .expect("newest log should remain")
+                .model_id
+                .as_deref(),
+            Some("future-model")
+        );
     }
 }

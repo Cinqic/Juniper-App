@@ -1,4 +1,4 @@
-use crate::commands::{AppState, Cancellation};
+use crate::commands::{AppState, Cancellation, record_runtime_log};
 use crate::domain::{
     ChatRequest, ChatStreamEvent, DiscoveredModel, HostToolContext, ModelInspection,
     ModelPullProgress, NormalizedToolCall, PermissionGrant, PermissionRequest, RuntimeError, Usage,
@@ -35,56 +35,90 @@ pub async fn stream(
     );
     let topic = format!("juniper://chat/{}", request.request_id);
     let started = Instant::now();
+    record_runtime_log(
+        state,
+        "request.started",
+        None,
+        Some(&request.provider.kind),
+        Some(&request.model.model_id),
+    );
     let result = if request.provider.kind == "ollama" {
         stream_ollama(&request, &app, &topic, &cancellation, state).await
     } else {
         stream_openai_compatible(&request, &app, &topic, &cancellation, state).await
     };
     let event = match result {
-        Ok(()) if cancellation.is_cancelled() => ChatStreamEvent {
-            request_id: request.request_id,
-            delta: None,
-            reasoning: None,
-            tool_calls: None,
-            tool_results: None,
-            done: Some(true),
-            usage: None,
-            error: Some(RuntimeError {
-                code: "REQUEST_CANCELLED".into(),
-                message: "Generation cancelled.".into(),
-            }),
-            permission_request: None,
-        },
-        Ok(()) => ChatStreamEvent {
-            request_id: request.request_id,
-            delta: None,
-            reasoning: None,
-            tool_calls: None,
-            tool_results: None,
-            done: Some(true),
-            usage: Some(Usage {
-                input_tokens: None,
-                output_tokens: None,
-                total_tokens: None,
-                duration_ms: Some(started.elapsed().as_millis() as u64),
-            }),
-            error: None,
-            permission_request: None,
-        },
-        Err(error) => ChatStreamEvent {
-            request_id: request.request_id,
-            delta: None,
-            reasoning: None,
-            tool_calls: None,
-            tool_results: None,
-            done: Some(true),
-            usage: None,
-            error: Some(RuntimeError {
-                code: error.code,
-                message: error.message,
-            }),
-            permission_request: None,
-        },
+        Ok(()) if cancellation.is_cancelled() => {
+            record_runtime_log(
+                state,
+                "request.cancelled",
+                Some("REQUEST_CANCELLED"),
+                Some(&request.provider.kind),
+                Some(&request.model.model_id),
+            );
+            ChatStreamEvent {
+                request_id: request.request_id,
+                delta: None,
+                reasoning: None,
+                tool_calls: None,
+                tool_results: None,
+                done: Some(true),
+                usage: None,
+                error: Some(RuntimeError {
+                    code: "REQUEST_CANCELLED".into(),
+                    message: "Generation cancelled.".into(),
+                }),
+                permission_request: None,
+            }
+        }
+        Ok(()) => {
+            record_runtime_log(
+                state,
+                "request.completed",
+                None,
+                Some(&request.provider.kind),
+                Some(&request.model.model_id),
+            );
+            ChatStreamEvent {
+                request_id: request.request_id,
+                delta: None,
+                reasoning: None,
+                tool_calls: None,
+                tool_results: None,
+                done: Some(true),
+                usage: Some(Usage {
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
+                    duration_ms: Some(started.elapsed().as_millis() as u64),
+                }),
+                error: None,
+                permission_request: None,
+            }
+        }
+        Err(error) => {
+            record_runtime_log(
+                state,
+                "request.failed",
+                Some(&error.code),
+                Some(&request.provider.kind),
+                Some(&request.model.model_id),
+            );
+            ChatStreamEvent {
+                request_id: request.request_id,
+                delta: None,
+                reasoning: None,
+                tool_calls: None,
+                tool_results: None,
+                done: Some(true),
+                usage: None,
+                error: Some(RuntimeError {
+                    code: error.code,
+                    message: error.message,
+                }),
+                permission_request: None,
+            }
+        }
     };
     let _ = app.emit(&topic, event);
 }
@@ -124,6 +158,7 @@ fn add_credential(
     Ok(call)
 }
 
+#[derive(Debug)]
 struct TurnOutcome {
     tool_calls: Vec<NormalizedToolCall>,
 }
@@ -398,13 +433,15 @@ async fn host_tool_turn(
                 }
             }
         }
-        results.push(execute_host_tool(
-            request,
-            host_context,
-            call,
-            round,
-            index as u32 + 1,
-        ));
+        let result = execute_host_tool(request, host_context, call, round, index as u32 + 1);
+        record_runtime_log(
+            state,
+            "tool.executed",
+            result["error"]["code"].as_str(),
+            Some(&request.provider.kind),
+            None,
+        );
+        results.push(result);
     }
     Ok((assistant_calls, results))
 }
@@ -1272,7 +1309,7 @@ pub async fn inspect_model(
             context_length: None,
             license: None,
             template: None,
-            capabilities: vec!["chat".into(), "completion".into()],
+            capabilities: Vec::new(),
             metadata_source: "provider-model-list".into(),
             raw_capabilities: None,
         });
@@ -1994,6 +2031,37 @@ mod tests {
         (format!("http://{address}"), handle)
     }
 
+    fn fake_delayed_json_stream_server(
+        first: &'static str,
+        second: &'static str,
+        delay_ms: u64,
+    ) -> (String, std::thread::JoinHandle<()>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fake server should bind");
+        let address = listener
+            .local_addr()
+            .expect("fake server should have an address");
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("fake server should accept");
+            let mut request = [0u8; 4096];
+            let _ = stream.read(&mut request);
+            let body_length = first.len() + second.len();
+            let response = format!(
+                "HTTP/1.1 200 Test\r\nContent-Type: application/x-ndjson\r\nContent-Length: {body_length}\r\nConnection: close\r\n\r\n"
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("fake server should write headers");
+            stream
+                .write_all(first.as_bytes())
+                .expect("fake server should write first chunk");
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            let _ = stream.write_all(second.as_bytes());
+        });
+        (format!("http://{address}"), handle)
+    }
+
     fn fake_slow_response_server(
         body: &'static str,
         delay_ms: u64,
@@ -2064,6 +2132,21 @@ mod tests {
     }
 
     #[test]
+    fn generic_inspection_does_not_overstate_model_capabilities() {
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let inspection = runtime
+            .block_on(inspect_model(
+                "openai-compatible",
+                "http://127.0.0.1:1",
+                "future-openai-model",
+                None,
+            ))
+            .expect("generic inspection should use conservative metadata");
+        assert!(inspection.capabilities.is_empty());
+        assert_eq!(inspection.metadata_source, "provider-model-list");
+    }
+
+    #[test]
     fn fake_openai_chat_server_handles_unicode_tool_fragments_and_final_record() {
         let (base_url, server) = fake_json_server(vec![
             r#"data: {"choices":[{"delta":{"content":"Hello 🌿"}}]}
@@ -2126,6 +2209,111 @@ data: [DONE]"#,
             .expect("fake Ollama chat should parse");
         assert!(outcome.tool_calls.is_empty());
         server.join().expect("fake server should stop");
+    }
+
+    #[test]
+    fn unknown_ollama_model_can_use_the_ordinary_chat_path() {
+        let (base_url, server) = fake_json_server(vec![
+            "{\"model\":\"future-unknown-model-123:7b\",\"message\":{\"content\":\"Future model reply\"}}\n{\"done\":true}\n",
+        ]);
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let mut request = request();
+        request.model.model_id = "future-unknown-model-123:7b".into();
+        request.model.capabilities = Default::default();
+        let endpoint = format!("{base_url}/api/chat");
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let outcome = runtime
+            .block_on(async {
+                stream_one_ollama_turn(
+                    &request,
+                    &endpoint,
+                    &[],
+                    &[],
+                    &handle,
+                    "test-topic",
+                    &Cancellation::default(),
+                )
+                .await
+            })
+            .expect("unknown model should use ordinary Ollama chat");
+        assert!(outcome.tool_calls.is_empty());
+        server.join().expect("fake server should stop");
+    }
+
+    #[test]
+    fn fake_ollama_chat_server_handles_tool_calls() {
+        let (base_url, server) = fake_json_server(vec![
+            "{\"message\":{\"tool_calls\":[{\"function\":{\"name\":\"calculator.evaluate\",\"arguments\":{\"expression\":\"2+2\"}}}]}}\n{\"done\":true}\n",
+        ]);
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let request = request();
+        let endpoint = format!("{base_url}/api/chat");
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let outcome = runtime
+            .block_on(async {
+                stream_one_ollama_turn(
+                    &request,
+                    &endpoint,
+                    &[],
+                    &tool_payload(&request),
+                    &handle,
+                    "test-topic",
+                    &Cancellation::default(),
+                )
+                .await
+            })
+            .expect("Ollama tool call should parse");
+        assert_eq!(outcome.tool_calls.len(), 1);
+        assert_eq!(outcome.tool_calls[0].name, "calculator.evaluate");
+        assert_eq!(outcome.tool_calls[0].arguments["expression"], "2+2");
+        server.join().expect("fake server should stop");
+    }
+
+    #[test]
+    fn fake_provider_servers_surface_malformed_chat_records() {
+        let (ollama_url, ollama_server) = fake_json_server(vec!["{broken}\n"]);
+        let (openai_url, openai_server) = fake_json_server(vec!["data: {broken}\n"]);
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let request = request();
+        let tools = tool_payload(&request);
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let ollama_error = runtime.block_on(async {
+            stream_one_ollama_turn(
+                &request,
+                &format!("{ollama_url}/api/chat"),
+                &[],
+                &tools,
+                &handle,
+                "test-topic",
+                &Cancellation::default(),
+            )
+            .await
+        });
+        let openai_error = runtime.block_on(async {
+            stream_one_openai_turn(
+                &request,
+                &format!("{openai_url}/v1/chat/completions"),
+                &[],
+                &tools,
+                &handle,
+                "test-topic",
+                &Cancellation::default(),
+            )
+            .await
+        });
+        assert_eq!(
+            ollama_error.expect_err("malformed Ollama record").code,
+            "MALFORMED_PROVIDER_RESPONSE"
+        );
+        assert_eq!(
+            openai_error.expect_err("malformed OpenAI record").code,
+            "MALFORMED_PROVIDER_RESPONSE"
+        );
+        ollama_server.join().expect("fake server should stop");
+        openai_server.join().expect("fake server should stop");
     }
 
     #[test]
@@ -2282,6 +2470,42 @@ data: [DONE]"#,
             panic!("streaming cancellation should stop the turn");
         };
         assert_eq!(error.code, "REQUEST_CANCELLED");
+        server.join().expect("fake server should stop");
+    }
+
+    #[test]
+    fn ollama_pull_cancellation_stops_a_progress_stream() {
+        let (base_url, server) = fake_delayed_json_stream_server(
+            "{\"status\":\"pulling manifest\",\"completed\":3,\"total\":9}\n",
+            "{\"status\":\"success\"}\n",
+            150,
+        );
+        let app = tauri::test::mock_app();
+        let cancellation = Cancellation::default();
+        let later = cancellation.clone();
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let result = runtime.block_on(async {
+            let cancel_task = tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(15)).await;
+                later.cancel();
+            });
+            let result = pull_model(
+                app.handle().clone(),
+                "ollama",
+                &base_url,
+                "future-unknown-model-123:7b",
+                "pull-cancelled",
+                None,
+                cancellation,
+            )
+            .await;
+            cancel_task.await.expect("cancellation task should finish");
+            result
+        });
+        assert_eq!(
+            result.expect_err("pull cancellation should stop the stream"),
+            "Model download cancelled."
+        );
         server.join().expect("fake server should stop");
     }
 

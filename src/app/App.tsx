@@ -58,6 +58,10 @@ function textPart(message: ChatMessage): string {
     .join('')
 }
 
+function errorCodeFromMessage(message: string): string | undefined {
+  return message.match(/^[A-Z][A-Z0-9_]+:/)?.[0].slice(0, -1)
+}
+
 function applyStreamEvent(message: ChatMessage, event: ChatStreamEvent): ChatMessage {
   const parts = [...message.parts]
   if (event.delta) {
@@ -199,14 +203,16 @@ export default function App() {
     if (!provider) return
     void checkProviderConnection(provider)
       .then(() => {
-        if (provider.status !== 'connected') {
-          update((current) => ({
+        update((current) => {
+          const currentProvider = current.providers.find((item) => item.id === provider.id)
+          if (!currentProvider || currentProvider.status === 'connected') return current
+          return {
             ...current,
             providers: current.providers.map((item) =>
               item.id === provider.id ? { ...item, status: 'connected' } : item,
             ),
-          }))
-        }
+          }
+        })
         return listProviderModels(provider)
       })
       .then((models) => {
@@ -231,7 +237,18 @@ export default function App() {
           return { ...current, models: next }
         })
       })
-      .catch(() => undefined)
+      .catch(() => {
+        update((current) => {
+          const currentProvider = current.providers.find((item) => item.id === provider.id)
+          if (!currentProvider || currentProvider.status === 'offline') return current
+          return {
+            ...current,
+            providers: current.providers.map((item) =>
+              item.id === provider.id ? { ...item, status: 'offline' } : item,
+            ),
+          }
+        })
+      })
   }, [data.providers, hydrated])
 
   const update = (change: (current: AppData) => AppData) => setData((current) => change(current))
@@ -242,8 +259,12 @@ export default function App() {
   const activeModel = data.models.find(
     (model) => model.id === activeAssistant.modelProfileId && isChatSelectable(model),
   )
-  const activeProvider = activeModel
-    ? data.providers.find((provider) => provider.id === activeModel.providerId)
+  const selectedConversation = data.conversations.find((chat) => chat.id === selectedChatId)
+  const currentModel = selectedConversation?.modelProfileId
+    ? data.models.find((model) => model.id === selectedConversation.modelProfileId)
+    : activeModel
+  const currentProvider = currentModel
+    ? data.providers.find((provider) => provider.id === currentModel.providerId)
     : undefined
 
   function createChat(privateChat = false): Conversation {
@@ -281,9 +302,9 @@ export default function App() {
           </div>
           <div className="topbar-context">
             <span className="eyebrow">{page === 'chats' ? 'Personal space' : page}</span>
-            <span className={`status-pill ${activeModel?.executionLocation ?? 'unknown'}`}>
+            <span className={`status-pill ${currentModel?.executionLocation ?? 'unknown'}`}>
               <i />
-              {labelExecutionLocation(activeModel?.executionLocation ?? 'unknown')}
+              {labelExecutionLocation(currentModel?.executionLocation ?? 'unknown')}
             </span>
           </div>
           <button
@@ -321,8 +342,8 @@ export default function App() {
             <PrivacyPage
               data={data}
               update={update}
-              activeModel={activeModel}
-              activeProvider={activeProvider}
+              activeModel={currentModel}
+              activeProvider={currentProvider}
             />
           )}
           {page === 'diagnostics' && <DiagnosticsPage data={data} />}
@@ -655,7 +676,16 @@ function ConversationView({
                   ? {
                       ...message,
                       isStreaming: false,
-                      parts: [{ id: uid('part'), type: 'error', text: streamEvent.error?.message }],
+                      parts: [
+                        {
+                          id: uid('part'),
+                          type: 'error',
+                          text: streamEvent.error?.message,
+                          metadata: streamEvent.error?.code
+                            ? { errorCode: streamEvent.error.code }
+                            : undefined,
+                        },
+                      ],
                     }
                   : message,
               ),
@@ -684,7 +714,16 @@ function ConversationView({
             ? {
                 ...item,
                 isStreaming: false,
-                parts: [{ id: uid('part'), type: 'error', text: message }],
+                parts: [
+                  {
+                    id: uid('part'),
+                    type: 'error',
+                    text: message,
+                    metadata: errorCodeFromMessage(message)
+                      ? { errorCode: errorCodeFromMessage(message)! }
+                      : undefined,
+                  },
+                ],
               }
             : item,
         ),
@@ -885,7 +924,12 @@ function ConversationView({
           </div>
         ) : (
           messages.map((message) => (
-            <MessageBubble key={message.id} message={message} assistant={activeAssistant} />
+            <MessageBubble
+              key={message.id}
+              message={message}
+              assistant={activeAssistant}
+              developerMode={data.settings.developerMode}
+            />
           ))
         )}
         {isGenerating && (
