@@ -7,7 +7,7 @@ Status: CANDIDATE - PENDING INDEPENDENT REVIEW
 - Starting canonical commit: 9c900021435505ea5b2bb16647ebd5bf2bb035f5
 - Working branch: luna/juniper-model-agnostic-completion
 - Follow-up remediation commit: efd4b96
-- Latest validation commit: 7417ad7c13cb736d8751c4c9d57b3e94fed307aa
+- Latest validation commit: 7417ad74b34b87a2edb3abcf743e5cd157269445
 - Product version: 0.2.0-rc.1
 
 ## Architecture changes
