@@ -13,4 +13,4 @@
 | Malformed assistant import            | Versioned schema validation and inert JSON parsing.                                                                         |
 | Database corruption                   | SQLite migrations, foreign-key enforcement, and normalized entities.                                                        |
 
-This document is a v0.1 self-review artifact, not a security audit.
+This document is a v0.2 self-review artifact, not an independent security audit.

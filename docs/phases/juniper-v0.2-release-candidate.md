@@ -7,7 +7,7 @@ Status: CANDIDATE - PENDING INDEPENDENT REVIEW
 - Starting canonical commit: 9c900021435505ea5b2bb16647ebd5bf2bb035f5
 - Working branch: luna/juniper-model-agnostic-completion
 - Follow-up remediation commit: efd4b96
-- Latest validation commit: 7417ad74b34b87a2edb3abcf743e5cd157269445
+- Latest validation commit: 8959352b32e14ae6788f69263fa8c95295913a30
 - Product version: 0.2.0-rc.1
 
 ## Architecture changes
@@ -56,6 +56,8 @@ progress; user/model text is never placed in a shell command.
 - Native provider streams carry separate reasoning, tool-call, host-result,
   usage, completion, and stable error events. Cancellation uses one request ID
   through the frontend and native boundary.
+- Developer diagnostics retain stable error codes and a bounded, in-memory
+  runtime event log containing only provider/model and lifecycle metadata.
 - User-data and filesystem tool calls pause at a native permission boundary.
   Allow-once, chat-scoped, assistant-scoped, and deny decisions are visible in
   the UI; durable grants are stored in SQLite and private chat grants are
@@ -79,7 +81,7 @@ Passing with the bundled Node runtime:
 - pnpm format
 - pnpm lint
 - pnpm typecheck
-- pnpm test — 5 files, 17 tests
+- pnpm test — 5 files, 19 tests
 - pnpm build
 - pnpm schema:validate — 7 schemas and representative fixtures
 - pnpm version:check
@@ -87,11 +89,11 @@ Passing with the bundled Node runtime:
 - Rust cargo check --locked
 - Rust cargo check --tests --locked
 - Rust cargo clippy --all-targets -- -D warnings
-- Rust cargo test --locked — 32 tests passed
+- Rust cargo test --locked — 39 tests passed
 - pnpm tauri build --bundles deb,appimage — native binary plus `.deb` and
   `.AppImage` bundles produced. Current artifact hashes:
-  - `.deb`: `a061c1f22a6e392dcfa01a6b6799e3fd54aa75a643e91b817ec9f4664ae5d034`
-  - `.AppImage`: `c498adc0f6b8d7a42d84e9ff3bfe81810ddb3ecc96b1a7e1073e087010801f33`
+  - `.deb`: `78ebcc356afd5fd4b272734b799babd4f7c2b7244c091c0d90249b42e4473aff`
+  - `.AppImage`: `1dd3fcf09f6c804ef49883ae9b2b1583291c61dc7f01f372795ab00e07af5511`
 - bounded pnpm tauri dev smoke — Vite and the compiled Tauri binary launched
   successfully until the headless timeout; no GUI interaction is claimed
 
@@ -101,6 +103,9 @@ packages globally. The source, test targets, full Rust suite, and Linux bundle
 all passed with that isolated prerequisite set. Android compilation remains
 blocked by the absent Android NDK clang toolchain. CI workflows install the
 required Linux packages and Android SDK/NDK. No live model chat is claimed.
+The bounded Tauri dev smoke reached Vite readiness and launched the compiled
+native binary before the headless timeout; interactive GUI acceptance remains
+for an environment with a display.
 
 ## Known and accepted limitations
 
@@ -109,6 +114,8 @@ required Linux packages and Android SDK/NDK. No live model chat is claimed.
 - MCP client calls remain explicitly unavailable in this candidate.
 - Mobile secure credential vault integration, mobile file reads, and iOS
   validation require platform-specific workspaces.
+- The current branch has not yet received a hosted CI result; the candidate
+  handoff remains pending that PR validation.
 - Independent review is still required for native compilation, provider
   fixtures, SQLite restart behavior, cancellation races, permissions,
   accessibility, and packaging.

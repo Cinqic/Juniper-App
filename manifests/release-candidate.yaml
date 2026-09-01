@@ -18,3 +18,6 @@ validated_in_this_environment:
   desktop: tested-tauri-dev-and-linux-deb-appimage-build
   android: blocked-missing-android-ndk-clang
   real_model_generation: pending-owner-selected-model
+  frontend_tests: 19
+  native_tests: 39
+  runtime_diagnostics: bounded-in-memory-content-free
