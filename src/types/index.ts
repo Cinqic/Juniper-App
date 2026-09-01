@@ -168,6 +168,10 @@ export interface Attachment {
   contentType: string
 }
 
+export interface AttachmentRecord extends Attachment {
+  conversationId: string
+}
+
 export interface PermissionGrant {
   id: string
   toolName: string
@@ -232,6 +236,7 @@ export interface AppData {
   providers: ProviderProfile[]
   conversations: Conversation[]
   memories: Memory[]
+  attachments: AttachmentRecord[]
   permissions: PermissionGrant[]
   settings: AppSettings
 }

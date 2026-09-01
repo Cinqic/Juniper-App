@@ -1,6 +1,9 @@
 use rusqlite::{Connection, OptionalExtension, Result, params, types::Type};
-use serde_json::Value;
-use std::path::Path;
+use serde_json::{Value, json};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 pub const SCHEMA_VERSION: i64 = 3;
 
@@ -153,21 +156,35 @@ pub fn initialize(path: &Path) -> Result<()> {
 
 pub fn load_app_data(path: &Path) -> Result<Option<Value>> {
     let connection = connection(path)?;
-    connection
+    let payload = connection
         .query_row(
             "SELECT payload FROM app_state WHERE id = 'singleton'",
             [],
             |row| {
                 let payload: String = row.get(0)?;
-                serde_json::from_str(&payload).map_err(|error| {
+                serde_json::from_str::<Value>(&payload).map_err(|error| {
                     rusqlite::Error::FromSqlConversionFailure(0, Type::Text, Box::new(error))
                 })
             },
         )
-        .optional()
+        .optional()?;
+    let Some(mut payload) = payload else {
+        return Ok(None);
+    };
+    if let Some(object) = payload.as_object_mut() {
+        object.insert(
+            "attachments".into(),
+            Value::Array(load_attachment_metadata(&connection)?),
+        );
+    }
+    Ok(Some(payload))
 }
 
-pub fn save_app_data(path: &Path, data: &Value) -> Result<()> {
+pub fn save_app_data_with_paths(
+    path: &Path,
+    data: &Value,
+    attachment_paths: &HashMap<String, PathBuf>,
+) -> Result<()> {
     let connection = connection(path)?;
     let mut persisted = data.clone();
     if let Some(object) = persisted.as_object_mut() {
@@ -185,6 +202,12 @@ pub fn save_app_data(path: &Path, data: &Value) -> Result<()> {
         {
             conversations
                 .retain(|conversation| !conversation["privateChat"].as_bool().unwrap_or(false));
+        }
+        if let Some(attachments) = object.get_mut("attachments").and_then(Value::as_array_mut) {
+            attachments.retain(|attachment| {
+                !private_conversation_ids
+                    .contains(attachment["conversationId"].as_str().unwrap_or_default())
+            });
         }
         if let Some(permissions) = object.get_mut("permissions").and_then(Value::as_array_mut) {
             permissions.retain(|permission| {
@@ -211,6 +234,7 @@ pub fn save_app_data(path: &Path, data: &Value) -> Result<()> {
         "tool_calls",
         "message_parts",
         "messages",
+        "attachments",
         "conversations",
         "memories",
         "model_profiles",
@@ -295,6 +319,43 @@ pub fn save_app_data(path: &Path, data: &Value) -> Result<()> {
             }
         }
     }
+    let persisted_conversation_ids = persisted
+        .get("conversations")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|conversation| conversation["id"].as_str().map(str::to_owned))
+        .collect::<std::collections::HashSet<_>>();
+    for attachment in persisted
+        .get("attachments")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let id = attachment["id"].as_str().unwrap_or_default();
+        let conversation_id = attachment["conversationId"].as_str().unwrap_or_default();
+        if id.is_empty()
+            || conversation_id.is_empty()
+            || !persisted_conversation_ids.contains(conversation_id)
+        {
+            continue;
+        }
+        let path = attachment_paths
+            .get(id)
+            .map(|value| value.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        transaction.execute(
+            "INSERT INTO attachments(id, conversation_id, name, path, size_bytes, content_type, created_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))",
+            params![
+                id,
+                conversation_id,
+                attachment["name"].as_str().unwrap_or("attachment"),
+                path,
+                attachment["sizeBytes"].as_u64().unwrap_or(0) as i64,
+                attachment["contentType"].as_str().unwrap_or("text/plain")
+            ],
+        )?;
+    }
     for permission in persisted
         .get("permissions")
         .and_then(Value::as_array)
@@ -321,6 +382,23 @@ pub fn save_app_data(path: &Path, data: &Value) -> Result<()> {
         )?;
     }
     transaction.commit()
+}
+
+fn load_attachment_metadata(connection: &Connection) -> Result<Vec<Value>> {
+    let mut statement = connection.prepare(
+        "SELECT id, conversation_id, name, size_bytes, content_type FROM attachments ORDER BY created_at, id",
+    )?;
+    statement
+        .query_map([], |row| {
+            Ok(json!({
+                "id": row.get::<_, String>(0)?,
+                "conversationId": row.get::<_, String>(1)?,
+                "name": row.get::<_, String>(2)?,
+                "sizeBytes": row.get::<_, i64>(3)?,
+                "contentType": row.get::<_, String>(4)?
+            }))
+        })?
+        .collect()
 }
 
 #[cfg(test)]
@@ -377,6 +455,22 @@ mod tests {
             "providers": [{ "id": "provider-1" }],
             "models": [{ "id": "model-1", "providerId": "provider-1" }],
             "memories": [],
+            "attachments": [
+                {
+                    "id": "attachment-saved",
+                    "conversationId": "chat-saved",
+                    "name": "notes.txt",
+                    "sizeBytes": 12,
+                    "contentType": "text/plain"
+                },
+                {
+                    "id": "attachment-private",
+                    "conversationId": "chat-private",
+                    "name": "private.txt",
+                    "sizeBytes": 14,
+                    "contentType": "text/plain"
+                }
+            ],
             "permissions": [{
                 "id": "permission-1",
                 "toolName": "memory.list",
@@ -407,7 +501,7 @@ mod tests {
             ],
             "settings": { "telemetry": "off" }
         });
-        save_app_data(&path, &data)?;
+        save_app_data_with_paths(&path, &data, &HashMap::new())?;
         let loaded = load_app_data(&path)?.expect("saved state should be present");
         let conversations = loaded["conversations"]
             .as_array()
@@ -415,6 +509,11 @@ mod tests {
         assert_eq!(conversations.len(), 1);
         assert_eq!(conversations[0]["id"], "chat-saved");
         assert_eq!(conversations[0]["modelProfileId"], "model-1");
+        let attachments = loaded["attachments"]
+            .as_array()
+            .expect("attachments should be an array");
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0]["id"], "attachment-saved");
 
         let connection = Connection::open(&path)?;
         assert_eq!(
@@ -431,6 +530,11 @@ mod tests {
             connection
                 .query_row::<i64, _, _>("SELECT COUNT(*) FROM conversations", [], |row| row
                     .get(0))?,
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row::<i64, _, _>("SELECT COUNT(*) FROM attachments", [], |row| row.get(0))?,
             1
         );
         std::fs::remove_file(path).expect("temporary database should be removable");

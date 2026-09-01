@@ -10,7 +10,7 @@ Working branch: `luna/juniper-model-agnostic-completion`
 - Removed the product-level model default and made Juniper’s assistant binding optional.
 - Added runtime-derived model profiles, capability tri-state handling, execution-location labels, and conversation model overrides.
 - Added native Ollama discovery, inspection, chat, pull progress/cancellation, deletion, and running-model command surfaces.
-- Added native SQLite v3 load/save commands and a transaction-backed repository path; browser localStorage remains preview-only.
+- Added native SQLite v3 load/save commands and a transaction-backed repository path, including normalized attachment metadata with native-only paths; browser localStorage remains preview-only.
 - Replaced duplicated prompt composition with deterministic personality, memory, tool guidance, history truncation, and current-message handling.
 - Added a real JSON Schema validator script with representative fixtures.
 - Tightened calculator limits, exact tool-argument validation, host result bounds, and dimension-safe unit conversion.
@@ -26,6 +26,7 @@ Working branch: `luna/juniper-model-agnostic-completion`
 - Model download performed: none; the contract explicitly forbids an automatic large download.
 - Real model generation: not claimed; pending the owner selecting an installed model.
 - Frontend typecheck, build, lint, formatting, tests, and JSON Schema validation: pass with the bundled Node runtime.
+- Frontend tests: 5 files, 17 tests passed.
 - Rust/Tauri host `cargo check`, test compilation, strict Clippy, and the full 32-test suite: pass with temporary user-local Linux development metadata.
 - `pnpm tauri build --bundles deb,appimage`: pass; optimized native binary, `.deb`, and `.AppImage` artifacts produced.
 - Bounded `pnpm tauri dev` smoke: the Vite dev server and compiled Tauri binary launched and remained running until the headless timeout; no GUI interaction is claimed.

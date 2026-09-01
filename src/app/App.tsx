@@ -32,6 +32,7 @@ import { Sidebar } from './ui'
 import type {
   AppData,
   Assistant,
+  AttachmentRecord,
   ChatMessage,
   ChatStreamEvent,
   Conversation,
@@ -389,6 +390,9 @@ function ChatPage({
     update((current) => ({
       ...current,
       conversations: current.conversations.filter((chat) => chat.id !== conversation.id),
+      attachments: current.attachments.filter(
+        (attachment) => attachment.conversationId !== conversation.id,
+      ),
       permissions: current.permissions.filter(
         (grant) => grant.scope !== 'chat' || grant.conversationId !== conversation.id,
       ),
@@ -702,6 +706,13 @@ function ConversationView({
       const attachment = await pickAttachment()
       if (!attachment) return
       const content = await readAttachment(attachment.id)
+      const metadata: AttachmentRecord = {
+        id: attachment.id,
+        conversationId: conversation.id,
+        name: attachment.name,
+        sizeBytes: attachment.sizeBytes,
+        contentType: attachment.contentType,
+      }
       setAttachments((current) => [
         ...current,
         {
@@ -712,6 +723,10 @@ function ConversationView({
           contentType: attachment.contentType,
         },
       ])
+      update((current) => ({
+        ...current,
+        attachments: [...current.attachments.filter((item) => item.id !== metadata.id), metadata],
+      }))
       setDraft((current) => `${current}${current ? '\n\n' : ''}[Attached: ${attachment.name}]`)
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Could not attach that file.')
@@ -902,7 +917,21 @@ function ConversationView({
                 if (!file || file.size > 1024 * 1024) return
                 void file.text().then((content) => {
                   const attachment = { id: uid('attachment'), name: file.name, content }
+                  const metadata: AttachmentRecord = {
+                    id: attachment.id,
+                    conversationId: conversation.id,
+                    name: file.name,
+                    sizeBytes: file.size,
+                    contentType: file.type || 'text/plain',
+                  }
                   setAttachments((current) => [...current, attachment])
+                  update((current) => ({
+                    ...current,
+                    attachments: [
+                      ...current.attachments.filter((item) => item.id !== metadata.id),
+                      metadata,
+                    ],
+                  }))
                   setDraft(
                     (current) => `${current}${current ? '\n\n' : ''}[Attached: ${file.name}]`,
                   )

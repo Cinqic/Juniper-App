@@ -129,7 +129,7 @@ requirements:
     phase: 11
     status: PASS-NATIVE-TESTS
   REQ-SQLITE:
-    statement: Native SQLite v3 is canonical for application state and excludes private chats and chat-scoped grants
+    statement: Native SQLite v3 is canonical for application state, normalized attachment metadata, and excludes private chats and chat-scoped grants
     implementation: [src-tauri/src/storage.rs, src-tauri/src/commands.rs, src/lib/runtime.ts]
     tests: [src-tauri/src/storage.rs]
     phase: 11
@@ -141,7 +141,7 @@ requirements:
     phase: 11
     status: IMPLEMENTED-NATIVE-TESTED
   REQ-ATTACHMENT:
-    statement: Attachments are validated and read through opaque host grants
+    statement: Attachments are validated and read through opaque host grants, with metadata persisted without exposing native paths
     implementation: [src/app/App.tsx, src-tauri/src/commands.rs]
     tests: [src-tauri/src/commands.rs]
     phase: 11

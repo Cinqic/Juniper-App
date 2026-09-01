@@ -1,4 +1,4 @@
-import type { AppData } from '../types'
+import type { AppData, AttachmentRecord } from '../types'
 import { initialAppData } from './defaults'
 
 const STORAGE_KEY = 'juniper.app-data.v1'
@@ -16,9 +16,15 @@ export function loadAppData(): AppData {
 
 export function saveAppData(data: AppData): void {
   if (typeof localStorage === 'undefined') return
+  const privateConversationIds = new Set(
+    data.conversations.filter((chat) => chat.privateChat).map((chat) => chat.id),
+  )
   const persistent = {
     ...data,
     conversations: data.conversations.filter((chat) => !chat.privateChat),
+    attachments: data.attachments.filter(
+      (attachment) => !privateConversationIds.has(attachment.conversationId),
+    ),
     permissions: data.permissions.filter(
       (grant) =>
         grant.scope !== 'chat' ||
@@ -67,6 +73,29 @@ export function normalizeAppData(value: unknown): AppData {
       },
     }
   })
+  const attachments = (Array.isArray(parsed.attachments) ? parsed.attachments : []).flatMap(
+    (attachment): AttachmentRecord[] => {
+      if (!attachment || typeof attachment !== 'object') return []
+      const item = attachment as Partial<AttachmentRecord>
+      if (
+        typeof item.id !== 'string' ||
+        typeof item.conversationId !== 'string' ||
+        typeof item.name !== 'string' ||
+        typeof item.sizeBytes !== 'number' ||
+        typeof item.contentType !== 'string'
+      )
+        return []
+      return [
+        {
+          id: item.id,
+          conversationId: item.conversationId,
+          name: item.name,
+          sizeBytes: item.sizeBytes,
+          contentType: item.contentType,
+        },
+      ]
+    },
+  )
   return {
     ...defaults,
     assistants: (Array.isArray(parsed.assistants) ? parsed.assistants : defaults.assistants).map(
@@ -91,6 +120,7 @@ export function normalizeAppData(value: unknown): AppData {
       ? parsed.conversations
       : defaults.conversations,
     memories: Array.isArray(parsed.memories) ? parsed.memories : defaults.memories,
+    attachments,
     permissions: Array.isArray(parsed.permissions) ? parsed.permissions : defaults.permissions,
     settings: { ...defaults.settings, ...parsedSettings },
   }

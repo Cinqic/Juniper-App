@@ -6,11 +6,11 @@ and JSON schema syntax checks in one sequence.
 
 Deterministic frontend tests cover the zero-model shell and navigation,
 assistant import/export, context order and truncation, private persistence,
-and browser-preview streaming. Rust tests cover the safe calculator, unit
+attachment metadata privacy, and browser-preview streaming. Rust tests cover the safe calculator, unit
 conversion, protocol result shape, loop bounds, permission scope matching,
 provider JSON/SSE/pull parsing, fake HTTP discovery/inspection/chat/error,
-timeout/cancellation fixtures, scoped attachment/GGUF grants, and schema
-version (32 tests).
+timeout/cancellation fixtures, scoped attachment/GGUF grants, normalized
+attachment persistence, and schema version (32 tests).
 Real-model qualification is reserved for an owner-selected installed model.
 The historical Qwen fixture is optional.
 

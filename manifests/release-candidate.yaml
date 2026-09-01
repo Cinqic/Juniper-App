@@ -14,7 +14,7 @@ qualification_models:
   - optional
 validated_in_this_environment:
   frontend: tested-bundled-node
-  rust: blocked-missing-linux-dbus-development-package
-  desktop: blocked-missing-linux-tauri-development-packages
+  rust: tested-rust-1.90-with-isolated-linux-development-metadata
+  desktop: tested-tauri-dev-and-linux-deb-appimage-build
   android: blocked-missing-android-ndk-clang
   real_model_generation: pending-owner-selected-model

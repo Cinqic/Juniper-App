@@ -11,7 +11,7 @@ Status: `0.2.0-rc.1` — candidate pending independent review.
 - Provider and model management for Ollama plus OpenAI-compatible and llama.cpp-compatible endpoints. Ollama discovery, inspection, pull progress, cancellation, and deletion use its native API.
 - A deterministic context builder that keeps the system prompt, curated memories, enabled tool definitions, and recent conversation within a context budget.
 - A host-authored tool boundary with bounded calculator, unit conversion, datetime, attachment, memory, search, and system-info contracts.
-- SQLite migration scaffolding, OS-keychain credential storage on desktop, scoped text attachments, diagnostics, privacy settings, JSON schemas, ADRs, CI workflows, and recovery notes.
+- Native SQLite persistence with migrations, OS-keychain credential storage on desktop, scoped text attachments, diagnostics, privacy settings, JSON schemas, ADRs, CI workflows, and recovery notes.
 
 Juniper’s provider boundary follows the documented [Ollama OpenAI-compatible API](https://docs.ollama.com/api/openai-compatibility), [Ollama streaming behavior](https://docs.ollama.com/api/streaming), and [llama.cpp server contract](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md). The native shell uses [Tauri 2](https://v2.tauri.app/start/) with a narrow capability surface.
 

@@ -1322,6 +1322,7 @@ export function PrivacyPage({
       update((current) => ({
         ...current,
         conversations: [],
+        attachments: [],
         permissions: current.permissions.filter((grant) => grant.scope !== 'chat'),
       }))
   }

@@ -48,4 +48,45 @@ describe('browser-preview storage', () => {
     saveAppData(data)
     expect(loadAppData().permissions).toHaveLength(0)
   })
+
+  it('does not persist attachment metadata for private chats', () => {
+    const data = initialAppData()
+    data.conversations = [
+      {
+        id: 'private',
+        title: 'Private',
+        assistantId: data.assistants[0]!.id,
+        createdAt: '',
+        updatedAt: '',
+        privateChat: true,
+        messages: [],
+      },
+      {
+        id: 'saved',
+        title: 'Saved',
+        assistantId: data.assistants[0]!.id,
+        createdAt: '',
+        updatedAt: '',
+        messages: [],
+      },
+    ]
+    data.attachments = [
+      {
+        id: 'private-file',
+        conversationId: 'private',
+        name: 'private.txt',
+        sizeBytes: 12,
+        contentType: 'text/plain',
+      },
+      {
+        id: 'saved-file',
+        conversationId: 'saved',
+        name: 'saved.txt',
+        sizeBytes: 10,
+        contentType: 'text/plain',
+      },
+    ]
+    saveAppData(data)
+    expect(loadAppData().attachments.map((item) => item.id)).toEqual(['saved-file'])
+  })
 })

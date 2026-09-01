@@ -7,7 +7,7 @@ Status: CANDIDATE - PENDING INDEPENDENT REVIEW
 - Starting canonical commit: 9c900021435505ea5b2bb16647ebd5bf2bb035f5
 - Working branch: luna/juniper-model-agnostic-completion
 - Follow-up remediation commit: efd4b96
-- Latest validation commit: 4161bb014c4e824fe69d616e4e59c197f8a24b26
+- Latest validation commit: pending final remediation commit
 - Product version: 0.2.0-rc.1
 
 ## Architecture changes
@@ -43,9 +43,10 @@ progress; user/model text is never placed in a shell command.
 ## Persistence, chat, tools, files, and privacy
 
 - Tauri application state is saved through SQLite schema v3, with migrations,
-  foreign keys, normalized entity tables, an app-state snapshot, and private
-  chat and chat-scoped permission exclusion. Browser localStorage is isolated
-  to the development preview.
+  foreign keys, normalized entity tables, normalized attachment metadata, an
+  app-state snapshot, and private chat and chat-scoped permission exclusion.
+  Native attachment paths remain outside the webview payload. Browser
+  localStorage is isolated to the development preview.
 - Prompt composition is deterministic: Juniper identity, assistant prompt,
   compiled personality, response preference, host tool guidance, curated
   memory, history, attachment context, and the current user message.
@@ -78,7 +79,7 @@ Passing with the bundled Node runtime:
 - pnpm format
 - pnpm lint
 - pnpm typecheck
-- pnpm test — 5 files, 16 tests
+- pnpm test — 5 files, 17 tests
 - pnpm build
 - pnpm schema:validate — 7 schemas and representative fixtures
 - pnpm version:check
@@ -88,7 +89,9 @@ Passing with the bundled Node runtime:
 - Rust cargo clippy --all-targets -- -D warnings
 - Rust cargo test --locked — 32 tests passed
 - pnpm tauri build --bundles deb,appimage — native binary plus `.deb` and
-  `.AppImage` bundles produced
+  `.AppImage` bundles produced. Current artifact hashes:
+  - `.deb`: `a061c1f22a6e392dcfa01a6b6799e3fd54aa75a643e91b817ec9f4664ae5d034`
+  - `.AppImage`: `c498adc0f6b8d7a42d84e9ff3bfe81810ddb3ecc96b1a7e1073e087010801f33`
 - bounded pnpm tauri dev smoke — Vite and the compiled Tauri binary launched
   successfully until the headless timeout; no GUI interaction is claimed
 
