@@ -220,6 +220,26 @@ The Windows job also cleared `prettier --check`, confirming the preventive
 `.gitattributes` did its job — that check would otherwise have failed first and
 masked the icon error.
 
+### Fourth attempt
+
+Linux and Android passed again. Windows **built the MSI for the first time**,
+then failed installing it:
+
+```
+MSI install failed with 1619
+```
+
+1619 is `ERROR_INSTALL_PACKAGE_OPEN_FAILED`. `verify-windows-msi.ps1` passed the
+relative `release-artifacts/...msi` straight to `msiexec`, which resolves paths
+against its own working directory rather than the caller's. The same script
+already called `Resolve-Path` for the MSI database read on line 19, so the
+requirement was known but not applied to the install and uninstall calls — the
+same class of defect as the Linux `apt` path.
+
+Fixed by resolving `$MsiPath` to an absolute path once, up front. Also accepts
+exit code 3010 (`ERROR_SUCCESS_REBOOT_REQUIRED`) alongside 0, since that is a
+successful install.
+
 ### Third attempt
 
 Linux and **Android both passed** — the Android job produced a signed APK and

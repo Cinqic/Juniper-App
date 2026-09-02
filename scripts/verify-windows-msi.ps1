@@ -10,13 +10,18 @@ if (-not (Test-Path -LiteralPath $MsiPath -PathType Leaf)) {
   throw "MSI not found: $MsiPath"
 }
 
+# msiexec resolves paths against its own working directory, not the caller's, so
+# a relative path fails with 1619 (ERROR_INSTALL_PACKAGE_OPEN_FAILED). Resolve
+# once here and use the absolute path everywhere below.
+$MsiPath = (Resolve-Path -LiteralPath $MsiPath).Path
+
 $installer = New-Object -ComObject WindowsInstaller.Installer
 $database = $installer.GetType().InvokeMember(
   'OpenDatabase',
   'InvokeMethod',
   $null,
   $installer,
-  @((Resolve-Path -LiteralPath $MsiPath).Path, 0)
+  @($MsiPath, 0)
 )
 $view = $database.GetType().InvokeMember(
   'OpenView',
@@ -40,8 +45,10 @@ $signature = Get-AuthenticodeSignature -LiteralPath $MsiPath
   "AuthenticodeStatus=$($signature.Status)"
 ) | Set-Content -LiteralPath $EvidencePath -Encoding utf8
 
+# 0 is success; 3010 is ERROR_SUCCESS_REBOOT_REQUIRED, which is also a
+# successful install and must not fail the smoke test.
 $install = Start-Process msiexec.exe -ArgumentList @('/i', $MsiPath, '/qn', '/norestart') -Wait -PassThru
-if ($install.ExitCode -ne 0) { throw "MSI install failed with $($install.ExitCode)" }
+if ($install.ExitCode -notin @(0, 3010)) { throw "MSI install failed with $($install.ExitCode)" }
 
 $exe = Get-ChildItem -Path $env:ProgramFiles, ${env:ProgramFiles(x86)} -Filter Juniper.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $exe) { throw 'Installed Juniper.exe was not found.' }
@@ -51,5 +58,5 @@ if ($process.HasExited) { throw "Juniper exited during launch smoke test with $(
 Stop-Process -Id $process.Id -Force
 
 $uninstall = Start-Process msiexec.exe -ArgumentList @('/x', $MsiPath, '/qn', '/norestart') -Wait -PassThru
-if ($uninstall.ExitCode -ne 0) { throw "MSI uninstall failed with $($uninstall.ExitCode)" }
+if ($uninstall.ExitCode -notin @(0, 3010)) { throw "MSI uninstall failed with $($uninstall.ExitCode)" }
 if (Test-Path -LiteralPath $exe.FullName) { throw 'Juniper.exe remained after uninstall.' }
