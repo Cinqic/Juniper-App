@@ -9,6 +9,14 @@ on:
 permissions:
   contents: read
 
+# Supersede in-flight runs for the same ref. Without this, a second push
+# while a run is still going makes gitleaks-action compute a commit range
+# against a head the checkout does not contain, and the job fails on
+# "Invalid revision range" rather than on anything real.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   NODE_VERSION: '22'
   PNPM_VERSION: '11.19.0'
