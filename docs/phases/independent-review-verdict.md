@@ -177,6 +177,22 @@ compile.
 **Tool and thinking round-trips are qualified.** See the real-model section
 above.
 
+**The dependency audit could never report on `main`.** `rustsec/audit-check`
+publishes its result as a check run, but `validation.yml` granted only
+`contents: read`. The step failed with _"Resource not accessible by
+integration"_ **after** the audit itself had succeeded, so the job went red for
+a permissions reason rather than a security one. Fixed by granting
+`checks: write`, scoped to that job.
+
+The audit itself is clean: **zero vulnerabilities**. It reports 17 informational
+advisories — 16 unmaintained, 1 unsound — every one of them a transitive
+dependency of Tauri 2's GTK3 stack (`atk`, `gdk*`, `gtk*`, `glib`,
+`proc-macro-error`, the `unic-*` crates). Juniper does not depend on any of them
+directly and cannot resolve them without an upstream Tauri change. Per the
+action's own documentation, informational advisories do not affect check status,
+so they are surfaced rather than suppressed. The one unsound advisory,
+RUSTSEC-2024-0429, affects `glib::VariantStrIter`, which Juniper does not use.
+
 **Two preventive CI fixes.** A `.gitattributes` pins text files to LF, because
 the Windows release job runs `prettier --check` under the default
 `endOfLine: "lf"` and a CRLF checkout would fail it — every tracked file is
