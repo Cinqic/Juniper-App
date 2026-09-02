@@ -2126,6 +2126,7 @@ version = "0.2.0-rc.1"
 dependencies = [
  "futures-util",
  "keyring",
+ "libc",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",

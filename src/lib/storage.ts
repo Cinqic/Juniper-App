@@ -126,13 +126,29 @@ export function normalizeAppData(value: unknown): AppData {
   }
 }
 
-function inferTransportLocation(baseUrl: string | undefined, locality: string | undefined) {
+export function inferTransportLocation(baseUrl: string | undefined, locality?: string) {
   if (locality === 'remote') return 'remote' as const
   try {
-    const host = baseUrl ? new URL(baseUrl).hostname.toLowerCase() : ''
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return 'on-device' as const
-    if (host.endsWith('.local') || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host))
+    const hostname = baseUrl ? new URL(baseUrl).hostname.toLowerCase() : ''
+    const host = hostname.replace(/^\[|\]$/g, '')
+    const firstIpv6Group = host.includes(':') ? Number.parseInt(host.split(':')[0] ?? '', 16) : NaN
+    if (
+      host === 'localhost' ||
+      host.endsWith('.localhost') ||
+      host === '::1' ||
+      /^127\./.test(host)
+    ) {
+      return 'on-device' as const
+    }
+    if (
+      host.endsWith('.local') ||
+      /^(10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host) ||
+      (firstIpv6Group >= 0xfc00 && firstIpv6Group <= 0xfdff) ||
+      (firstIpv6Group >= 0xfe80 && firstIpv6Group <= 0xfebf)
+    ) {
       return 'local-network' as const
+    }
+    if (host) return 'remote' as const
   } catch {
     // Fall through to unknown rather than guessing from a malformed endpoint.
   }

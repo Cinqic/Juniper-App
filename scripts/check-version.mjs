@@ -1,4 +1,4 @@
-/* global URL, console */
+/* global URL, console, process */
 
 import { readFile } from 'node:fs/promises'
 
@@ -25,6 +25,24 @@ if (
 ) {
   throw new Error(
     `Version mismatch: expected ${expected} across package, Cargo, Tauri, and release manifest.`,
+  )
+}
+const releaseTag = process.env.RELEASE_TAG
+if (releaseTag && releaseTag !== `v${expected}`) {
+  throw new Error(`Release tag mismatch: expected v${expected}, received ${releaseTag}.`)
+}
+const expectedAndroidVersionCodes = new Map([['0.2.0-rc.1', 2001]])
+const expectedMsiVersions = new Map([['0.2.0-rc.1', '0.2.0.1']])
+const androidVersionCode = tauri.bundle?.android?.versionCode
+if (androidVersionCode !== expectedAndroidVersionCodes.get(expected)) {
+  throw new Error(
+    `Android versionCode mismatch: ${expected} must use ${expectedAndroidVersionCodes.get(expected)}.`,
+  )
+}
+const msiVersion = tauri.bundle?.windows?.wix?.version
+if (msiVersion !== expectedMsiVersions.get(expected)) {
+  throw new Error(
+    `MSI version mismatch: ${expected} must use Windows Installer version ${expectedMsiVersions.get(expected)}.`,
   )
 }
 console.log(`Version consistency passed: ${expected}`)

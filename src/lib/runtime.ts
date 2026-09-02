@@ -17,6 +17,7 @@ import type {
 import { normalizeAppData } from './storage'
 
 export const runningInTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+export const browserPreviewEnabled = import.meta.env.DEV
 
 function abortError(): DOMException {
   return new DOMException('Generation cancelled', 'AbortError')
@@ -29,6 +30,9 @@ export async function streamChat(
 ): Promise<void> {
   if (signal.aborted) throw abortError()
   if (!runningInTauri) {
+    if (!browserPreviewEnabled) {
+      throw new Error('Model generation requires the Juniper native runtime.')
+    }
     await fakeStream(request, onEvent, signal)
     return
   }
@@ -233,7 +237,9 @@ export async function getDiagnostics(): Promise<Record<string, string>> {
   if (runningInTauri) return invoke<Record<string, string>>('system_info')
   return {
     application: 'Juniper 0.2.0-rc.1',
-    runtime: 'Browser preview (development only)',
+    runtime: browserPreviewEnabled
+      ? 'Browser preview (development only)'
+      : 'Native runtime unavailable',
     platform: navigator.platform,
     provider: 'Not connected',
     telemetry: 'Off',

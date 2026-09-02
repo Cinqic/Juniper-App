@@ -1,4 +1,4 @@
-use crate::commands::{AppState, Cancellation, record_runtime_log};
+use crate::commands::{AppState, Cancellation, record_runtime_log, valid_credential_reference};
 use crate::domain::{
     ChatRequest, ChatStreamEvent, DiscoveredModel, HostToolContext, ModelInspection,
     ModelPullProgress, NormalizedToolCall, PermissionGrant, PermissionRequest, RuntimeError, Usage,
@@ -18,10 +18,256 @@ const CLIENT_NAME: &str = "Juniper/0.2";
 const MAX_ATTACHMENT_BYTES: usize = 1024 * 1024;
 const MAX_ATTACHMENT_COUNT: usize = 8;
 const MAX_TOTAL_ATTACHMENT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_STREAM_RECORD_BYTES: usize = 1024 * 1024;
+const MAX_CHAT_CONTENT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_CHAT_MESSAGES: usize = 256;
+const MAX_TOOL_COUNT: usize = 64;
+const MAX_TOOL_SCHEMA_BYTES: usize = 256 * 1024;
+const MAX_PERMISSION_GRANTS: usize = 256;
+const MAX_HOST_CONTEXT_ITEMS: usize = 1_000;
+const MAX_HOST_CONTEXT_BYTES: usize = 4 * 1024 * 1024;
+const PROVIDER_TIMEOUT: Duration = Duration::from_secs(300);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(not(test))]
+const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+#[cfg(test)]
+const STREAM_IDLE_TIMEOUT: Duration = Duration::from_millis(50);
 
-pub async fn stream(
+fn provider_client() -> Result<Client, ProviderError> {
+    Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(PROVIDER_TIMEOUT)
+        .build()
+        .map_err(|_| {
+            ProviderError::new(
+                "PROVIDER_CLIENT_ERROR",
+                "The provider client could not be initialized.",
+            )
+        })
+}
+
+fn validated_base_url(base_url: &str) -> Result<String, ProviderError> {
+    let base_url = base_url.trim();
+    if base_url.is_empty() || base_url.len() > 2048 || base_url.chars().any(char::is_control) {
+        return Err(ProviderError::new(
+            "INVALID_PROVIDER_URL",
+            "Enter a valid provider URL.",
+        ));
+    }
+    let parsed = reqwest::Url::parse(base_url)
+        .map_err(|_| ProviderError::new("INVALID_PROVIDER_URL", "Enter a valid provider URL."))?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(ProviderError::new(
+            "INVALID_PROVIDER_URL",
+            "Provider URLs must use HTTP or HTTPS, include a host, and must not embed credentials, queries, or fragments.",
+        ));
+    }
+    Ok(base_url.trim_end_matches('/').to_owned())
+}
+
+fn openai_api_base(base_url: &str) -> Result<String, ProviderError> {
+    let base = validated_base_url(base_url)?;
+    Ok(if base.ends_with("/v1") {
+        base
+    } else {
+        format!("{base}/v1")
+    })
+}
+
+fn validate_chat_request(request: &ChatRequest) -> Result<(), ProviderError> {
+    if !matches!(
+        request.provider.kind.as_str(),
+        "ollama" | "openai-compatible" | "llama-cpp"
+    ) {
+        return Err(ProviderError::new(
+            "UNSUPPORTED_PROVIDER",
+            "This provider type is not supported.",
+        ));
+    }
+    validated_base_url(&request.provider.base_url)?;
+    if request.model.provider_id != request.provider.id {
+        return Err(ProviderError::new(
+            "MODEL_PROVIDER_MISMATCH",
+            "The selected model does not belong to the selected provider.",
+        ));
+    }
+    if request
+        .provider
+        .api_key_ref
+        .as_deref()
+        .is_some_and(|reference| !valid_credential_reference(reference))
+    {
+        return Err(ProviderError::new(
+            "INVALID_CREDENTIAL_REFERENCE",
+            "The provider credential reference is invalid.",
+        ));
+    }
+    for value in [
+        request.request_id.as_str(),
+        request.assistant_id.as_str(),
+        request.conversation_id.as_str(),
+        request.provider.id.as_str(),
+        request.model.id.as_str(),
+        request.model.provider_id.as_str(),
+        request.model.model_id.as_str(),
+    ] {
+        if value.is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
+            return Err(ProviderError::new(
+                "INVALID_REQUEST",
+                "The chat request contains an invalid identifier.",
+            ));
+        }
+    }
+    if request.provider.name.is_empty()
+        || request.provider.name.len() > 160
+        || request.provider.name.chars().any(char::is_control)
+        || request.model.display_name.is_empty()
+        || request.model.display_name.len() > 256
+        || request.model.display_name.chars().any(char::is_control)
+        || !matches!(
+            request.provider.locality.as_str(),
+            "local" | "remote" | "unknown"
+        )
+        || !matches!(
+            request.provider.transport_location.as_str(),
+            "on-device" | "local-network" | "remote" | "unknown"
+        )
+        || !matches!(
+            request.model.execution_location.as_str(),
+            "on-device" | "local-network" | "remote" | "unknown"
+        )
+    {
+        return Err(ProviderError::new(
+            "INVALID_REQUEST",
+            "The chat request contains invalid provider or model metadata.",
+        ));
+    }
+    if request.messages.len() > MAX_CHAT_MESSAGES
+        || request.messages.iter().any(|message| {
+            !matches!(
+                message.role.as_str(),
+                "system" | "user" | "assistant" | "tool"
+            )
+        })
+        || request
+            .messages
+            .iter()
+            .map(|message| message.content.len())
+            .sum::<usize>()
+            > MAX_CHAT_CONTENT_BYTES
+    {
+        return Err(ProviderError::new(
+            "REQUEST_TOO_LARGE",
+            "The chat request exceeds the native runtime limits.",
+        ));
+    }
+    if request.tools.len() > MAX_TOOL_COUNT
+        || request.tools.iter().any(|tool| {
+            tool.name.is_empty()
+                || tool.name.len() > 128
+                || !tool.name.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+                })
+                || tool.description.len() > 2_000
+                || tool.description.chars().any(char::is_control)
+                || !matches!(
+                    tool.risk.as_str(),
+                    "automatic-safe"
+                        | "user-data-read"
+                        | "user-data-write"
+                        | "filesystem-read"
+                        | "network"
+                        | "external-process"
+                        | "sensitive"
+                )
+                || serde_json::to_vec(&tool.schema)
+                    .map_or(true, |schema| schema.len() > MAX_TOOL_SCHEMA_BYTES)
+        })
+    {
+        return Err(ProviderError::new(
+            "INVALID_TOOLS",
+            "The chat request contains invalid or oversized tool definitions.",
+        ));
+    }
+    if request.permission_grants.len() > MAX_PERMISSION_GRANTS
+        || request.permission_grants.iter().any(|grant| {
+            !valid_request_id_component(&grant.id)
+                || !valid_request_id_component(&grant.tool_name)
+                || !matches!(grant.scope.as_str(), "chat" | "assistant")
+                || grant.assistant_id != request.assistant_id
+                || match grant.scope.as_str() {
+                    "chat" => {
+                        grant.conversation_id.as_deref() != Some(request.conversation_id.as_str())
+                    }
+                    "assistant" => grant.conversation_id.is_some(),
+                    _ => true,
+                }
+        })
+    {
+        return Err(ProviderError::new(
+            "INVALID_PERMISSION_GRANTS",
+            "The chat request contains invalid permission grants.",
+        ));
+    }
+    if request.host_context.memories.len() > MAX_HOST_CONTEXT_ITEMS
+        || request.host_context.conversations.len() > MAX_HOST_CONTEXT_ITEMS
+        || serde_json::to_vec(&request.host_context)
+            .map_or(true, |context| context.len() > MAX_HOST_CONTEXT_BYTES)
+        || request.model.capabilities.generation_parameters.len() > 32
+        || request
+            .model
+            .capabilities
+            .generation_parameters
+            .iter()
+            .any(|parameter| !valid_request_id_component(parameter))
+    {
+        return Err(ProviderError::new(
+            "REQUEST_TOO_LARGE",
+            "The chat request exceeds the native runtime limits.",
+        ));
+    }
+    let generation = &request.generation;
+    if generation
+        .temperature
+        .is_some_and(|value| !value.is_finite() || !(0.0..=2.0).contains(&value))
+        || generation
+            .top_p
+            .is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+        || generation
+            .min_p
+            .is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+        || generation
+            .repetition_penalty
+            .is_some_and(|value| !value.is_finite() || !(0.0..=10.0).contains(&value))
+        || generation.top_k.is_some_and(|value| value > 1_000_000)
+        || generation
+            .max_output
+            .is_some_and(|value| value == 0 || value > 1_000_000)
+        || generation.thinking.as_deref().is_some_and(|value| {
+            !matches!(value, "auto" | "off" | "on" | "low" | "medium" | "high")
+        })
+    {
+        return Err(ProviderError::new(
+            "INVALID_GENERATION_OPTIONS",
+            "Generation options are outside the supported bounds.",
+        ));
+    }
+    Ok(())
+}
+
+fn valid_request_id_component(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 256 && !value.chars().any(char::is_control)
+}
+
+pub async fn stream<R: Runtime>(
     request: ChatRequest,
-    app: AppHandle,
+    app: AppHandle<R>,
     cancellation: Cancellation,
     state: &AppState,
 ) {
@@ -42,7 +288,9 @@ pub async fn stream(
         Some(&request.provider.kind),
         Some(&request.model.model_id),
     );
-    let result = if request.provider.kind == "ollama" {
+    let result = if let Err(error) = validate_chat_request(&request) {
+        Err(error)
+    } else if request.provider.kind == "ollama" {
         stream_ollama(&request, &app, &topic, &cancellation, state).await
     } else {
         stream_openai_compatible(&request, &app, &topic, &cancellation, state).await
@@ -142,6 +390,9 @@ fn add_credential(
     call: reqwest::RequestBuilder,
     api_key_ref: Option<&str>,
 ) -> Result<reqwest::RequestBuilder, String> {
+    if api_key_ref.is_some_and(|reference| !valid_credential_reference(reference)) {
+        return Err("The provider credential reference is invalid.".into());
+    }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if let Some(reference) = api_key_ref {
         let entry = keyring::Entry::new("com.cinqic.juniper", reference)
@@ -309,19 +560,17 @@ async fn execute_request(
     }
 }
 
-async fn stream_openai_compatible(
+async fn stream_openai_compatible<R: Runtime>(
     request: &ChatRequest,
-    app: &AppHandle,
+    app: &AppHandle<R>,
     topic: &str,
     cancellation: &Cancellation,
     state: &AppState,
 ) -> Result<(), ProviderError> {
-    let base = request.provider.base_url.trim_end_matches('/');
-    let endpoint = if base.ends_with("/v1") {
-        format!("{base}/chat/completions")
-    } else {
-        format!("{base}/v1/chat/completions")
-    };
+    let endpoint = format!(
+        "{}/chat/completions",
+        openai_api_base(&request.provider.base_url)?
+    );
     let tools = tool_payload(request);
     let mut messages = request_messages(request)?;
     let mut session_grants = HashSet::new();
@@ -372,12 +621,12 @@ async fn stream_openai_compatible(
 // This boundary intentionally carries the request, UI event sink, cancellation, and
 // mutable host session together so every tool decision stays in one auditable loop.
 #[allow(clippy::too_many_arguments)]
-async fn host_tool_turn(
+async fn host_tool_turn<R: Runtime>(
     request: &ChatRequest,
     calls: &[NormalizedToolCall],
     round: u32,
     cancellation: &Cancellation,
-    app: &AppHandle,
+    app: &AppHandle<R>,
     topic: &str,
     state: &AppState,
     session_grants: &mut HashSet<String>,
@@ -446,11 +695,11 @@ async fn host_tool_turn(
     Ok((assistant_calls, results))
 }
 
-async fn request_permission(
+async fn request_permission<R: Runtime>(
     request: &ChatRequest,
     call: &NormalizedToolCall,
     tool: &crate::domain::ToolDefinition,
-    app: &AppHandle,
+    app: &AppHandle<R>,
     topic: &str,
     state: &AppState,
     cancellation: &Cancellation,
@@ -689,9 +938,9 @@ fn unix_timestamp() -> String {
         .unwrap_or_else(|_| "0".into())
 }
 
-fn emit_tool_turn(
+fn emit_tool_turn<R: Runtime>(
     request: &ChatRequest,
-    app: &AppHandle,
+    app: &AppHandle<R>,
     topic: &str,
     calls: &[NormalizedToolCall],
     results: &[Value],
@@ -860,7 +1109,7 @@ async fn stream_one_openai_turn<R: Runtime>(
     topic: &str,
     cancellation: &Cancellation,
 ) -> Result<TurnOutcome, ProviderError> {
-    let client = Client::new();
+    let client = provider_client()?;
     let call = client
         .post(endpoint)
         .header("user-agent", CLIENT_NAME)
@@ -946,17 +1195,30 @@ async fn stream_one_openai_turn<R: Runtime>(
                     entry.id = id.to_owned();
                 }
                 if let Some(name) = call["function"]["name"].as_str() {
-                    entry.name = name.to_owned();
+                    entry.name.push_str(name);
                 }
                 if let Some(arguments) = call["function"]["arguments"].as_str() {
                     entry.arguments.push_str(arguments);
+                }
+                if entry.id.len() > 256
+                    || entry.name.len() > 256
+                    || entry.arguments.len() > tools::MAX_PAYLOAD_BYTES
+                {
+                    return Err(ProviderError::new(
+                        "MALFORMED_TOOL_CALL",
+                        "The provider returned an oversized tool call.",
+                    ));
                 }
             }
         }
         Ok(())
     };
-    while let Some(next) = tokio::select! { chunk = bytes.next() => chunk, _ = cancellation.wait() => return Err(ProviderError::new("REQUEST_CANCELLED", "Generation cancelled.")) }
-    {
+    loop {
+        let next = tokio::select! {
+            chunk = timeout(STREAM_IDLE_TIMEOUT, bytes.next()) => chunk.map_err(|_| ProviderError::new("STREAM_TIMEOUT", "The provider stream stalled."))?,
+            _ = cancellation.wait() => return Err(ProviderError::new("REQUEST_CANCELLED", "Generation cancelled.")),
+        };
+        let Some(next) = next else { break };
         let chunk = next.map_err(|_| {
             ProviderError::new("STREAM_ERROR", "The model stream ended unexpectedly.")
         })?;
@@ -1002,16 +1264,16 @@ async fn stream_one_openai_turn<R: Runtime>(
     Ok(TurnOutcome { tool_calls })
 }
 
-async fn stream_ollama(
+async fn stream_ollama<R: Runtime>(
     request: &ChatRequest,
-    app: &AppHandle,
+    app: &AppHandle<R>,
     topic: &str,
     cancellation: &Cancellation,
     state: &AppState,
 ) -> Result<(), ProviderError> {
     let endpoint = format!(
         "{}/api/chat",
-        request.provider.base_url.trim_end_matches('/')
+        validated_base_url(&request.provider.base_url)?
     );
     let tools = tool_payload(request);
     let mut messages = request_messages(request)?;
@@ -1073,7 +1335,7 @@ async fn stream_one_ollama_turn<R: Runtime>(
     topic: &str,
     cancellation: &Cancellation,
 ) -> Result<TurnOutcome, ProviderError> {
-    let call = Client::new()
+    let call = provider_client()?
         .post(endpoint)
         .header("user-agent", CLIENT_NAME)
         .json(&ollama_body(request, messages, tools));
@@ -1164,8 +1426,12 @@ async fn stream_one_ollama_turn<R: Runtime>(
         }
         Ok(())
     };
-    while let Some(next) = tokio::select! { chunk = bytes.next() => chunk, _ = cancellation.wait() => return Err(ProviderError::new("REQUEST_CANCELLED", "Generation cancelled.")) }
-    {
+    loop {
+        let next = tokio::select! {
+            chunk = timeout(STREAM_IDLE_TIMEOUT, bytes.next()) => chunk.map_err(|_| ProviderError::new("STREAM_TIMEOUT", "The Ollama stream stalled."))?,
+            _ = cancellation.wait() => return Err(ProviderError::new("REQUEST_CANCELLED", "Generation cancelled.")),
+        };
+        let Some(next) = next else { break };
         let chunk = next.map_err(|_| {
             ProviderError::new("STREAM_ERROR", "The Ollama stream ended unexpectedly.")
         })?;
@@ -1216,15 +1482,27 @@ pub async fn health_check(
     base_url: &str,
     api_key_ref: Option<&str>,
 ) -> Result<String, String> {
+    if !matches!(provider_kind, "ollama" | "openai-compatible" | "llama-cpp") {
+        return Err("Unsupported provider type.".into());
+    }
     let url = if provider_kind == "ollama" {
-        format!("{}/api/tags", base_url.trim_end_matches('/'))
+        format!(
+            "{}/api/tags",
+            validated_base_url(base_url).map_err(|error| error.message)?
+        )
     } else {
-        format!("{}/models", base_url.trim_end_matches('/'))
+        format!(
+            "{}/models",
+            openai_api_base(base_url).map_err(|error| error.message)?
+        )
     };
-    let response = add_credential(Client::new().get(url), api_key_ref)?
-        .send()
-        .await
-        .map_err(|_| "Provider is not reachable.".to_owned())?;
+    let response = add_credential(
+        provider_client().map_err(|error| error.message)?.get(url),
+        api_key_ref,
+    )?
+    .send()
+    .await
+    .map_err(|_| "Provider is not reachable.".to_owned())?;
     if response.status().is_success() {
         Ok("connected".into())
     } else {
@@ -1237,18 +1515,30 @@ pub async fn list_models(
     base_url: &str,
     api_key_ref: Option<&str>,
 ) -> Result<Vec<DiscoveredModel>, String> {
+    if !matches!(provider_kind, "ollama" | "openai-compatible" | "llama-cpp") {
+        return Err("Unsupported provider type.".into());
+    }
     let url = if provider_kind == "ollama" {
-        format!("{}/api/tags", base_url.trim_end_matches('/'))
+        format!(
+            "{}/api/tags",
+            validated_base_url(base_url).map_err(|error| error.message)?
+        )
     } else {
-        format!("{}/models", base_url.trim_end_matches('/'))
+        format!(
+            "{}/models",
+            openai_api_base(base_url).map_err(|error| error.message)?
+        )
     };
-    let value: Value = add_credential(Client::new().get(url), api_key_ref)?
-        .send()
-        .await
-        .map_err(|_| "Provider is not reachable.".to_owned())?
-        .json()
-        .await
-        .map_err(|_| "Provider returned invalid model metadata.".to_owned())?;
+    let value: Value = add_credential(
+        provider_client().map_err(|error| error.message)?.get(url),
+        api_key_ref,
+    )?
+    .send()
+    .await
+    .map_err(|_| "Provider is not reachable.".to_owned())?
+    .json()
+    .await
+    .map_err(|_| "Provider returned invalid model metadata.".to_owned())?;
     parse_model_list(provider_kind, &value)
 }
 
@@ -1296,6 +1586,12 @@ pub async fn inspect_model(
     model_id: &str,
     api_key_ref: Option<&str>,
 ) -> Result<ModelInspection, String> {
+    if !matches!(provider_kind, "ollama" | "openai-compatible" | "llama-cpp") {
+        return Err("Unsupported provider type.".into());
+    }
+    if model_id.is_empty() || model_id.len() > 256 || model_id.chars().any(char::is_control) {
+        return Err("Invalid model identifier.".into());
+    }
     if provider_kind != "ollama" {
         return Ok(ModelInspection {
             model_id: model_id.into(),
@@ -1314,9 +1610,13 @@ pub async fn inspect_model(
             raw_capabilities: None,
         });
     }
-    let url = format!("{}/api/show", base_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/api/show",
+        validated_base_url(base_url).map_err(|error| error.message)?
+    );
     let value: Value = add_credential(
-        Client::new()
+        provider_client()
+            .map_err(|error| error.message)?
             .post(url)
             .json(&json!({ "model": model_id, "verbose": true })),
         api_key_ref,
@@ -1389,6 +1689,12 @@ fn drain_provider_buffer(
     handler: &mut impl FnMut(&str) -> Result<(), ProviderError>,
 ) -> Result<(), ProviderError> {
     while let Some(index) = buffer.iter().position(|byte| *byte == b'\n') {
+        if index > MAX_STREAM_RECORD_BYTES {
+            return Err(ProviderError::new(
+                "PROVIDER_RECORD_TOO_LARGE",
+                "The provider returned an oversized streaming record.",
+            ));
+        }
         let line = buffer.drain(..=index).collect::<Vec<_>>();
         let line = std::str::from_utf8(&line).map_err(|_| {
             ProviderError::new(
@@ -1397,6 +1703,12 @@ fn drain_provider_buffer(
             )
         })?;
         handler(line)?;
+    }
+    if buffer.len() > MAX_STREAM_RECORD_BYTES {
+        return Err(ProviderError::new(
+            "PROVIDER_RECORD_TOO_LARGE",
+            "The provider returned an oversized streaming record.",
+        ));
     }
     Ok(())
 }
@@ -1456,10 +1768,17 @@ pub async fn pull_model<R: Runtime>(
     {
         return Err("Enter a valid model reference.".into());
     }
+    if request_id.is_empty() || request_id.len() > 256 || request_id.chars().any(char::is_control) {
+        return Err("Invalid model download request identifier.".into());
+    }
     let topic = format!("juniper://model-pull/{request_id}");
-    let endpoint = format!("{}/api/pull", base_url.trim_end_matches('/'));
+    let endpoint = format!(
+        "{}/api/pull",
+        validated_base_url(base_url).map_err(|error| error.message)?
+    );
     let call = add_credential(
-        Client::new()
+        provider_client()
+            .map_err(|error| error.message)?
             .post(endpoint)
             .json(&json!({ "model": model, "stream": true })),
         api_key_ref,
@@ -1486,9 +1805,13 @@ pub async fn pull_model<R: Runtime>(
     }
     let mut bytes = response.bytes_stream();
     let mut buffer = Vec::new();
-    while let Some(next) = tokio::select! {
-        chunk = bytes.next() => chunk,
-        _ = cancellation.wait() => {
+    loop {
+        let next = tokio::select! {
+            chunk = timeout(STREAM_IDLE_TIMEOUT, bytes.next()) => match chunk {
+                Ok(chunk) => chunk,
+                Err(_) => return Err("Model download stream stalled.".into()),
+            },
+            _ = cancellation.wait() => {
             emit_pull_progress(
                 &app,
                 &topic,
@@ -1500,11 +1823,18 @@ pub async fn pull_model<R: Runtime>(
                 }),
             );
             return Err("Model download cancelled.".into());
-        }
-    } {
+            }
+        };
+        let Some(next) = next else { break };
         let chunk = next.map_err(|_| "Model download stream failed.".to_owned())?;
         buffer.extend_from_slice(&chunk);
+        if buffer.len() > MAX_STREAM_RECORD_BYTES && !buffer.contains(&b'\n') {
+            return Err("Ollama returned an oversized pull progress record.".into());
+        }
         while let Some(index) = buffer.iter().position(|byte| *byte == b'\n') {
+            if index > MAX_STREAM_RECORD_BYTES {
+                return Err("Ollama returned an oversized pull progress record.".into());
+            }
             let line = buffer.drain(..=index).collect::<Vec<_>>();
             let line = std::str::from_utf8(&line)
                 .map_err(|_| "Ollama returned invalid UTF-8.".to_owned())?
@@ -1580,9 +1910,16 @@ pub async fn delete_model(
     if provider_kind != "ollama" {
         return Err("Model deletion is only available for managed Ollama models.".into());
     }
+    if model_id.is_empty() || model_id.len() > 256 || model_id.chars().any(char::is_control) {
+        return Err("Invalid model identifier.".into());
+    }
     add_credential(
-        Client::new()
-            .delete(format!("{}/api/delete", base_url.trim_end_matches('/')))
+        provider_client()
+            .map_err(|error| error.message)?
+            .delete(format!(
+                "{}/api/delete",
+                validated_base_url(base_url).map_err(|error| error.message)?
+            ))
             .json(&json!({ "model": model_id })),
         api_key_ref,
     )?
@@ -1603,7 +1940,12 @@ pub async fn running_models(
         return Ok(Vec::new());
     }
     let value: Value = add_credential(
-        Client::new().get(format!("{}/api/ps", base_url.trim_end_matches('/'))),
+        provider_client()
+            .map_err(|error| error.message)?
+            .get(format!(
+                "{}/api/ps",
+                validated_base_url(base_url).map_err(|error| error.message)?
+            )),
         api_key_ref,
     )?
     .send()
@@ -1620,6 +1962,8 @@ pub async fn running_models(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
+    use tauri::Listener;
 
     fn request() -> ChatRequest {
         serde_json::from_value(json!({
@@ -1637,6 +1981,7 @@ mod tests {
             },
             "model": {
                 "id": "ollama:model",
+                "providerId": "ollama",
                 "modelId": "model",
                 "displayName": "Model",
                 "executionLocation": "on-device",
@@ -1694,6 +2039,61 @@ mod tests {
         let body = ollama_body(&request, &[], &tools);
         assert_eq!(body["options"], Value::Null);
         assert_eq!(body["think"], Value::Null);
+    }
+
+    #[test]
+    fn request_rejects_cross_provider_models_and_invalid_credential_references() {
+        let mut mismatched = request();
+        mismatched.model.provider_id = "different-provider".into();
+        assert_eq!(
+            validate_chat_request(&mismatched).unwrap_err().code,
+            "MODEL_PROVIDER_MISMATCH"
+        );
+
+        let mut invalid_credential = request();
+        invalid_credential.provider.api_key_ref = Some("../credential".into());
+        assert_eq!(
+            validate_chat_request(&invalid_credential).unwrap_err().code,
+            "INVALID_CREDENTIAL_REFERENCE"
+        );
+    }
+
+    #[test]
+    fn request_rejects_oversized_tools_context_and_unscoped_grants() {
+        let mut oversized_tools = request();
+        oversized_tools.tools = (0..=MAX_TOOL_COUNT)
+            .map(|index| crate::domain::ToolDefinition {
+                name: format!("tool.{index}"),
+                description: "bounded".into(),
+                risk: "automatic-safe".into(),
+                enabled: true,
+                schema: json!({ "type": "object" }),
+            })
+            .collect();
+        assert_eq!(
+            validate_chat_request(&oversized_tools).unwrap_err().code,
+            "INVALID_TOOLS"
+        );
+
+        let mut oversized_context = request();
+        oversized_context.host_context.memories = vec![json!("x".repeat(MAX_HOST_CONTEXT_BYTES))];
+        assert_eq!(
+            validate_chat_request(&oversized_context).unwrap_err().code,
+            "REQUEST_TOO_LARGE"
+        );
+
+        let mut unscoped = request();
+        unscoped.permission_grants.push(PermissionGrant {
+            id: "grant-other".into(),
+            tool_name: "memory.list".into(),
+            scope: "assistant".into(),
+            assistant_id: "other-assistant".into(),
+            conversation_id: None,
+        });
+        assert_eq!(
+            validate_chat_request(&unscoped).unwrap_err().code,
+            "INVALID_PERMISSION_GRANTS"
+        );
     }
 
     #[test]
@@ -1948,6 +2348,55 @@ mod tests {
     }
 
     #[test]
+    fn provider_urls_are_bounded_and_normalized_without_embedded_credentials() {
+        assert_eq!(
+            openai_api_base("https://example.test").unwrap(),
+            "https://example.test/v1"
+        );
+        assert_eq!(
+            openai_api_base("https://example.test/v1/").unwrap(),
+            "https://example.test/v1"
+        );
+        for invalid in [
+            "file:///tmp/provider",
+            "https://user:secret@example.test/v1",
+            "https://example.test/v1?secret=value",
+            "https://example.test/v1#fragment",
+            "javascript:alert(1)",
+        ] {
+            assert!(validated_base_url(invalid).is_err(), "accepted {invalid}");
+        }
+    }
+
+    #[test]
+    fn oversized_provider_records_are_rejected_before_unbounded_buffering() {
+        let mut buffer = vec![b'x'; MAX_STREAM_RECORD_BYTES + 1];
+        let error = drain_provider_buffer(&mut buffer, &mut |_| Ok(()))
+            .expect_err("oversized record should fail");
+        assert_eq!(error.code, "PROVIDER_RECORD_TOO_LARGE");
+    }
+
+    #[test]
+    fn invalid_chat_roles_and_generation_options_are_rejected() {
+        let mut invalid_role = request();
+        invalid_role.messages.push(crate::domain::ChatMessage {
+            role: "developer".into(),
+            content: "not allowed".into(),
+        });
+        assert_eq!(
+            validate_chat_request(&invalid_role).unwrap_err().code,
+            "REQUEST_TOO_LARGE"
+        );
+
+        let mut invalid_generation = request();
+        invalid_generation.generation.temperature = Some(99.0);
+        assert_eq!(
+            validate_chat_request(&invalid_generation).unwrap_err().code,
+            "INVALID_GENERATION_OPTIONS"
+        );
+    }
+
+    #[test]
     fn ollama_pull_records_handle_progress_errors_and_final_chunks() {
         let progress = parse_ollama_pull_line(
             r#"{"status":"pulling manifest","digest":"sha256:abc","completed":3,"total":9}"#,
@@ -2150,8 +2599,8 @@ mod tests {
     fn fake_openai_chat_server_handles_unicode_tool_fragments_and_final_record() {
         let (base_url, server) = fake_json_server(vec![
             r#"data: {"choices":[{"delta":{"content":"Hello 🌿"}}]}
-data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"unit.convert","arguments":"{\"value\":1,"}}]}}]}
-data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"from\":\"km\",\"to\":\"m\"}"}}]}}]}
+ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"unit.","arguments":"{\"value\":1,"}}]}}]}
+ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"convert","arguments":"\"from\":\"km\",\"to\":\"m\"}"}}]}}]}
 data: [DONE]"#,
         ]);
         let app = tauri::test::mock_app();
@@ -2524,5 +2973,116 @@ data: [DONE]"#,
         };
         assert_eq!(error.code, "PROVIDER_UNREACHABLE");
         server.join().expect("fake server should stop");
+    }
+
+    #[test]
+    fn stalled_provider_stream_is_bounded_by_an_idle_timeout() {
+        let (base_url, server) = fake_delayed_stream_server(
+            "",
+            "data: [DONE]\n",
+            STREAM_IDLE_TIMEOUT.as_millis() as u64 * 3,
+        );
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let request = request();
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let result = runtime.block_on(stream_one_openai_turn(
+            &request,
+            &format!("{base_url}/v1/chat/completions"),
+            &[],
+            &[],
+            &handle,
+            "test-topic",
+            &Cancellation::default(),
+        ));
+        assert_eq!(result.unwrap_err().code, "STREAM_TIMEOUT");
+        server.join().expect("fake server should stop");
+    }
+
+    #[test]
+    #[ignore = "requires the owner-approved JUNIPER_LIVE_OLLAMA_MODEL and a local Ollama service"]
+    fn live_ollama_owner_approved_model_uses_the_native_adapter() {
+        let model = std::env::var("JUNIPER_LIVE_OLLAMA_MODEL")
+            .expect("set JUNIPER_LIVE_OLLAMA_MODEL to an already-installed model");
+        let base_url = std::env::var("JUNIPER_LIVE_OLLAMA_URL")
+            .unwrap_or_else(|_| "http://127.0.0.1:11434".into());
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+
+        runtime.block_on(async {
+            assert_eq!(
+                health_check("ollama", &base_url, None).await.unwrap(),
+                "connected"
+            );
+            let models = list_models("ollama", &base_url, None).await.unwrap();
+            assert!(models.iter().any(|item| item.model_id == model));
+            let inspection = inspect_model("ollama", &base_url, &model, None)
+                .await
+                .expect("installed model should be inspectable");
+            assert_eq!(inspection.model_id, model);
+
+            let mut request = request();
+            request.request_id = "live-smoke".into();
+            request.provider.base_url = base_url.clone();
+            request.model.model_id = model.clone();
+            request.model.display_name = model.clone();
+            request.model.capabilities.tools = "unknown".into();
+            request.model.capabilities.thinking = "unknown".into();
+            request.tools.clear();
+            request.messages = vec![
+                crate::domain::ChatMessage {
+                    role: "system".into(),
+                    content: "Reply briefly and do not claim to be a different application.".into(),
+                },
+                crate::domain::ChatMessage {
+                    role: "user".into(),
+                    content: "Reply with a short greeting that includes the Unicode character 🌿."
+                        .into(),
+                },
+            ];
+            request.generation.max_output = Some(64);
+
+            let events = Arc::new(Mutex::new(Vec::<Value>::new()));
+            let captured = events.clone();
+            handle.listen("juniper://chat/live-smoke", move |event| {
+                if let Ok(value) = serde_json::from_str(event.payload())
+                    && let Ok(mut events) = captured.lock()
+                {
+                    events.push(value);
+                }
+            });
+            stream(
+                request,
+                handle.clone(),
+                Cancellation::default(),
+                &AppState::default(),
+            )
+            .await;
+            let (text, saw_done, saw_error) = {
+                let events = events.lock().expect("live events should lock");
+                (
+                    events
+                        .iter()
+                        .filter_map(|event| event["delta"].as_str())
+                        .collect::<String>(),
+                    events.iter().any(|event| event["done"] == true),
+                    events.iter().any(|event| !event["error"].is_null()),
+                )
+            };
+            assert!(!text.trim().is_empty(), "live model returned no text");
+            assert!(saw_done);
+            assert!(!saw_error);
+
+            assert!(
+                inspect_model("ollama", &base_url, "juniper-definitely-missing", None)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(
+                health_check("ollama", &base_url, None).await.unwrap(),
+                "connected"
+            );
+        });
     }
 }

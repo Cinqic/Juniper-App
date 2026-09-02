@@ -64,6 +64,20 @@ describe('Juniper application shell', () => {
     expect(container.textContent).toContain('Permission boundary is active')
     expect(container.textContent).toContain('calculator.evaluate')
 
+    await act(async () => buttonByText(container, 'Settings').click())
+    const advancedLinks = container.querySelector('.advanced-links')
+    if (!advancedLinks) throw new Error('Advanced settings links not found')
+    const privacyLink = buttonByText(advancedLinks, 'Privacy center')
+    await act(async () => privacyLink.click())
+    expect(container.textContent).toContain('See what stays on this machine')
+
+    await act(async () => buttonByText(container, 'Settings').click())
+    const refreshedLinks = container.querySelector('.advanced-links')
+    if (!refreshedLinks) throw new Error('Advanced settings links not found')
+    const diagnosticsLink = buttonByText(refreshedLinks, 'Diagnostics')
+    await act(async () => diagnosticsLink.click())
+    expect(container.textContent).toContain('SQLite schema v3')
+
     await act(async () => buttonByText(container, 'Privacy center').click())
     expect(container.textContent).toContain('Privacy center')
     expect(container.textContent).toContain('Telemetry')

@@ -4,8 +4,9 @@ use crate::domain::{
 use crate::{providers, tools};
 use serde_json::{Value, json};
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    io::Read,
+    collections::{HashMap, HashSet, VecDeque, hash_map::Entry},
+    fs::{File, OpenOptions},
+    io::{Read, Write},
     path::PathBuf,
     process::Stdio,
     sync::{Arc, Mutex},
@@ -25,6 +26,32 @@ pub struct AppState {
 }
 
 pub const MAX_RUNTIME_LOGS: usize = 200;
+const MAX_ATTACHMENT_BYTES: u64 = 1024 * 1024;
+const MAX_GGUF_BYTES: u64 = 2 * 1024 * 1024 * 1024 * 1024;
+const MAX_APP_DATA_BYTES: usize = 64 * 1024 * 1024;
+
+fn open_regular_file(path: &std::path::Path, unavailable: &str) -> Result<File, String> {
+    let path_metadata = std::fs::symlink_metadata(path).map_err(|_| unavailable.to_owned())?;
+    if path_metadata.file_type().is_symlink() || !path_metadata.is_file() {
+        return Err("Symbolic links and non-regular files are not accepted.".into());
+    }
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW);
+    }
+    let file = options.open(path).map_err(|_| unavailable.to_owned())?;
+    if !file
+        .metadata()
+        .map_err(|_| unavailable.to_owned())?
+        .is_file()
+    {
+        return Err("Only regular files are accepted.".into());
+    }
+    Ok(file)
+}
 
 fn bounded_log_label(value: Option<&str>) -> Option<String> {
     let value = value?;
@@ -93,6 +120,28 @@ impl Cancellation {
     }
 }
 
+fn valid_request_id(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 256 && !value.chars().any(char::is_control)
+}
+
+fn begin_cancellable_operation(state: &AppState, request_id: &str) -> Result<Cancellation, String> {
+    if !valid_request_id(request_id) {
+        return Err("Invalid request identifier.".into());
+    }
+    let cancellation = Cancellation::default();
+    let mut operations = state
+        .cancellations
+        .lock()
+        .map_err(|_| "Cancellation state unavailable.")?;
+    match operations.entry(request_id.to_owned()) {
+        Entry::Vacant(entry) => {
+            entry.insert(cancellation.clone());
+            Ok(cancellation)
+        }
+        Entry::Occupied(_) => Err("A request with this identifier is already active.".into()),
+    }
+}
+
 #[tauri::command]
 pub fn system_info() -> HashMap<String, String> {
     let mut result = HashMap::from([
@@ -150,6 +199,14 @@ pub fn save_app_data(
     state: State<'_, AppState>,
     data: Value,
 ) -> Result<(), String> {
+    if !data.is_object()
+        || serde_json::to_vec(&data)
+            .map_err(|_| "Application data could not be encoded.".to_owned())?
+            .len()
+            > MAX_APP_DATA_BYTES
+    {
+        return Err("Application data is outside the allowed size or shape.".into());
+    }
     let path = app
         .path()
         .app_data_dir()
@@ -242,7 +299,7 @@ pub async fn pull_model(
     request_id: String,
     api_key_ref: Option<String>,
 ) -> Result<(), String> {
-    let cancellation = Cancellation::default();
+    let cancellation = begin_cancellable_operation(state.inner(), &request_id)?;
     record_runtime_log(
         state.inner(),
         "model.pull_started",
@@ -250,11 +307,6 @@ pub async fn pull_model(
         Some(&kind),
         Some(&model_reference),
     );
-    state
-        .cancellations
-        .lock()
-        .map_err(|_| "Cancellation state unavailable.")?
-        .insert(request_id.clone(), cancellation.clone());
     let result = providers::pull_model(
         app,
         &kind,
@@ -308,12 +360,11 @@ pub async fn import_gguf(
         .get(&selection_id)
         .cloned()
         .ok_or_else(|| "This GGUF selection is no longer available.".to_owned())?;
-    let path_text = path
-        .to_str()
-        .filter(|value| !value.chars().any(char::is_control))
-        .ok_or_else(|| "The selected GGUF path cannot be represented safely.".to_owned())?;
-    let metadata = std::fs::metadata(&path).map_err(|_| "The selected GGUF is unavailable.")?;
-    if !metadata.is_file() || metadata.len() == 0 {
+    let mut source = open_regular_file(&path, "The selected GGUF is unavailable.")?;
+    let metadata = source
+        .metadata()
+        .map_err(|_| "The selected GGUF is unavailable.")?;
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_GGUF_BYTES {
         return Err("The selected GGUF file is no longer a readable regular file.".into());
     }
     let cache_dir = app
@@ -322,16 +373,43 @@ pub async fn import_gguf(
         .map_err(|error| error.to_string())?
         .join("gguf-imports");
     std::fs::create_dir_all(&cache_dir).map_err(|error| error.to_string())?;
-    let modelfile = cache_dir.join(format!("juniper-{}.Modelfile", Uuid::new_v4()));
-    std::fs::write(&modelfile, format!("FROM {path_text}\n"))
-        .map_err(|error| format!("Could not prepare the Ollama import: {error}"))?;
+    let import_id = Uuid::new_v4();
+    let cached_gguf = cache_dir.join(format!("juniper-{import_id}.gguf"));
+    let mut cached_file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&cached_gguf)
+        .map_err(|error| format!("Could not stage the GGUF import: {error}"))?;
+    let staging_result = std::io::copy(&mut source, &mut cached_file)
+        .and_then(|_| cached_file.flush())
+        .map_err(|error| format!("Could not stage the GGUF import: {error}"));
+    drop(cached_file);
+    if let Err(error) = staging_result {
+        let _ = std::fs::remove_file(&cached_gguf);
+        return Err(error);
+    }
+    let modelfile = cache_dir.join(format!("juniper-{import_id}.Modelfile"));
+    let prepare_result = cached_gguf
+        .to_str()
+        .ok_or_else(|| "The staged GGUF path is invalid.".to_owned())
+        .and_then(|cached_path_text| {
+            std::fs::write(&modelfile, format!("FROM {cached_path_text}\n"))
+                .map_err(|error| format!("Could not prepare the Ollama import: {error}"))
+        });
+    if let Err(error) = prepare_result {
+        let _ = std::fs::remove_file(&modelfile);
+        let _ = std::fs::remove_file(&cached_gguf);
+        return Err(error);
+    }
 
-    let cancellation = Cancellation::default();
-    state
-        .cancellations
-        .lock()
-        .map_err(|_| "Cancellation state unavailable.")?
-        .insert(request_id.clone(), cancellation.clone());
+    let cancellation = match begin_cancellable_operation(state.inner(), &request_id) {
+        Ok(cancellation) => cancellation,
+        Err(error) => {
+            let _ = std::fs::remove_file(&modelfile);
+            let _ = std::fs::remove_file(&cached_gguf);
+            return Err(error);
+        }
+    };
     let topic = format!("juniper://gguf-import/{request_id}");
     let result = async {
         let modelfile_text = modelfile
@@ -366,6 +444,7 @@ pub async fn import_gguf(
         .map_err(|_| "Cancellation state unavailable.")?
         .remove(&request_id);
     let _ = std::fs::remove_file(modelfile);
+    let _ = std::fs::remove_file(cached_gguf);
     result
 }
 
@@ -445,12 +524,7 @@ pub async fn chat_stream(
     state: State<'_, AppState>,
     request: ChatRequest,
 ) -> Result<(), String> {
-    let cancellation = Cancellation::default();
-    state
-        .cancellations
-        .lock()
-        .map_err(|_| "Cancellation state unavailable.")?
-        .insert(request.request_id.clone(), cancellation.clone());
+    let cancellation = begin_cancellable_operation(state.inner(), &request.request_id)?;
     providers::stream(request.clone(), app, cancellation, state.inner()).await;
     state
         .cancellations
@@ -462,6 +536,9 @@ pub async fn chat_stream(
 
 #[tauri::command]
 pub fn cancel_chat(state: State<'_, AppState>, request_id: String) -> Result<(), String> {
+    if !valid_request_id(&request_id) {
+        return Err("Invalid request identifier.".into());
+    }
     if let Some(cancellation) = state
         .cancellations
         .lock()
@@ -480,6 +557,13 @@ pub fn resolve_permission(
     call_id: String,
     decision: String,
 ) -> Result<(), String> {
+    if !valid_request_id(&request_id)
+        || call_id.is_empty()
+        || call_id.len() > 256
+        || call_id.chars().any(char::is_control)
+    {
+        return Err("Invalid permission request identifier.".into());
+    }
     if !matches!(
         decision.as_str(),
         "allow-once" | "allow-chat" | "allow-assistant" | "deny"
@@ -499,11 +583,14 @@ pub fn resolve_permission(
 }
 
 fn register_attachment_path(state: &AppState, path: PathBuf) -> Result<Attachment, String> {
-    let metadata = std::fs::metadata(&path).map_err(|_| "The selected file is not available.")?;
+    let file = open_regular_file(&path, "The selected file is not available.")?;
+    let metadata = file
+        .metadata()
+        .map_err(|_| "The selected file is not available.")?;
     if !metadata.is_file() {
         return Err("Only files can be attached.".into());
     }
-    if metadata.len() > 1024 * 1024 {
+    if metadata.len() > MAX_ATTACHMENT_BYTES {
         return Err("The selected file is too large. Text attachments are limited to 1 MB.".into());
     }
     if !is_supported_attachment_path(&path) {
@@ -568,11 +655,14 @@ pub fn pick_attachment(
 }
 
 fn register_gguf(state: &AppState, path: PathBuf) -> Result<GgufSelection, String> {
-    let metadata = std::fs::metadata(&path).map_err(|_| "The selected file is not available.")?;
+    let mut file = open_regular_file(&path, "The selected file is not available.")?;
+    let metadata = file
+        .metadata()
+        .map_err(|_| "The selected file is not available.")?;
     if !metadata.is_file() || metadata.len() == 0 {
         return Err("Only non-empty regular GGUF files can be selected.".into());
     }
-    if metadata.len() > 2 * 1024 * 1024 * 1024 * 1024u64 {
+    if metadata.len() > MAX_GGUF_BYTES {
         return Err("The selected GGUF file is larger than the supported limit.".into());
     }
     let extension = path
@@ -582,8 +672,6 @@ fn register_gguf(state: &AppState, path: PathBuf) -> Result<GgufSelection, Strin
     if !extension.eq_ignore_ascii_case("gguf") {
         return Err("Select a file with the .gguf extension.".into());
     }
-    let mut file =
-        std::fs::File::open(&path).map_err(|_| "The selected GGUF file is not readable.")?;
     let mut magic = [0u8; 4];
     file.read_exact(&mut magic)
         .map_err(|_| "The selected GGUF file is too short or not readable.")?;
@@ -643,14 +731,21 @@ fn read_attachment_grant(state: &AppState, attachment_id: &str) -> Result<String
         .get(attachment_id)
         .cloned()
         .ok_or_else(|| "This attachment is no longer granted.".to_owned())?;
-    let metadata =
-        std::fs::metadata(&path).map_err(|_| "The granted attachment is no longer available.")?;
-    if !metadata.is_file() || metadata.len() > 1024 * 1024 || !is_supported_attachment_path(&path) {
+    let file = open_regular_file(&path, "The granted attachment is no longer available.")?;
+    let metadata = file
+        .metadata()
+        .map_err(|_| "The granted attachment is no longer available.")?;
+    if !metadata.is_file()
+        || metadata.len() > MAX_ATTACHMENT_BYTES
+        || !is_supported_attachment_path(&path)
+    {
         return Err("The granted attachment is no longer a supported text file.".into());
     }
-    let contents = std::fs::read_to_string(path)
+    let mut contents = String::new();
+    file.take(MAX_ATTACHMENT_BYTES + 1)
+        .read_to_string(&mut contents)
         .map_err(|_| "The selected file could not be decoded as UTF-8 text.".to_owned())?;
-    if contents.len() > 1024 * 1024 {
+    if contents.len() as u64 > MAX_ATTACHMENT_BYTES {
         return Err("The selected file is too large.".into());
     }
     Ok(contents)
@@ -662,9 +757,17 @@ fn credential_entry(reference: &str) -> Result<keyring::Entry, String> {
         .map_err(|_| "The system credential store rejected this reference.".into())
 }
 
+pub(crate) fn valid_credential_reference(reference: &str) -> bool {
+    !reference.is_empty()
+        && reference.len() <= 160
+        && reference.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.' | ':')
+        })
+}
+
 #[tauri::command]
 pub fn secure_set_credential(reference: String, secret: String) -> Result<(), String> {
-    if reference.is_empty() || reference.len() > 160 || secret.len() > 8192 {
+    if !valid_credential_reference(&reference) || secret.is_empty() || secret.len() > 8192 {
         return Err("Credential reference or value is outside the allowed limit.".into());
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -682,6 +785,9 @@ pub fn secure_set_credential(reference: String, secret: String) -> Result<(), St
 
 #[tauri::command]
 pub fn secure_has_credential(reference: String) -> Result<bool, String> {
+    if !valid_credential_reference(&reference) {
+        return Err("Credential reference is invalid.".into());
+    }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         match credential_entry(&reference)?.get_password() {
@@ -698,6 +804,9 @@ pub fn secure_has_credential(reference: String) -> Result<bool, String> {
 
 #[tauri::command]
 pub fn secure_delete_credential(reference: String) -> Result<(), String> {
+    if !valid_credential_reference(&reference) {
+        return Err("Credential reference is invalid.".into());
+    }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         credential_entry(&reference)?
@@ -783,6 +892,24 @@ mod tests {
         std::fs::remove_file(oversized).expect("temporary attachment should be removable");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn attachment_grant_rejects_symbolic_links() {
+        use std::os::unix::fs::symlink;
+
+        let target = temporary_path("txt");
+        let link = target.with_file_name(format!(
+            "{}-link.txt",
+            target.file_stem().unwrap_or_default().to_string_lossy()
+        ));
+        std::fs::write(&target, "linked content").expect("fixture should write");
+        symlink(&target, &link).expect("fixture symlink should be created");
+        let state = AppState::default();
+        assert!(register_attachment_path(&state, link.clone()).is_err());
+        std::fs::remove_file(link).expect("fixture symlink should be removable");
+        std::fs::remove_file(target).expect("fixture target should be removable");
+    }
+
     #[test]
     fn gguf_picker_requires_extension_and_magic_header() {
         let invalid = temporary_path("gguf");
@@ -807,6 +934,24 @@ mod tests {
         assert!(!valid_model_reference("model; rm -rf /"));
         assert!(!valid_model_reference("model name"));
         assert!(!valid_model_reference(""));
+    }
+
+    #[test]
+    fn duplicate_and_malformed_request_ids_are_rejected() {
+        let state = AppState::default();
+        let first = begin_cancellable_operation(&state, "request-1")
+            .expect("first request should register");
+        assert!(begin_cancellable_operation(&state, "request-1").is_err());
+        assert!(begin_cancellable_operation(&state, "bad\nrequest").is_err());
+        first.cancel();
+    }
+
+    #[test]
+    fn credential_references_are_opaque_and_bounded() {
+        assert!(valid_credential_reference("credential-1234_abcd.v1"));
+        assert!(!valid_credential_reference(""));
+        assert!(!valid_credential_reference("credential/../../secret"));
+        assert!(!valid_credential_reference("credential\nsecond"));
     }
 
     #[test]

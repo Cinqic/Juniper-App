@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
-import { parseAssistant, serializeAssistant } from '../lib/assistant'
+import { MAX_ASSISTANT_IMPORT_BYTES, parseAssistant, serializeAssistant } from '../lib/assistant'
 import { defaultAssistant, defaultProvider, modelProfileFromDiscovery } from '../lib/defaults'
+import { inferTransportLocation } from '../lib/storage'
 import {
   checkProviderConnection,
   deleteProviderCredential,
@@ -24,6 +25,7 @@ import type {
   Assistant,
   GgufSelection,
   ModelProfile,
+  Page,
   ProviderProfile,
   RuntimeLogEntry,
 } from '../types'
@@ -148,16 +150,19 @@ function AssistantBuilder({
   function updatePersonality(key: keyof Assistant['personality'], value: number) {
     set('personality', { ...assistant.personality, [key]: value })
   }
-  function importFile(event: ChangeEvent<HTMLInputElement>) {
+  async function importFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
-    void file.text().then((text) => {
-      try {
-        setAssistant(parseAssistant(text))
-      } catch (error) {
-        window.alert(error instanceof Error ? error.message : 'Could not import assistant.')
+    try {
+      if (file.size > MAX_ASSISTANT_IMPORT_BYTES) {
+        throw new Error('This assistant file is too large. The maximum size is 128 KiB.')
       }
-    })
+      setAssistant(parseAssistant(await file.text()))
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Could not import assistant.')
+    } finally {
+      event.target.value = ''
+    }
   }
   function exportFile() {
     download(
@@ -490,7 +495,7 @@ export function ModelsPage({
     const apiKeyRef = apiKey.trim()
       ? (editingProvider?.apiKeyRef ?? uid('credential'))
       : editingProvider?.apiKeyRef
-    if (apiKeyRef) {
+    if (apiKeyRef && apiKey.trim()) {
       try {
         await saveProviderCredential(apiKeyRef, apiKey.trim())
       } catch (error) {
@@ -500,7 +505,7 @@ export function ModelsPage({
         return
       }
     }
-    const location = locationForUrl(url)
+    const location = inferTransportLocation(url)
     const provider: ProviderProfile = {
       ...(editingProvider ?? {}),
       id: providerId,
@@ -1091,25 +1096,14 @@ export function labelExecutionLocation(value: string): string {
   return 'UNKNOWN'
 }
 
-function locationForUrl(value: string): 'on-device' | 'local-network' | 'remote' | 'unknown' {
-  try {
-    const host = new URL(value).hostname.toLowerCase()
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return 'on-device'
-    if (host.endsWith('.local') || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) {
-      return 'local-network'
-    }
-    return 'remote'
-  } catch {
-    return 'unknown'
-  }
-}
-
 export function SettingsPage({
   data,
   update,
+  navigate,
 }: {
   data: AppData
   update: (change: (current: AppData) => AppData) => void
+  navigate: (page: Page) => void
 }) {
   const settings = data.settings
   const [memoryDraft, setMemoryDraft] = useState('')
@@ -1273,6 +1267,12 @@ export function SettingsPage({
             chat screen. No unsupported parameter is sent to a provider.
           </p>
           <div className="advanced-links">
+            <button onClick={() => navigate('privacy')}>
+              Privacy center <span>→</span>
+            </button>
+            <button onClick={() => navigate('diagnostics')}>
+              Diagnostics <span>→</span>
+            </button>
             <button
               onClick={() =>
                 update((current) => ({
@@ -1607,7 +1607,9 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   const [runtimeStatus, setRuntimeStatus] = useState('Checking for supported local runtimes…')
   useEffect(() => {
     if (!runningInTauri) {
-      setRuntimeStatus('Browser development preview')
+      setRuntimeStatus(
+        import.meta.env.DEV ? 'Browser development preview' : 'Native runtime unavailable',
+      )
       return
     }
     void checkProviderConnection(defaultProvider)

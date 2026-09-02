@@ -92,7 +92,6 @@ VALUES (1, datetime('now'));
 "#;
 
 const MIGRATION_V2: &str = r#"
-ALTER TABLE conversations ADD COLUMN model_profile_id TEXT REFERENCES model_profiles(id);
 CREATE TABLE IF NOT EXISTS app_settings (
     id TEXT PRIMARY KEY CHECK(id = 'singleton'),
     payload TEXT NOT NULL,
@@ -120,27 +119,41 @@ CREATE TABLE IF NOT EXISTS permissions (
 fn migrate(connection: &Connection) -> Result<()> {
     debug_assert_eq!(SCHEMA_VERSION, 3);
     connection.pragma_update(None, "foreign_keys", "ON")?;
-    connection.execute_batch(INITIAL_SCHEMA)?;
-    let version: i64 = connection.query_row(
+    let transaction = connection.unchecked_transaction()?;
+    transaction.execute_batch(INITIAL_SCHEMA)?;
+    let version: i64 = transaction.query_row(
         "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
         [],
         |row| row.get(0),
     )?;
+    if version > SCHEMA_VERSION {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
     if version < 2 {
-        connection.execute_batch(MIGRATION_V2)?;
-        connection.execute(
+        let has_model_profile_id: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('conversations') WHERE name = 'model_profile_id')",
+            [],
+            |row| row.get(0),
+        )?;
+        if !has_model_profile_id {
+            transaction.execute_batch(
+                "ALTER TABLE conversations ADD COLUMN model_profile_id TEXT REFERENCES model_profiles(id);",
+            )?;
+        }
+        transaction.execute_batch(MIGRATION_V2)?;
+        transaction.execute(
             "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(2, datetime('now'))",
             [],
         )?;
     }
     if version < 3 {
-        connection.execute_batch(MIGRATION_V3)?;
-        connection.execute(
+        transaction.execute_batch(MIGRATION_V3)?;
+        transaction.execute(
             "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(3, datetime('now'))",
             [],
         )?;
     }
-    Ok(())
+    transaction.commit()
 }
 
 fn connection(path: &Path) -> Result<Connection> {
@@ -542,6 +555,73 @@ mod tests {
                 )
                 .is_ok()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn migration_recovers_an_interrupted_v2_column_change() -> Result<()> {
+        let connection = Connection::open_in_memory()?;
+        connection.execute_batch(
+            r#"
+            CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+            INSERT INTO schema_migrations(version, applied_at) VALUES(1, '2026-01-01');
+            CREATE TABLE assistants (
+                id TEXT PRIMARY KEY,
+                schema_version INTEGER NOT NULL,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE provider_profiles (
+                id TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE model_profiles (
+                id TEXT PRIMARY KEY,
+                provider_id TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE conversations (
+                id TEXT PRIMARY KEY,
+                assistant_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                private_chat INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                model_profile_id TEXT
+            );
+            "#,
+        )?;
+
+        migrate(&connection)?;
+        let version: i64 =
+            connection.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })?;
+        assert_eq!(version, SCHEMA_VERSION);
+        assert!(
+            connection
+                .query_row::<String, _, _>(
+                    "SELECT sql FROM sqlite_master WHERE name = 'app_state'",
+                    [],
+                    |row| row.get(0)
+                )
+                .is_ok()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn migration_refuses_a_database_from_a_newer_schema() -> Result<()> {
+        let connection = Connection::open_in_memory()?;
+        connection.execute_batch(
+            "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL); INSERT INTO schema_migrations VALUES(99, 'future');",
+        )?;
+        assert!(migrate(&connection).is_err());
         Ok(())
     }
 

@@ -42,6 +42,7 @@ pub struct ProviderProfile {
 #[allow(dead_code)]
 pub struct ModelProfile {
     pub id: String,
+    pub provider_id: String,
     pub model_id: String,
     pub display_name: String,
     #[serde(default = "default_execution_location")]
@@ -50,7 +51,7 @@ pub struct ModelProfile {
     pub capabilities: ModelCapabilities,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelCapabilities {
     #[serde(default)]
@@ -155,7 +156,7 @@ pub struct AttachmentContext {
     pub content_type: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct HostToolContext {
     #[serde(default)]
