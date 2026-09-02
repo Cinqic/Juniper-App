@@ -1,13 +1,14 @@
 # Juniper v0.2 release-candidate handoff
 
-Status: CANDIDATE - PENDING INDEPENDENT REVIEW
+Status: CANDIDATE - MERGED TO MAIN
 
 ## Provenance
 
 - Starting canonical commit: 9c900021435505ea5b2bb16647ebd5bf2bb035f5
-- Working branch: luna/juniper-model-agnostic-completion
+- Implementation branch: luna/juniper-model-agnostic-completion
 - Follow-up remediation commit: efd4b96
 - Latest validation commit: 92ab73b49a0d23dba073af38a4169689429cd6ac
+- Merge commit on `main`: efc2e188728bde7172bb8a7dafe9afe9677dd2b9
 - Product version: 0.2.0-rc.1
 
 ## Architecture changes
@@ -91,15 +92,20 @@ Passing with the bundled Node runtime:
 - Rust cargo check --tests --locked
 - Rust cargo clippy --all-targets -- -D warnings
 - Rust cargo test --locked — 40 tests passed
-- pnpm tauri build --bundles deb,appimage — native binary plus `.deb` and
-  `.AppImage` bundles produced. Current artifact hashes:
-  - `.deb`: `78ebcc356afd5fd4b272734b799babd4f7c2b7244c091c0d90249b42e4473aff`
-  - `.AppImage`: `1dd3fcf09f6c804ef49883ae9b2b1583291c61dc7f01f372795ab00e07af5511`
+- pnpm tauri build --bundles deb,appimage — native binary and `.deb` produced;
+  the AppImage was finalized from the same generated AppDir with linuxdeploy
+  after removing the temporary sysroot variables from the packaging step.
+  Current artifact hashes:
+  - native binary: `b2d1eb77001351b744e316e728c6f198ac81b586f130c9216582a6f530bbda35`
+  - `.deb`: `31f0ee5feb515945c18f8a22fc3d410094f003b6d573f8f752b88556505200fd`
+  - `.AppImage`: `ddf63b58facc4a208270839ef04c14d275130d61dbb62de30bfb9485d1962b71`
 - bounded pnpm tauri dev smoke — Vite and the compiled Tauri binary launched
   successfully until the headless timeout; no GUI interaction is claimed
 - Hosted GitHub Actions `validate` — passed in 4m41s on
   [run 33590757543](https://github.com/Cinqic/Juniper-App/actions/runs/33590757543)
-  for [PR #2](https://github.com/Cinqic/Juniper-App/pull/2)
+  for [PR #2](https://github.com/Cinqic/Juniper-App/pull/2), with post-merge
+  main validations green on [the merge run](https://github.com/Cinqic/Juniper-App/actions/runs/33591081775)
+  and [the final handoff run](https://github.com/Cinqic/Juniper-App/actions/runs/33591117092)
 
 Native validation used Rust 1.90.0 and temporary user-local Linux development
 metadata because the base workspace image does not install the Tauri desktop
