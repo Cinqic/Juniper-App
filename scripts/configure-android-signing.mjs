@@ -5,8 +5,11 @@ import { readFile, writeFile } from 'node:fs/promises'
 const buildFile = new URL('../src-tauri/gen/android/app/build.gradle.kts', import.meta.url)
 let source = await readFile(buildFile, 'utf8')
 
-if (!source.includes('import java.io.FileInputStream')) {
-  source = `import java.io.FileInputStream\nimport java.util.Properties\n${source}`
+// Guard each import separately. The generated Gradle script may already
+// import one of them, and a duplicate import is a Kotlin compile error
+// ("Conflicting import, imported name 'Properties' is ambiguous").
+for (const statement of ['import java.util.Properties', 'import java.io.FileInputStream']) {
+  if (!source.includes(statement)) source = `${statement}\n${source}`
 }
 
 const signingBlock = `    signingConfigs {

@@ -19,7 +19,7 @@ appimage_status=$?
 set -e
 test "$appimage_status" -eq 0 -o "$appimage_status" -eq 124
 
-sudo apt-get install -y "$deb"
+sudo apt-get install -y "$(realpath "$deb")"
 command -v juniper
 set +e
 timeout 20s xvfb-run -a juniper
