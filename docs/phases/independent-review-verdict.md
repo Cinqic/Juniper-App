@@ -113,16 +113,28 @@ and `REQ-PRIV-001` were independently re-verified above.
 
 ## Real-model qualification
 
-See the [smollm:135m evidence log](../qualification/smollm-135m-evidence.md).
+See the [real-model evidence log](../qualification/ollama-real-model-evidence.md).
 First real generation ever performed on this repository.
 
-- `generic-chat`: **PASS** — normalized streaming, exactly one `done` event,
-  no error, 74 characters of real output
-- `generic-context`: **PASS** — current message appears exactly once
-- `generic-tools`: **NOT APPLICABLE** — `smollm:135m` declares only `completion`
-- `generic-thinking`: **NOT APPLICABLE** — same reason
+Two models were used, because capability gates decide which suites can apply.
 
-Tools and thinking are deliberately **not** marked as passing.
+| Suite              | `smollm:135m` (completion only) | `qwen3:0.6b` (tools + thinking) |
+| ------------------ | ------------------------------- | ------------------------------- |
+| `generic-chat`     | **PASS**                        | **PASS**                        |
+| `generic-context`  | **PASS**                        | **PASS**                        |
+| `generic-tools`    | not applicable                  | **PASS**                        |
+| `generic-thinking` | not applicable                  | **PASS**                        |
+
+The tool round-trip is genuinely host-authored: `qwen3:0.6b` called
+`calculator.evaluate`, and the **host** executed it and returned
+`{"value": 16392538977.0}` under `protocolVersion: juniper-tool-protocol-v1`.
+847291 × 19347 = 16,392,538,977 exactly. A separate run with a deliberately
+loose tool schema produced non-conforming arguments and the host returned a
+host-authored `INVALID_TOOL_ARGUMENT` rather than coercing them — evidencing
+both checks in `generic-tools.yaml`.
+
+Thinking produced 282 characters on the `reasoning` channel, asserted not to
+appear in the answer content.
 
 ## Release pipeline
 
@@ -167,8 +179,8 @@ failed.
    automatically. Rehearsal is therefore limited to the local build reproduced
    above plus the passing `validation.yml`.
 
-3. **Windows MSI is unproven locally** — it requires a Windows runner. Its
-   verification script exists but has never executed.
+2b. **Windows MSI is unproven locally** — it requires a Windows runner. Its
+verification script exists but has never executed.
 
 ## Website
 
@@ -184,7 +196,6 @@ confirms the improved checker reports the original link as `FAIL HTTP 404`.
 
 ## Accepted limitations
 
-- Tool-call and thinking round-trips: fixture-verified only, never real-model
 - Android: never built, never signed, never installed
 - Windows MSI: never built or install-smoked
 - Mobile secure credential storage: deliberately unimplemented; refuses rather
@@ -196,6 +207,7 @@ confirms the improved checker reports the original link as `FAIL HTTP 404`.
 1. ~~Owner provides the four Android signing secrets and a release keystore~~ —
    done, see the [Android signing runbook](../release/android-signing-runbook.md)
 2. `release.yml` completes green on all three platforms
-3. Tool and thinking suites qualified against a tools-capable model
+3. ~~Tool and thinking suites qualified against a tools-capable model~~ — done
+   (`qwen3:0.6b`, 2026-09-02)
 4. Artifacts published with `SHA256SUMS`, then the website updated to point at
    them — in that order, never ahead of evidence

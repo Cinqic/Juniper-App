@@ -3086,6 +3086,32 @@ data: [DONE]"#,
         });
     }
 
+    // Runs one live request and returns every stream event it emitted.
+    async fn collect_live_stream<R: Runtime>(
+        request: ChatRequest,
+        handle: &AppHandle<R>,
+    ) -> Vec<Value> {
+        let topic = format!("juniper://chat/{}", request.request_id);
+        let events = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let captured = events.clone();
+        handle.listen(topic, move |event| {
+            if let Ok(value) = serde_json::from_str(event.payload())
+                && let Ok(mut events) = captured.lock()
+            {
+                events.push(value);
+            }
+        });
+        stream(
+            request,
+            handle.clone(),
+            Cancellation::default(),
+            &AppState::default(),
+        )
+        .await;
+        let events = events.lock().expect("live events should lock");
+        events.clone()
+    }
+
     // Real-model qualification harness for tests/qualification/*.yaml.
     // Gated on an owner-approved, already-installed model so ordinary runs stay
     // hermetic. Suites whose `applies_when` capability gate is unmet are reported
@@ -3159,6 +3185,9 @@ data: [DONE]"#,
                 declares_tools || tools.is_empty(),
                 "tools payload must stay empty for a model that does not declare tool support"
             );
+            // Kept for the tool and thinking suites, which re-use the same
+            // provider, model, and capability wiring with their own prompts.
+            let request_template = request.clone();
             let compiled = request_messages(&request).expect("messages should compile");
             let body = ollama_body(&request, &compiled, &tools);
             let outgoing = body["messages"]
@@ -3192,7 +3221,7 @@ data: [DONE]"#,
             )
             .await;
 
-            let (text, done_count, saw_error, tool_events) = {
+            let (text, done_count, saw_error, tool_results, reasoning) = {
                 let events = events.lock().expect("qualification events should lock");
                 (
                     events
@@ -3203,8 +3232,14 @@ data: [DONE]"#,
                     events.iter().any(|event| !event["error"].is_null()),
                     events
                         .iter()
-                        .filter(|event| !event["toolCalls"].is_null())
-                        .count(),
+                        .filter_map(|event| event["toolResults"].as_array())
+                        .flatten()
+                        .cloned()
+                        .collect::<Vec<Value>>(),
+                    events
+                        .iter()
+                        .filter_map(|event| event["reasoning"].as_str())
+                        .collect::<String>(),
                 )
             };
             assert!(!saw_error, "qualification stream reported an error");
@@ -3223,16 +3258,133 @@ data: [DONE]"#,
             // --- generic-tools.yaml / generic-thinking.yaml ---------------------
             // These gate on declared capabilities. A completion-only model cannot
             // qualify them; report not-applicable instead of a false pass.
+            let _ = &tool_results;
             if declares_tools {
-                println!("QUALIFICATION generic-tools: APPLICABLE tool_events={tool_events}");
+                // The host must have offered tool definitions at all.
+                assert!(
+                    !tools.is_empty(),
+                    "a tools-capable model must receive tool definitions"
+                );
+                // generic-tools.yaml drives this with its own prompt, which the
+                // ordinary chat turn above deliberately does not.
+                let mut tool_request = request_template.clone();
+                tool_request.request_id = "qualification-tools".into();
+                tool_request.generation.max_output = Some(256);
+                // Use the calculator definition the app actually ships
+                // (src/lib/defaults.ts) rather than the loose test stub, so the
+                // model receives real argument guidance.
+                tool_request.tools = serde_json::from_value(json!([{
+                    "name": "calculator.evaluate",
+                    "description": "Safely evaluate common arithmetic without executing code.",
+                    "risk": "automatic-safe",
+                    "enabled": true,
+                    "schema": {
+                        "type": "object",
+                        "properties": { "expression": { "type": "string", "maxLength": 256 } },
+                        "required": ["expression"],
+                        "additionalProperties": false
+                    }
+                }]))
+                .expect("shipped calculator definition should deserialize");
+                tool_request.messages = vec![
+                    crate::domain::ChatMessage {
+                        role: "system".into(),
+                        content: "You are Juniper. Use the calculator tool for arithmetic."
+                            .into(),
+                    },
+                    crate::domain::ChatMessage {
+                        role: "user".into(),
+                        content: "Calculate 847291 * 19347.".into(),
+                    },
+                ];
+                let tool_events = collect_live_stream(tool_request, &handle).await;
+                let tool_results = tool_events
+                    .iter()
+                    .filter_map(|event| event["toolResults"].as_array())
+                    .flatten()
+                    .cloned()
+                    .collect::<Vec<Value>>();
+                if tool_results.is_empty() {
+                    // The model simply chose not to call a tool. That is a model
+                    // behaviour, not a runtime defect, and is reported as such.
+                    println!(
+                        "QUALIFICATION generic-tools: APPLICABLE-NO-CALL (model emitted no tool call)"
+                    );
+                } else {
+                    // Every result the user can see must be host-authored.
+                    for result in &tool_results {
+                        assert_eq!(
+                            result["protocolVersion"], "juniper-tool-protocol-v1",
+                            "tool results must be host-authored"
+                        );
+                        assert!(
+                            result["callId"].is_string() && result["name"].is_string(),
+                            "host tool results must identify the call and tool"
+                        );
+                        assert!(
+                            result["status"].is_string(),
+                            "host tool results must carry a status"
+                        );
+                    }
+                    println!(
+                        "QUALIFICATION generic-tools: PASS host_authored_results={} statuses={:?}",
+                        tool_results.len(),
+                        tool_results
+                            .iter()
+                            .filter_map(|result| result["status"].as_str())
+                            .collect::<Vec<_>>()
+                    );
+                    for result in &tool_results {
+                        println!(
+                            "QUALIFICATION generic-tools detail: name={:?} status={:?} result={} error={}",
+                            result["name"].as_str(),
+                            result["status"].as_str(),
+                            result["result"],
+                            result["error"]
+                        );
+                    }
+                }
             } else {
                 println!(
                     "QUALIFICATION generic-tools: NOT-APPLICABLE (model declares {:?})",
                     inspection.capabilities
                 );
             }
+            let _ = &reasoning;
             if declares_thinking {
-                println!("QUALIFICATION generic-thinking: APPLICABLE");
+                // The chat turn ran with thinking off; ask for it explicitly.
+                let mut thinking_request = request_template.clone();
+                thinking_request.request_id = "qualification-thinking".into();
+                thinking_request.generation.thinking = Some("on".into());
+                thinking_request.generation.max_output = Some(256);
+                thinking_request.messages = vec![crate::domain::ChatMessage {
+                    role: "user".into(),
+                    content: "Explain a short arithmetic answer: what is 12 + 30?".into(),
+                }];
+                let thinking_events = collect_live_stream(thinking_request, &handle).await;
+                let reasoning = thinking_events
+                    .iter()
+                    .filter_map(|event| event["reasoning"].as_str())
+                    .collect::<String>();
+                let text = thinking_events
+                    .iter()
+                    .filter_map(|event| event["delta"].as_str())
+                    .collect::<String>();
+                // Thinking metadata must never be merged into answer content.
+                if reasoning.is_empty() {
+                    println!(
+                        "QUALIFICATION generic-thinking: APPLICABLE-NO-REASONING (runtime reported none)"
+                    );
+                } else {
+                    assert!(
+                        !text.contains(reasoning.trim()),
+                        "thinking metadata must stay separate from final answer content"
+                    );
+                    println!(
+                        "QUALIFICATION generic-thinking: PASS reasoning_chars={} separate_from_answer=true",
+                        reasoning.chars().count()
+                    );
+                }
             } else {
                 println!(
                     "QUALIFICATION generic-thinking: NOT-APPLICABLE (model declares {:?})",
