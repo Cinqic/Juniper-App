@@ -1,0 +1,144 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '11.19.0'
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install Linux prerequisites
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm validate
+      - run: pnpm tauri build --bundles deb,appimage
+      - name: Collect Linux artifacts and checksums
+        run: |
+          mkdir release-artifacts
+          find src-tauri/target/release/bundle -type f \( -name '*.deb' -o -name '*.AppImage' \) -exec cp {} release-artifacts/ \;
+          sha256sum release-artifacts/* | tee release-artifacts/SHA256SUMS-linux.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: juniper-linux
+          path: release-artifacts
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm validate
+      - run: pnpm tauri build --bundles msi
+      - shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-artifacts | Out-Null
+          Get-ChildItem -Recurse src-tauri/target/release/bundle -Filter *.msi | Copy-Item -Destination release-artifacts
+          Get-FileHash release-artifacts/*.msi -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } | Set-Content release-artifacts/SHA256SUMS-windows.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: juniper-windows
+          path: release-artifacts
+
+  android:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - uses: android-actions/setup-android@v3
+      - name: Install Android prerequisites
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tauri android init
+      - name: Build release APK
+        env:
+          TAURI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.TAURI_ANDROID_KEYSTORE_PASSWORD }}
+          TAURI_ANDROID_KEY_PASSWORD: ${{ secrets.TAURI_ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$TAURI_ANDROID_KEYSTORE_PASSWORD" || { echo 'Missing Android signing secrets; refusing to publish an unsigned APK.'; exit 1; }
+          pnpm tauri android build --apk --ci
+      - name: Collect Android artifact and checksum
+        run: |
+          mkdir release-artifacts
+          find src-tauri/gen/android -type f -name '*release*.apk' -exec cp {} release-artifacts/ \;
+          test "$(find release-artifacts -name '*.apk' | wc -l)" -eq 1
+          sha256sum release-artifacts/*.apk | tee release-artifacts/SHA256SUMS-android.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: juniper-android
+          path: release-artifacts
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: juniper-*
+          path: release-artifacts
+          merge-multiple: true
+      - name: Build release notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          {
+            echo "# Juniper ${version}"; echo
+            echo 'Juniper is a local-first AI application for compatible providers and runtimes.'; echo
+            echo '## Downloads'; echo
+            for f in release-artifacts/*; do [ "${f##*/}" = SHA256SUMS-* ] || echo "- \`${f##*/}\`"; done
+            echo; echo '## Checksums'; echo; cat release-artifacts/SHA256SUMS-*.txt
+            echo; echo '## Notes'; echo; echo '- Configure a compatible Ollama, llama.cpp, or OpenAI-compatible provider.'
+            echo '- Telemetry is off; provider network requests are user-configured.'
+            echo '- Managed llama.cpp process ownership, MCP client calls, native on-device GGUF inference, and real-model qualification are not claimed.'
+            echo '- Source: https://github.com/Cinqic/Juniper-App'; echo '- License: MIT'
+          } > release-artifacts/RELEASE_NOTES.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Juniper ${{ github.ref_name }}
+          body_path: release-artifacts/RELEASE_NOTES.md
+          files: release-artifacts/*
