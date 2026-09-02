@@ -1,6 +1,11 @@
 format: juniper-release-manifest-v1
 version: 0.2.0-rc.1
-status: CANDIDATE - PENDING INDEPENDENT REVIEW
+status: CANDIDATE - INDEPENDENT REVIEW COMPLETE - APPROVED AS RELEASE CANDIDATE
+independent_review:
+  reviewer: Claude Opus 5
+  date: 2026-09-02
+  verdict: approved-as-release-candidate-not-approved-for-final-0.2.0
+  report: docs/phases/independent-review-verdict.md
 canonical_repository: https://github.com/Cinqic/Juniper-App
 canonical_branch: main
 license: MIT
@@ -11,13 +16,24 @@ supported_runtime_classes:
   - llama-cpp
   - openai-compatible
 qualification_models:
-  - optional
+  - smollm:135m
 validated_in_this_environment:
-  frontend: tested-bundled-node
-  rust: tested-rust-1.90-with-isolated-linux-development-metadata
-  desktop: tested-tauri-dev-and-linux-deb-appimage-build
-  android: blocked-missing-android-ndk-clang
-  real_model_generation: pending-owner-selected-model
-  frontend_tests: 19
-  native_tests: 40
+  frontend: tested-node-22.23.2-pnpm-11.19.0
+  rust: tested-rust-1.90.0-fmt-clippy-deny-warnings-clean
+  desktop: reproduced-linux-deb-and-appimage-build-with-launch-smoke
+  windows: not-built-requires-windows-runner
+  android: blocked-missing-repository-signing-secrets
+  real_model_generation: validated-ollama-smollm-135m-chat-and-context
+  real_model_tools: not-validated-model-declares-completion-only
+  real_model_thinking: not-validated-model-declares-completion-only
+  frontend_tests: 37
+  native_tests: 51
   runtime_diagnostics: bounded-in-memory-content-free
+evidence:
+  validation: reproduced-locally-pnpm-validate-exit-0
+  qualification: docs/qualification/smollm-135m-evidence.md
+  reconciliation: docs/recovery/local-remote-reconciliation-2026-09-02.md
+blockers_for_final_release:
+  - android-signing-secrets-absent-owner-must-provide
+  - windows-msi-never-built-or-install-smoked
+  - tool-and-thinking-round-trips-never-run-against-a-real-model

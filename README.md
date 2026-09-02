@@ -2,7 +2,7 @@
 
 Juniper is a local-first AI desktop app for people who want a thoughtful assistant, visible model controls, and a clear boundary around private data. It works with compatible text-generation models through supported runtimes; no model family is required.
 
-Status: `0.2.0-rc.1` — candidate pending independent review.
+Status: `0.2.0-rc.1` — release candidate; [independent review](docs/phases/independent-review-verdict.md) complete (2026-09-02). Approved as a release candidate, not yet approved for a final `0.2.0`. Chat and context are qualified against a real local model; tool-call and thinking round-trips are fixture-verified only, and Android release signing is not yet configured.
 
 ## What is included
 
