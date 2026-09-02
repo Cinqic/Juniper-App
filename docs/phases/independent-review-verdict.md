@@ -152,35 +152,55 @@ Correction to the pre-audit: the Android secret names are **not**
 actually requires `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEY_ALIAS`,
 `ANDROID_KEYSTORE_PASSWORD`, and `ANDROID_KEY_PASSWORD`.
 
-## Blockers
+## Resolved during this review
 
-1. ~~**Android signing secrets are absent.**~~ **Resolved 2026-09-02.** A
-   4096-bit RSA release keystore (`CN=Cinqic`, alias `juniper`, PKCS12, valid to 2054) was generated and all four secrets — `ANDROID_KEYSTORE_BASE64`,
-   `ANDROID_KEY_ALIAS`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD` —
-   are installed on the repository. The keystore and password are held locally
-   at `~/Documents/Juniper-Signing/`, which is the only copy of the password.
-   Provisioning was verified by replaying `release.yml`'s own steps: the base64
-   secret round-trips byte-identically and the keystore opens under alias
-   `juniper`.
+**Android signing is configured.** A 4096-bit RSA release keystore
+(`CN=Cinqic`, alias `juniper`, PKCS12, valid to 2054) was generated and all
+four secrets — `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEY_ALIAS`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD` — are installed on the
+repository. Verified by replaying `release.yml`'s own provisioning steps: the
+base64 secret round-trips byte-identically and the decoded keystore opens under
+alias `juniper`. The keystore and its password live at
+`~/Documents/Juniper-Signing/`, which is the **only** copy of the password;
+GitHub secrets cannot be read back. Backing that folder up off-machine is an
+outstanding owner action.
 
-1b. **A defect blocked Android regardless of secrets.** All three Android jobs
-invoked `android-actions/setup-android`, which requires JDK 17+, on runners
-defaulting to Java 11 — `sdkmanager --licenses` aborted with
+**A latent defect would have failed Android regardless of secrets.** All three
+Android jobs invoked `android-actions/setup-android`, which requires JDK 17+,
+on runners defaulting to Java 11 — `sdkmanager --licenses` aborted with
 _"This tool requires JDK 17 or later. Your version was detected as 11.0.32."_
 The validation job was new and had never executed, and no tag had ever been
-pushed, so this had never surfaced. Fixed by provisioning Temurin JDK 17
-before each `setup-android`; validation CI is green on the fix. Had the
-secrets been added without this, the Android release would still have
-failed.
+pushed, so this had never surfaced. Fixed by provisioning Temurin JDK 17 before
+each `setup-android`. CI is green on the fix, including the Android clean debug
+compile.
+
+**Tool and thinking round-trips are qualified.** See the real-model section
+above.
+
+**Two preventive CI fixes.** A `.gitattributes` pins text files to LF, because
+the Windows release job runs `prettier --check` under the default
+`endOfLine: "lf"` and a CRLF checkout would fail it — every tracked file is
+already LF, so this changes no content. And `validation.yml` now cancels
+superseded runs, removing a gitleaks-action race that reported
+"Invalid revision range" when two pushes overlapped.
+
+## Remaining blockers
+
+1. **Windows MSI is unproven.** It requires a Windows runner. The build and its
+   verification script have never executed. This is the one platform whose
+   release path rests entirely on untested code.
 
 2. **A true pre-tag dry run is not possible as designed.** `workflow_dispatch`
    requires an already-existing tag, and `check-version.mjs` requires it to be
    exactly `v0.2.0-rc.1` — but any `v*` tag push sets `publish=true`
-   automatically. Rehearsal is therefore limited to the local build reproduced
-   above plus the passing `validation.yml`.
+   automatically. Rehearsal is therefore limited to the local Linux build
+   reproduced above plus the passing `validation.yml`. The first tag push is
+   necessarily the first execution of the release pipeline.
 
-2b. **Windows MSI is unproven locally** — it requires a Windows runner. Its
-verification script exists but has never executed.
+   Mitigating this: `publish` needs `verify`, which needs all three platform
+   jobs. A failure anywhere publishes **nothing** — it leaves a permanent tag
+   and a failed run, but no partial or broken release. Deleting the tag and
+   retagging after a fix is the recovery path.
 
 ## Website
 
