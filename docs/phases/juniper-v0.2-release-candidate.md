@@ -7,7 +7,7 @@ Status: CANDIDATE - PENDING INDEPENDENT REVIEW
 - Starting canonical commit: 9c900021435505ea5b2bb16647ebd5bf2bb035f5
 - Working branch: luna/juniper-model-agnostic-completion
 - Follow-up remediation commit: efd4b96
-- Latest validation commit: 8959352b32e14ae6788f69263fa8c95295913a30
+- Latest validation commit: 437a44e22592ac39df51dc6cdc771a6ec1537874
 - Product version: 0.2.0-rc.1
 
 ## Architecture changes
@@ -96,6 +96,9 @@ Passing with the bundled Node runtime:
   - `.AppImage`: `1dd3fcf09f6c804ef49883ae9b2b1583291c61dc7f01f372795ab00e07af5511`
 - bounded pnpm tauri dev smoke — Vite and the compiled Tauri binary launched
   successfully until the headless timeout; no GUI interaction is claimed
+- Hosted GitHub Actions `validate` — passed in 4m39s on
+  [run 33573380900](https://github.com/Cinqic/Juniper-App/actions/runs/33573380900)
+  for [PR #2](https://github.com/Cinqic/Juniper-App/pull/2)
 
 Native validation used Rust 1.90.0 and temporary user-local Linux development
 metadata because the base workspace image does not install the Tauri desktop
@@ -114,8 +117,6 @@ for an environment with a display.
 - MCP client calls remain explicitly unavailable in this candidate.
 - Mobile secure credential vault integration, mobile file reads, and iOS
   validation require platform-specific workspaces.
-- The current branch has not yet received a hosted CI result; the candidate
-  handoff remains pending that PR validation.
 - Independent review is still required for native compilation, provider
   fixtures, SQLite restart behavior, cancellation races, permissions,
   accessibility, and packaging.
