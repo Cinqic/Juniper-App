@@ -1,0 +1,9 @@
+format: juniper-generic-qualification-v1
+qualification: context
+applies_when:
+  chat: supported
+checks:
+  - name: current-message-once
+    expectation: The current user message appears exactly once after compiled host and assistant context.
+  - name: oldest-history-first
+    expectation: Expendable oldest conversation history is truncated before policy, memory, attachments, or the current request.

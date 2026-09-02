@@ -1,16 +1,16 @@
-format: juniper-requirements-traceability-v1
+format: juniper-requirements-traceability-v2
 status: candidate
 requirements:
   REQ-PRIV-001:
-    statement: No telemetry or automatic Cinqic upload in v0.1
+    statement: No telemetry or automatic Cinqic upload in v0.2
     implementation: [PRIVACY.md, docs/privacy/network-policy.md, src/lib/defaults.ts]
     tests: [src/lib/storage.test.ts]
     phase: 0
     status: PASS-BY-INSPECTION
   REQ-UI-001:
     statement: Responsive onboarding, chat, assistants, models, tools, settings, privacy, diagnostics
-    implementation: [src/app/App.tsx, src/styles/app.css]
-    tests: []
+    implementation: [src/app/App.tsx, src/app/pages.tsx, src/app/ui.tsx, src/styles/app.css]
+    tests: [src/app/App.test.tsx]
     phase: 1
     status: PASS-BROWSER-SMOKE
   REQ-CHAT-001:
@@ -18,18 +18,18 @@ requirements:
     implementation: [src/lib/runtime.ts, src-tauri/src/providers.rs, src-tauri/src/commands.rs]
     tests: [src/lib/runtime.test.ts, src-tauri/src/providers.rs]
     phase: 3
-    status: PASS-BROWSER-PREVIEW-NATIVE-UNTESTED
+    status: PASS-BROWSER-PREVIEW
   REQ-MODEL-001:
     statement: Ollama and OpenAI-compatible provider boundary, including llama.cpp endpoint path
     implementation:
       [src-tauri/src/providers.rs, src/lib/defaults.ts, docs/architecture/provider-contract.md]
-    tests: []
+    tests: [src-tauri/src/providers.rs]
     phase: 3
-    status: IMPLEMENTED-UNTESTED
+    status: IMPLEMENTED-NATIVE-TESTED
   REQ-ASSIST-001:
     statement: Versioned portable .juniper assistant import/export
     implementation:
-      [src/lib/assistant.ts, schemas/assistant/juniper-assistant.v1.schema.json, src/app/App.tsx]
+      [src/lib/assistant.ts, schemas/assistant/juniper-assistant.v1.schema.json, src/app/pages.tsx]
     tests: [src/lib/assistant.test.ts]
     phase: 2
     status: PASS-BY-STATIC-TESTS
@@ -43,19 +43,19 @@ requirements:
       ]
     tests: [src-tauri/src/tools.rs]
     phase: 5
-    status: IMPLEMENTED-UNTESTED
+    status: PASS-NATIVE-TESTS
   REQ-DATA-001:
     statement: Normalized SQLite schema with migrations and foreign keys
     implementation: [src-tauri/src/storage.rs]
     tests: [src-tauri/src/storage.rs]
     phase: 2
-    status: IMPLEMENTED-UNTESTED
+    status: PASS-NATIVE-TESTS
   REQ-SEC-001:
     statement: Scoped attachments and desktop OS credential store
     implementation: [src-tauri/src/commands.rs, docs/security/threat-model.md]
-    tests: []
+    tests: [src-tauri/src/commands.rs]
     phase: 9
-    status: IMPLEMENTED-UNTESTED
+    status: IMPLEMENTED-NATIVE-TESTED
   REQ-MOBILE-001:
     statement: Mobile-compatible shared architecture without claiming native 8B inference
     implementation: [src-tauri/capabilities/mobile.json, docs/adr/0009-mobile-runtime-strategy.md]
@@ -63,9 +63,104 @@ requirements:
     phase: 8
     status: ACCEPTED-LIMITATION
   REQ-QWEN-001:
-    statement: Qwen3 8B reference profile and qualification fixture
-    implementation:
-      [config/providers/reference-qwen3.json, tests/fixtures/qwen3-8b-qualification.yaml]
+    statement: Optional model-specific qualification fixtures do not define product identity
+    implementation: [tests/fixtures/qwen3-8b-qualification.yaml, docs/testing/strategy.md]
     tests: []
     phase: 10
-    status: PENDING-REAL-RUNTIME
+    status: OPTIONAL-PENDING-OWNER-MODEL
+  REQ-MODEL-AGNOSTIC:
+    statement: Unknown compatible model can be discovered and used without a source-code branch
+    implementation: [src/lib/defaults.ts, src/lib/runtime.ts, src-tauri/src/providers.rs]
+    tests: [src/lib/runtime.test.ts, src-tauri/src/providers.rs]
+    phase: 11
+    status: IMPLEMENTED-NATIVE-TESTED
+  REQ-OLLAMA-DISCOVERY:
+    statement: Native Ollama health, model discovery, inspection, and refresh
+    implementation: [src-tauri/src/providers.rs, src/app/pages.tsx]
+    tests: [src-tauri/src/providers.rs]
+    phase: 11
+    status: IMPLEMENTED-NATIVE-TESTED
+  REQ-OLLAMA-PULL:
+    statement: In-app Ollama model pull with streamed progress and cancellation
+    implementation: [src/lib/runtime.ts, src-tauri/src/providers.rs, src/app/App.tsx]
+    tests: [src-tauri/src/providers.rs]
+    phase: 11
+    status: IMPLEMENTED-NATIVE-TESTED
+  REQ-MODEL-SWITCH:
+    statement: Conversation model override preserves historical model attribution
+    implementation: [src/types/index.ts, src/app/App.tsx]
+    tests: [src/app/App.test.tsx, src/lib/storage.test.ts]
+    phase: 11
+    status: PASS-FRONTEND
+  REQ-CONTEXT-CORRECTNESS:
+    statement: Deterministic prompt compilation includes the current user message once
+    implementation: [src/lib/context.ts]
+    tests: [src/lib/context.test.ts]
+    phase: 11
+    status: PASS-FRONTEND
+  REQ-MEMORY:
+    statement: Curated memory is included only when assistant memory policy is enabled
+    implementation: [src/lib/context.ts]
+    tests: [src/lib/context.test.ts]
+    phase: 11
+    status: PASS-FRONTEND
+  REQ-PERSONALITY:
+    statement: Personality controls deterministically compile into model-facing guidance
+    implementation: [src/lib/context.ts]
+    tests: [src/lib/context.test.ts]
+    phase: 11
+    status: PASS-FRONTEND
+  REQ-TOOLS:
+    statement: Tool calls are schema-validated, bounded, and host-authored
+    implementation: [src-tauri/src/tools.rs, src-tauri/src/providers.rs]
+    tests: [src-tauri/src/tools.rs]
+    phase: 11
+    status: IMPLEMENTED-NATIVE-TESTED
+  REQ-PERMISSIONS:
+    statement: User-data and filesystem tools require explicit native permission decisions and durable scoped grants
+    implementation:
+      [
+        src/app/App.tsx,
+        src-tauri/src/providers.rs,
+        src-tauri/src/commands.rs,
+        src-tauri/src/storage.rs,
+      ]
+    tests: [src-tauri/src/providers.rs, src-tauri/src/storage.rs]
+    phase: 11
+    status: PASS-NATIVE-TESTS
+  REQ-SQLITE:
+    statement: Native SQLite v3 is canonical for application state, normalized attachment metadata, and excludes private chats and chat-scoped grants
+    implementation: [src-tauri/src/storage.rs, src-tauri/src/commands.rs, src/lib/runtime.ts]
+    tests: [src-tauri/src/storage.rs]
+    phase: 11
+    status: PASS-NATIVE-TESTS
+  REQ-CANCEL:
+    statement: Abort signal calls native request cancellation using one stable request ID
+    implementation: [src/lib/runtime.ts, src-tauri/src/commands.rs, src-tauri/src/providers.rs]
+    tests: [src/lib/runtime.test.ts, src-tauri/src/providers.rs]
+    phase: 11
+    status: IMPLEMENTED-NATIVE-TESTED
+  REQ-ATTACHMENT:
+    statement: Attachments are validated and read through opaque host grants, with metadata persisted without exposing native paths
+    implementation: [src/app/App.tsx, src-tauri/src/commands.rs, src-tauri/src/storage.rs]
+    tests: [src-tauri/src/commands.rs, src-tauri/src/storage.rs]
+    phase: 11
+    status: IMPLEMENTED-NATIVE-TESTED
+  REQ-PRIVACY-ROUTE:
+    statement: Privacy center reports the active assistant, model, provider, persistence, memory, network-tool status, and execution location truthfully
+    implementation: [src/app/App.tsx, src/app/pages.tsx, src/types/index.ts]
+    tests: [src/app/App.test.tsx]
+    phase: 11
+    status: IMPLEMENTED
+  REQ-NO-TELEMETRY:
+    statement: No telemetry and no silent remote fallback
+    implementation: [PRIVACY.md, docs/privacy/network-policy.md, src/lib/defaults.ts]
+    tests: [src/lib/storage.test.ts]
+    phase: 11
+    status: PASS-BY-INSPECTION
+  REQ-MOBILE:
+    statement: Shared responsive UI and explicit endpoint privacy labels without implying native phone inference
+    implementation: [src-tauri/capabilities/mobile.json, docs/adr/0009-mobile-runtime-strategy.md]
+    tests: []
+    phase: 11
+    status: ACCEPTED-LIMITATION

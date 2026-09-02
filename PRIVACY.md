@@ -1,6 +1,6 @@
 # Juniper privacy
 
-Juniper v0.1 has no telemetry, analytics, advertising SDK, crash reporting,
+Juniper v0.2 has no telemetry, analytics, advertising SDK, crash reporting,
 automatic upload, or Cinqic account requirement. Chats and curated memories
 stay in the local application data directory when using a local provider.
 

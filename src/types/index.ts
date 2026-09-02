@@ -1,5 +1,8 @@
 export type Locality = 'local' | 'remote' | 'unknown'
+export type ExecutionLocation = 'on-device' | 'local-network' | 'remote' | 'unknown'
 export type SupportLevel = 'supported' | 'unsupported' | 'unknown'
+export type PermissionDecision = 'allow-once' | 'allow-chat' | 'allow-assistant' | 'deny'
+export type PermissionGrantScope = 'chat' | 'assistant'
 export type Page =
   | 'chats'
   | 'assistants'
@@ -9,9 +12,10 @@ export type Page =
   | 'privacy'
   | 'diagnostics'
 
-export type ProviderKind = 'ollama' | 'openai-compatible' | 'llama-cpp' | 'fake'
+export type ProviderKind = 'ollama' | 'openai-compatible' | 'llama-cpp'
 
 export interface ProviderCapabilities {
+  chat: SupportLevel
   text: SupportLevel
   streaming: SupportLevel
   systemPrompt: SupportLevel
@@ -31,6 +35,7 @@ export interface ProviderProfile {
   kind: ProviderKind
   baseUrl: string
   locality: Locality
+  transportLocation: ExecutionLocation
   apiKeyRef?: string
   enabled: boolean
   status: 'connected' | 'offline' | 'unknown'
@@ -43,6 +48,20 @@ export interface ModelProfile {
   modelId: string
   displayName: string
   locality: Locality
+  executionLocation: ExecutionLocation
+  sourceReference?: string
+  family?: string
+  architecture?: string
+  parameterSize?: string
+  fileSizeBytes?: number
+  quantization?: string
+  format?: string
+  license?: string
+  template?: string
+  compatibilityStatus: 'chat-compatible' | 'not-chat-compatible' | 'unknown'
+  metadataSource?: string
+  lastInspectedAt?: string
+  rawCapabilities?: string[]
   sizeLabel?: string
   contextLength?: number
   status: 'ready' | 'not-found' | 'unknown'
@@ -57,8 +76,10 @@ export interface GenerationOverrides {
   minP?: number
   repetitionPenalty?: number
   maxOutput?: number
-  thinking?: boolean
+  thinking?: ThinkingMode
 }
+
+export type ThinkingMode = 'auto' | 'off' | 'on' | 'low' | 'medium' | 'high'
 
 export interface PersonalityControls {
   warmth: number
@@ -71,12 +92,12 @@ export interface PersonalityControls {
 
 export interface Assistant {
   id: string
-  schemaVersion: 1
+  schemaVersion: 2
   name: string
   description: string
   avatar: string
   accent: string
-  modelProfileId: string
+  modelProfileId: string | null
   systemPrompt: string
   personality: PersonalityControls
   responseLength: 'concise' | 'balanced' | 'detailed'
@@ -116,6 +137,7 @@ export interface ChatMessage {
   modelId?: string
   providerId?: string
   isStreaming?: boolean
+  usage?: GenerationUsage
 }
 
 export interface Conversation {
@@ -125,6 +147,7 @@ export interface Conversation {
   createdAt: string
   updatedAt: string
   privateChat?: boolean
+  modelProfileId?: string | null
   messages: ChatMessage[]
 }
 
@@ -136,6 +159,48 @@ export interface Memory {
   enabled: boolean
   createdAt: string
   updatedAt: string
+}
+
+export interface Attachment {
+  id: string
+  name: string
+  sizeBytes: number
+  contentType: string
+}
+
+export interface AttachmentRecord extends Attachment {
+  conversationId: string
+}
+
+export interface PermissionGrant {
+  id: string
+  toolName: string
+  scope: PermissionGrantScope
+  assistantId: string
+  conversationId?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PermissionRequest {
+  requestId: string
+  callId: string
+  toolName: string
+  displayName: string
+  risk: ToolDefinition['risk']
+  assistantId: string
+  conversationId: string
+}
+
+export interface HostToolContext {
+  memories: Memory[]
+  conversations: Conversation[]
+}
+
+export interface GgufSelection {
+  id: string
+  name: string
+  sizeBytes: number
 }
 
 export interface ToolDefinition {
@@ -171,16 +236,72 @@ export interface AppData {
   providers: ProviderProfile[]
   conversations: Conversation[]
   memories: Memory[]
+  attachments: AttachmentRecord[]
+  permissions: PermissionGrant[]
   settings: AppSettings
 }
 
 export interface ChatRequest {
   requestId: string
+  assistantId: string
+  conversationId: string
+  privateChat: boolean
   provider: ProviderProfile
   model: ModelProfile
   messages: Array<{ role: MessageRole; content: string }>
   tools: ToolDefinition[]
   generation: GenerationOverrides
+  permissionGrants: PermissionGrant[]
+  hostContext: HostToolContext
+  attachments?: Array<{
+    id: string
+    name: string
+    content: string
+    sizeBytes?: number
+    contentType?: string
+  }>
+}
+
+export interface DiscoveredModel {
+  modelId: string
+  displayName: string
+  sizeBytes?: number
+  modifiedAt?: string
+}
+
+export interface ModelInspection {
+  modelId: string
+  displayName: string
+  family?: string
+  architecture?: string
+  parameterSize?: string
+  fileSizeBytes?: number
+  quantization?: string
+  format?: string
+  contextLength?: number
+  license?: string
+  template?: string
+  capabilities: string[]
+  metadataSource: string
+  rawCapabilities?: string[]
+}
+
+export interface ModelPullProgress {
+  requestId: string
+  status: string
+  digest?: string
+  completedBytes?: number
+  totalBytes?: number
+  done?: boolean
+  error?: { code: string; message: string }
+}
+
+export interface RuntimeLogEntry {
+  timestamp: string
+  event: string
+  code?: string
+  providerKind?: string
+  modelId?: string
 }
 
 export interface NormalizedToolCall {
@@ -211,6 +332,7 @@ export interface ChatStreamEvent {
   reasoning?: string
   toolCalls?: NormalizedToolCall[]
   toolResults?: HostToolResult[]
+  permissionRequest?: PermissionRequest
   usage?: GenerationUsage
   done?: boolean
   error?: { code: string; message: string }

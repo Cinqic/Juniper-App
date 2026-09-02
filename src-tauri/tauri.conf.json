@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Juniper",
-  "version": "0.1.0-rc.1",
+  "version": "0.2.0-rc.1",
   "identifier": "com.cinqic.juniper",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -32,6 +32,7 @@
     "shortDescription": "Your AI, your models, your machine.",
     "longDescription": "A local-first AI environment that turns compatible models into personal Juniper assistants.",
     "publisher": "Cinqic",
-    "targets": ["deb", "appimage", "msi", "dmg", "app", "android"]
+    "targets": ["deb", "appimage", "msi", "dmg", "app"],
+    "icon": ["icons/icon.png"]
   }
 }

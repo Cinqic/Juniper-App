@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "provider": "ollama-local",
+  "kind": "ollama",
+  "baseUrl": "http://127.0.0.1:11434",
+  "executionLocation": "on-device",
+  "modelPolicy": "discover-and-inspect-runtime-models"
+}

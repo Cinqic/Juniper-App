@@ -1,14 +1,16 @@
 # Provider contract
 
-Providers expose `listModels`, `healthCheck`, `inspectModel`, `capabilityProbe`,
-and `streamChat` semantics. v0.1 implements the Rust transport path for
-Ollama and generic OpenAI-compatible servers. llama.cpp is supported through
+Providers expose `listModels`, `healthCheck`, `inspectModel`, `pullModel`,
+`deleteModel`, `runningModels`, `capabilityProbe`, and `streamChat` semantics.
+v0.2 implements a native Ollama path plus generic OpenAI-compatible servers.
+llama.cpp is supported through
 the same endpoint contract, including its local `/v1` server path.
 
 Capabilities are tri-state: `supported`, `unsupported`, or `unknown`.
-Unknown never enables a tool/thinking/generation control. The Qwen3 8B
-reference profile records tools, parallel tools, and thinking as expected
-capabilities, but real qualification remains environment-dependent.
+Unknown never enables a tool/thinking/generation control. Runtime metadata is
+the source of truth; no model family is required or used as a compatibility
+shortcut. Optional model-specific profiles may document tested quirks, but
+generic discovery remains the default.
 
 When a provider returns tool calls, the native adapter accumulates streamed
 fragments, normalizes them, executes only the bounded host-safe tool set, sends

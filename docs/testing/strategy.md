@@ -4,13 +4,29 @@
 formatting, lint, TypeScript, frontend tests, Rust formatting/clippy/tests,
 and JSON schema syntax checks in one sequence.
 
-Deterministic frontend tests cover assistant import/export, context order and
-truncation, private persistence, and browser-preview streaming. Rust tests
-cover the safe calculator, unit conversion, protocol result shape, loop
-bounds, and schema version. Provider integration uses a fake HTTP server in
-future CI work; real Qwen3 is reserved for the qualification fixture.
+Deterministic frontend tests cover the zero-model shell and navigation,
+assistant import/export, context order and truncation, private persistence,
+attachment metadata privacy, model-fit estimates, and browser-preview streaming. Rust tests cover the
+safe calculator, unit conversion, protocol result shape, loop bounds, permission scope matching,
+provider JSON/SSE/pull parsing, fake HTTP discovery/inspection/chat/tool/error,
+unknown-model behavior, timeout/cancellation fixtures, scoped attachment/GGUF grants,
+read-time attachment revalidation, bounded runtime logs, restart-safe attachment persistence,
+and schema version (40 tests).
+Real-model qualification is reserved for an owner-selected installed model.
+The historical Qwen fixture is optional.
 
-Frontend build, lint, formatting, schema syntax checks, deterministic tests,
-and browser UI smoke checks were completed with the bundled Node runtime. No
-real Qwen3, Tauri, Android, or desktop test is claimed because Rust, Java,
-Android SDK/NDK, and Ollama were not available in this environment.
+Frontend build, lint, formatting, schema validation, deterministic tests, and
+browser UI smoke checks were completed with the bundled Node runtime. Ollama
+was reachable but had no installed models, so no real-model generation is
+claimed. Native `cargo check`, test compilation, strict Clippy, and the full
+Rust test suite pass with temporary user-local Linux development metadata. The
+Linux Tauri `.deb` and `.AppImage` bundles also build in that isolated
+prerequisite environment. Android tests additionally require the Android NDK
+clang toolchain.
+
+The fault-injection review targets malformed provider records, unknown tool
+names, invalid arguments, private-chat leakage, attachment IDs outside the
+picker grant set, denied permissions, oversized results, and tool-loop
+overruns. These invariants are represented by the provider, tool, storage, and
+frontend tests; a release reviewer should run the same fixtures against any
+adapter change.

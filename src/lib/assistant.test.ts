@@ -15,4 +15,15 @@ describe('assistant format', () => {
     ).toBe(false)
     expect(() => parseAssistant('{"format":"juniper-assistant","version":1}')).toThrow()
   })
+
+  it('migrates the v1 thinking flag to the v2 enum', () => {
+    const legacy = JSON.parse(serializeAssistant(defaultAssistant))
+    legacy.version = 1
+    legacy.assistant.schemaVersion = 1
+    legacy.assistant.modelProfileId = 'legacy-model'
+    legacy.assistant.generation.thinking = true
+    const migrated = parseAssistant(JSON.stringify(legacy))
+    expect(migrated.schemaVersion).toBe(2)
+    expect(migrated.generation.thinking).toBe('on')
+  })
 })

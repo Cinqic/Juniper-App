@@ -1,14 +1,23 @@
 format: juniper-release-manifest-v1
-version: 0.1.0-rc.1
+version: 0.2.0-rc.1
 status: CANDIDATE - PENDING INDEPENDENT REVIEW
 canonical_repository: https://github.com/Cinqic/Juniper-App
 canonical_branch: main
 license: MIT
 telemetry: off
-reference_model: qwen3:8b
+model_architecture: model-agnostic
+supported_runtime_classes:
+  - ollama
+  - llama-cpp
+  - openai-compatible
+qualification_models:
+  - optional
 validated_in_this_environment:
   frontend: tested-bundled-node
-  rust: not-tested-toolchain-unavailable
-  desktop: not-tested-toolchain-unavailable
-  android: not-tested-toolchain-unavailable
-  qwen3: not-tested-ollama-unavailable
+  rust: tested-rust-1.90-with-isolated-linux-development-metadata
+  desktop: tested-tauri-dev-and-linux-deb-appimage-build
+  android: blocked-missing-android-ndk-clang
+  real_model_generation: pending-owner-selected-model
+  frontend_tests: 19
+  native_tests: 40
+  runtime_diagnostics: bounded-in-memory-content-free

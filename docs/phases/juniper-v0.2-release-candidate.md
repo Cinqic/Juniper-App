@@ -1,0 +1,135 @@
+# Juniper v0.2 release-candidate handoff
+
+Status: CANDIDATE - PENDING INDEPENDENT REVIEW
+
+## Provenance
+
+- Starting canonical commit: 9c900021435505ea5b2bb16647ebd5bf2bb035f5
+- Working branch: luna/juniper-model-agnostic-completion
+- Follow-up remediation commit: efd4b96
+- Latest validation commit: 437a44e22592ac39df51dc6cdc771a6ec1537874
+- Product version: 0.2.0-rc.1
+
+## Architecture changes
+
+Juniper now separates assistants, providers, and model profiles. The default
+Juniper assistant has no required model binding. Models are discovered and
+inspected through runtime metadata, with tri-state capabilities and explicit
+execution locations: ON DEVICE, LOCAL NETWORK, REMOTE, or UNKNOWN. An
+unknown-compatible model can be used without a model-family source-code branch.
+
+The React shell and chat orchestration remain in `src/app/App.tsx`; assistants,
+models, settings, privacy, diagnostics, and onboarding pages live in
+`src/app/pages.tsx`.
+
+The supported provider classes are native Ollama, llama.cpp through its
+OpenAI-compatible server contract, and generic OpenAI-compatible servers.
+Ollama uses its native chat, discovery, inspection, pull, delete, and running
+model surfaces. Model pulls use the provider API directly with streamed
+progress; user/model text is never placed in a shell command.
+
+## Model independence and live runtime evidence
+
+- Product-level Qwen coupling was removed. The historical Qwen qualification
+  fixture remains optional and is not a product default.
+- Ollama 0.33.2 was reachable at http://127.0.0.1:11434.
+- Installed models observed: none (the tags endpoint returned an empty model list).
+- Model downloads performed: none.
+- Real model chats executed: none; qualification remains pending until the
+  owner selects an installed model.
+- The no-model UI state remains usable and directs the user to add or download
+  a model. Browser-only fake streaming is visibly development-preview behavior.
+
+## Persistence, chat, tools, files, and privacy
+
+- Tauri application state is saved through SQLite schema v3, with migrations,
+  foreign keys, normalized entity tables, normalized attachment metadata, an
+  app-state snapshot, and private chat and chat-scoped permission exclusion.
+  Native attachment paths remain outside the webview payload. Browser
+  localStorage is isolated to the development preview.
+- Prompt composition is deterministic: Juniper identity, assistant prompt,
+  compiled personality, response preference, host tool guidance, curated
+  memory, history, attachment context, and the current user message.
+  The current user message is included exactly once.
+- Personality sliders compile into model-facing guidance. Curated memory is
+  included only when the assistant policy enables it.
+- Native provider streams carry separate reasoning, tool-call, host-result,
+  usage, completion, and stable error events. Cancellation uses one request ID
+  through the frontend and native boundary.
+- Developer diagnostics retain stable error codes and a bounded, in-memory
+  runtime event log containing only provider/model and lifecycle metadata.
+- User-data and filesystem tool calls pause at a native permission boundary.
+  Allow-once, chat-scoped, assistant-scoped, and deny decisions are visible in
+  the UI; durable grants are stored in SQLite and private chat grants are
+  discarded.
+- Safe host tools use strict argument validation, bounded calculator parsing,
+  dimension-safe conversion, bounded loops/payloads, and host-authored results.
+  Unknown or malformed tool arguments never become an empty object.
+- Text attachments use scoped native picker grants and a 1 MiB per-file cap.
+  The GGUF picker validates extension, readability, size, and the GGUF magic
+  header without exposing the selected path to the webview. Ollama GGUF import
+  uses a fixed native executable invocation and streamed completion/cancellation
+  status; managed llama.cpp process ownership remains unavailable.
+- Desktop provider secrets use opaque references backed by the OS credential
+  store; credentials are not exported. There is no telemetry, automatic
+  conversation upload, or silent remote fallback.
+
+## Validation evidence
+
+Passing with the bundled Node runtime:
+
+- pnpm format
+- pnpm lint
+- pnpm typecheck
+- pnpm test — 5 files, 19 tests
+- pnpm build
+- pnpm schema:validate — 7 schemas and representative fixtures
+- pnpm version:check
+- Rust cargo fmt --check
+- Rust cargo check --locked
+- Rust cargo check --tests --locked
+- Rust cargo clippy --all-targets -- -D warnings
+- Rust cargo test --locked — 39 tests passed
+- pnpm tauri build --bundles deb,appimage — native binary plus `.deb` and
+  `.AppImage` bundles produced. Current artifact hashes:
+  - `.deb`: `78ebcc356afd5fd4b272734b799babd4f7c2b7244c091c0d90249b42e4473aff`
+  - `.AppImage`: `1dd3fcf09f6c804ef49883ae9b2b1583291c61dc7f01f372795ab00e07af5511`
+- bounded pnpm tauri dev smoke — Vite and the compiled Tauri binary launched
+  successfully until the headless timeout; no GUI interaction is claimed
+- Hosted GitHub Actions `validate` — passed in 4m39s on
+  [run 33573380900](https://github.com/Cinqic/Juniper-App/actions/runs/33573380900)
+  for [PR #2](https://github.com/Cinqic/Juniper-App/pull/2)
+
+Native validation used Rust 1.90.0 and temporary user-local Linux development
+metadata because the base workspace image does not install the Tauri desktop
+packages globally. The source, test targets, full Rust suite, and Linux bundle
+all passed with that isolated prerequisite set. Android compilation remains
+blocked by the absent Android NDK clang toolchain. CI workflows install the
+required Linux packages and Android SDK/NDK. No live model chat is claimed.
+The bounded Tauri dev smoke reached Vite readiness and launched the compiled
+native binary before the headless timeout; interactive GUI acceptance remains
+for an environment with a display.
+
+## Known and accepted limitations
+
+- Managed llama.cpp process ownership remains unavailable. A user can connect
+  an already-running llama.cpp-compatible server.
+- MCP client calls remain explicitly unavailable in this candidate.
+- Mobile secure credential vault integration, mobile file reads, and iOS
+  validation require platform-specific workspaces.
+- Independent review is still required for native compilation, provider
+  fixtures, SQLite restart behavior, cancellation races, permissions,
+  accessibility, and packaging.
+
+## Recovery and owner acceptance flow
+
+Install Node.js 22+, pnpm 11, Rust 1.90+, the Tauri platform prerequisites,
+and Ollama. From a clean clone, run pnpm install --frozen-lockfile and
+pnpm validate. Open Juniper, confirm the Models page detects Ollama, enter
+any compatible Ollama model reference under Download a model, watch the real
+progress, cancel if desired, and refresh/select the resulting model. The
+header then shows Juniper, the actual model, and its execution location.
+
+Normal model management does not require a terminal after Ollama is installed.
+Do not treat the absence of a downloaded model as a failure and do not pull a
+large qualification model automatically.
