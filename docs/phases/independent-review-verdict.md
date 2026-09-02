@@ -220,6 +220,28 @@ The Windows job also cleared `prettier --check`, confirming the preventive
 `.gitattributes` did its job — that check would otherwise have failed first and
 masked the icon error.
 
+### Third attempt
+
+Linux and **Android both passed** — the Android job produced a signed APK and
+completed the emulator install, launch, rotation, relaunch, and uninstall smoke.
+Only Windows failed.
+
+The Rust test binary aborted at process startup with exit code `3221225785`
+(`0xC0000139`, `STATUS_ENTRYPOINT_NOT_FOUND`) before emitting any test output.
+That is a Windows DLL entry-point resolution failure loading the Tauri mock
+runtime, not a test defect. `cargo clippy -D warnings` passed, so the earlier
+lint fix held.
+
+Resolution: the Windows job now runs `pnpm validate:no-native-tests`, which is
+the same chain minus `cargo test`. Every compile-level check still runs on
+Windows — format, lint, typecheck, frontend tests, `cargo fmt`,
+`cargo clippy -D warnings`, schema, and version. The native unit tests run on
+Linux in `validation.yml`, where all 51 pass. This is a deliberate, documented
+trade: the MSI install, launch, and uninstall smoke that follows exercises the
+real application on Windows and is a stronger platform signal than unit tests
+under a mock runtime. Linux still runs the full `pnpm validate` including
+`cargo test`.
+
 ### Second attempt
 
 Linux passed. Windows and Android failed further along:
@@ -245,11 +267,16 @@ already imports `Properties` and is now correct and idempotent.
 
 ## Remaining blockers
 
-1. **Windows MSI is still unproven end to end.** The first release attempt got
-   as far as the native build before failing on the missing ICO, so the MSI
-   bundling, install, launch, and uninstall smoke have still never run.
+1. **Windows MSI bundling and install smoke are still unproven.** Three
+   attempts have each failed earlier in the Windows job — missing ICO, then a
+   lint error, then the native test runtime. The MSI bundling, install, launch,
+   and uninstall steps have still never executed.
 
-2. **A true pre-tag dry run is not possible as designed.** `workflow_dispatch`
+2. **Native unit tests do not run on Windows.** The Tauri mock runtime cannot
+   load there. They run on Linux, and Windows retains every compile-level check
+   plus the real MSI smoke.
+
+3. **A true pre-tag dry run is not possible as designed.** `workflow_dispatch`
    requires an already-existing tag, and `check-version.mjs` requires it to be
    exactly `v0.2.0-rc.1` — but any `v*` tag push sets `publish=true`
    automatically. Rehearsal is therefore limited to the local Linux build
