@@ -182,6 +182,7 @@ confirms the improved checker reports the original link as `FAIL HTTP 404`.
 ## Conditions for promoting to `0.2.0`
 
 1. Owner provides the four Android signing secrets and a release keystore
+   (see the [Android signing runbook](../release/android-signing-runbook.md))
 2. `release.yml` completes green on all three platforms
 3. Tool and thinking suites qualified against a tools-capable model
 4. Artifacts published with `SHA256SUMS`, then the website updated to point at
