@@ -126,13 +126,22 @@ pub fn app_data_directory(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn load_app_data(app: AppHandle) -> Result<Option<Value>, String> {
+pub fn load_app_data(app: AppHandle, state: State<'_, AppState>) -> Result<Option<Value>, String> {
     let path = app
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?
         .join("juniper.db");
-    crate::storage::load_app_data(&path).map_err(|error| format!("DATABASE_ERROR: {error}"))
+    let data =
+        crate::storage::load_app_data(&path).map_err(|error| format!("DATABASE_ERROR: {error}"))?;
+    let paths = crate::storage::load_attachment_paths(&path)
+        .map_err(|error| format!("DATABASE_ERROR: {error}"))?;
+    state
+        .attachments
+        .lock()
+        .map_err(|_| "Attachment state unavailable.")?
+        .extend(paths);
+    Ok(data)
 }
 
 #[tauri::command]

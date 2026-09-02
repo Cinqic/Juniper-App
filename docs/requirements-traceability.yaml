@@ -142,14 +142,14 @@ requirements:
     status: IMPLEMENTED-NATIVE-TESTED
   REQ-ATTACHMENT:
     statement: Attachments are validated and read through opaque host grants, with metadata persisted without exposing native paths
-    implementation: [src/app/App.tsx, src-tauri/src/commands.rs]
-    tests: [src-tauri/src/commands.rs]
+    implementation: [src/app/App.tsx, src-tauri/src/commands.rs, src-tauri/src/storage.rs]
+    tests: [src-tauri/src/commands.rs, src-tauri/src/storage.rs]
     phase: 11
     status: IMPLEMENTED-NATIVE-TESTED
   REQ-PRIVACY-ROUTE:
-    statement: Privacy center reports selected model execution location truthfully
-    implementation: [src/app/App.tsx, src/types/index.ts]
-    tests: [src/app/App.test.tsx, src/lib/storage.test.ts]
+    statement: Privacy center reports the active assistant, model, provider, persistence, memory, network-tool status, and execution location truthfully
+    implementation: [src/app/App.tsx, src/app/pages.tsx, src/types/index.ts]
+    tests: [src/app/App.test.tsx]
     phase: 11
     status: IMPLEMENTED
   REQ-NO-TELEMETRY:

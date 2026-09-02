@@ -68,6 +68,9 @@ describe('Juniper application shell', () => {
     expect(container.textContent).toContain('Privacy center')
     expect(container.textContent).toContain('Telemetry')
     expect(container.textContent).toContain('No model selected')
+    expect(container.textContent).toContain('Assistant')
+    expect(container.textContent).toContain('Provider')
+    expect(container.textContent).toContain('Network tools')
 
     await act(async () => buttonByText(container, 'Diagnostics').click())
     expect(container.textContent).toContain('Diagnostics')

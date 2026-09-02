@@ -1686,6 +1686,32 @@ select {
   color: var(--muted);
   font-size: 10px;
 }
+.privacy-details {
+  display: grid;
+  gap: 0;
+  margin: 14px 0 9px;
+}
+.privacy-details > div {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+}
+.privacy-details dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+.privacy-details dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 600;
+}
+.privacy-details .status-pill {
+  display: inline-flex;
+  width: fit-content;
+}
 .privacy-actions {
   gap: 20px;
   margin-top: 17px;

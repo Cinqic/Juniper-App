@@ -19,5 +19,5 @@ validated_in_this_environment:
   android: blocked-missing-android-ndk-clang
   real_model_generation: pending-owner-selected-model
   frontend_tests: 19
-  native_tests: 39
+  native_tests: 40
   runtime_diagnostics: bounded-in-memory-content-free

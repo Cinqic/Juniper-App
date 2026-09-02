@@ -1357,16 +1357,22 @@ export function SettingsPage({
 export function PrivacyPage({
   data,
   update,
+  activeAssistant,
   activeModel,
   activeProvider,
+  currentConversation,
 }: {
   data: AppData
   update: (change: (current: AppData) => AppData) => void
+  activeAssistant: Assistant
   activeModel?: ModelProfile
   activeProvider?: ProviderProfile
+  currentConversation?: AppData['conversations'][number]
 }) {
   const model = activeModel
   const provider = activeProvider
+  const privateChat = currentConversation?.privateChat === true
+  const networkTools = 'Off — no network tools are enabled in this release.'
   function clearChats() {
     if (window.confirm('Clear all saved chats?'))
       update((current) => ({
@@ -1401,13 +1407,49 @@ export function PrivacyPage({
         </section>
         <section className="privacy-card">
           <span className="eyebrow">Current route</span>
-          <div className="privacy-stat">
-            <strong>{model?.displayName ?? 'No model selected'}</strong>
-            <span className={`status-pill ${model?.executionLocation ?? 'unknown'}`}>
-              <i />
-              {labelExecutionLocation(model?.executionLocation ?? 'unknown')}
-            </span>
-          </div>
+          <dl className="privacy-details">
+            <div>
+              <dt>Assistant</dt>
+              <dd>{activeAssistant.name}</dd>
+            </div>
+            <div>
+              <dt>Model</dt>
+              <dd>{model?.displayName ?? 'No model selected'}</dd>
+            </div>
+            <div>
+              <dt>Provider</dt>
+              <dd>{provider?.name ?? 'No provider selected'}</dd>
+            </div>
+            <div>
+              <dt>Execution</dt>
+              <dd>
+                <span className={`status-pill ${model?.executionLocation ?? 'unknown'}`}>
+                  <i />
+                  {labelExecutionLocation(model?.executionLocation ?? 'unknown')}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>Persistence</dt>
+              <dd>
+                {currentConversation
+                  ? privateChat
+                    ? 'PRIVATE · SESSION ONLY'
+                    : 'SAVED'
+                  : 'No active chat'}
+              </dd>
+            </div>
+            <div>
+              <dt>Memory</dt>
+              <dd>
+                {activeAssistant.memoryPolicy === 'curated' ? 'Curated memory enabled' : 'Off'}
+              </dd>
+            </div>
+            <div>
+              <dt>Network tools</dt>
+              <dd>{networkTools}</dd>
+            </div>
+          </dl>
           <p>
             {model?.executionLocation === 'remote'
               ? `Prompts sent to ${provider?.name ?? 'this provider'} leave the device. This is explicit and visible.`

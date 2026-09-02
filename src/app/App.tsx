@@ -266,6 +266,10 @@ export default function App() {
   const currentProvider = currentModel
     ? data.providers.find((provider) => provider.id === currentModel.providerId)
     : undefined
+  const currentAssistant = selectedConversation
+    ? (data.assistants.find((assistant) => assistant.id === selectedConversation.assistantId) ??
+      activeAssistant)
+    : activeAssistant
 
   function createChat(privateChat = false): Conversation {
     const conversation: Conversation = {
@@ -342,8 +346,10 @@ export default function App() {
             <PrivacyPage
               data={data}
               update={update}
+              activeAssistant={currentAssistant}
               activeModel={currentModel}
               activeProvider={currentProvider}
+              currentConversation={selectedConversation}
             />
           )}
           {page === 'diagnostics' && <DiagnosticsPage data={data} />}

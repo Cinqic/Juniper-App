@@ -180,12 +180,37 @@ pub fn load_app_data(path: &Path) -> Result<Option<Value>> {
     Ok(Some(payload))
 }
 
+pub fn load_attachment_paths(path: &Path) -> Result<HashMap<String, PathBuf>> {
+    let connection = connection(path)?;
+    load_attachment_paths_from_connection(&connection)
+}
+
+fn load_attachment_paths_from_connection(
+    connection: &Connection,
+) -> Result<HashMap<String, PathBuf>> {
+    let mut statement = connection.prepare("SELECT id, path FROM attachments WHERE path <> ''")?;
+    statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                PathBuf::from(row.get::<_, String>(1)?),
+            ))
+        })?
+        .collect()
+}
+
 pub fn save_app_data_with_paths(
     path: &Path,
     data: &Value,
     attachment_paths: &HashMap<String, PathBuf>,
 ) -> Result<()> {
     let connection = connection(path)?;
+    let mut known_attachment_paths = load_attachment_paths_from_connection(&connection)?;
+    known_attachment_paths.extend(
+        attachment_paths
+            .iter()
+            .map(|(id, path)| (id.clone(), path.clone())),
+    );
     let mut persisted = data.clone();
     if let Some(object) = persisted.as_object_mut() {
         let private_conversation_ids = object
@@ -342,6 +367,7 @@ pub fn save_app_data_with_paths(
         }
         let path = attachment_paths
             .get(id)
+            .or_else(|| known_attachment_paths.get(id))
             .map(|value| value.to_string_lossy().into_owned())
             .unwrap_or_default();
         transaction.execute(
@@ -619,6 +645,65 @@ mod tests {
             1
         );
         std::fs::remove_file(path).expect("temporary database should be removable");
+        Ok(())
+    }
+
+    #[test]
+    fn attachment_paths_survive_restart_and_subsequent_saves()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock is before the Unix epoch")
+            .as_nanos();
+        let database = std::env::temp_dir().join(format!("juniper-attachment-test-{suffix}.db"));
+        let attachment = std::env::temp_dir().join(format!("juniper-attachment-test-{suffix}.txt"));
+        std::fs::write(&attachment, "persisted attachment")?;
+        let data = serde_json::json!({
+            "assistants": [{
+                "id": "assistant-1",
+                "schemaVersion": 2,
+                "createdAt": "2026-01-01T00:00:00Z",
+                "updatedAt": "2026-01-01T00:00:00Z"
+            }],
+            "providers": [],
+            "models": [],
+            "memories": [],
+            "permissions": [],
+            "attachments": [{
+                "id": "attachment-1",
+                "conversationId": "chat-1",
+                "name": "notes.txt",
+                "sizeBytes": 20,
+                "contentType": "text/plain"
+            }],
+            "conversations": [{
+                "id": "chat-1",
+                "assistantId": "assistant-1",
+                "title": "Saved",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "updatedAt": "2026-01-01T00:00:00Z",
+                "messages": []
+            }],
+            "settings": { "telemetry": "off" }
+        });
+        let mut paths = HashMap::from([(String::from("attachment-1"), attachment.clone())]);
+        save_app_data_with_paths(&database, &data, &paths)?;
+
+        let loaded = load_app_data(&database)?.expect("saved state should be present");
+        let restored_paths = load_attachment_paths(&database)?;
+        assert_eq!(restored_paths.get("attachment-1"), Some(&attachment));
+        paths.clear();
+        save_app_data_with_paths(&database, &loaded, &paths)?;
+
+        let connection = Connection::open(&database)?;
+        let stored_path: String = connection.query_row(
+            "SELECT path FROM attachments WHERE id = 'attachment-1'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(PathBuf::from(stored_path), attachment);
+        std::fs::remove_file(database)?;
+        std::fs::remove_file(attachment)?;
         Ok(())
     }
 }

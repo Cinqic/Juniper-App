@@ -10,8 +10,8 @@ attachment metadata privacy, model-fit estimates, and browser-preview streaming.
 safe calculator, unit conversion, protocol result shape, loop bounds, permission scope matching,
 provider JSON/SSE/pull parsing, fake HTTP discovery/inspection/chat/tool/error,
 unknown-model behavior, timeout/cancellation fixtures, scoped attachment/GGUF grants,
-read-time attachment revalidation, bounded runtime logs, normalized attachment persistence,
-and schema version (39 tests).
+read-time attachment revalidation, bounded runtime logs, restart-safe attachment persistence,
+and schema version (40 tests).
 Real-model qualification is reserved for an owner-selected installed model.
 The historical Qwen fixture is optional.
 
