@@ -22,13 +22,17 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-        with: { ref: ${{ inputs.tag || github.ref }} }
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ env.NODE_VERSION }} }
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - uses: pnpm/action-setup@v4
-        with: { version: ${{ env.PNPM_VERSION }} }
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: dtolnay/rust-toolchain@stable
-        with: { components: rustfmt, clippy }
+        with:
+          components: rustfmt, clippy
       - name: Install Linux prerequisites
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - run: pnpm install --frozen-lockfile
@@ -40,17 +44,22 @@ jobs:
           find src-tauri/target/release/bundle -type f \( -name '*.deb' -o -name '*.AppImage' \) -exec cp {} release-artifacts/ \;
           sha256sum release-artifacts/* | tee release-artifacts/SHA256SUMS-linux.txt
       - uses: actions/upload-artifact@v4
-        with: { name: juniper-linux, path: release-artifacts }
+        with:
+          name: juniper-linux
+          path: release-artifacts
 
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with: { ref: ${{ inputs.tag || github.ref }} }
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ env.NODE_VERSION }} }
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - uses: pnpm/action-setup@v4
-        with: { version: ${{ env.PNPM_VERSION }} }
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: dtolnay/rust-toolchain@stable
       - run: pnpm install --frozen-lockfile
       - run: pnpm validate
@@ -61,17 +70,22 @@ jobs:
           Get-ChildItem -Recurse src-tauri/target/release/bundle -Filter *.msi | Copy-Item -Destination release-artifacts
           Get-FileHash release-artifacts/*.msi -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } | Set-Content release-artifacts/SHA256SUMS-windows.txt
       - uses: actions/upload-artifact@v4
-        with: { name: juniper-windows, path: release-artifacts }
+        with:
+          name: juniper-windows
+          path: release-artifacts
 
   android:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-        with: { ref: ${{ inputs.tag || github.ref }} }
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ env.NODE_VERSION }} }
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - uses: pnpm/action-setup@v4
-        with: { version: ${{ env.PNPM_VERSION }} }
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
@@ -94,7 +108,9 @@ jobs:
           test "$(find release-artifacts -name '*.apk' | wc -l)" -eq 1
           sha256sum release-artifacts/*.apk | tee release-artifacts/SHA256SUMS-android.txt
       - uses: actions/upload-artifact@v4
-        with: { name: juniper-android, path: release-artifacts }
+        with:
+          name: juniper-android
+          path: release-artifacts
 
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -102,7 +118,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
-        with: { pattern: juniper-*, path: release-artifacts, merge-multiple: true }
+        with:
+          pattern: juniper-*
+          path: release-artifacts
+          merge-multiple: true
       - name: Build release notes
         run: |
           version="${GITHUB_REF_NAME#v}"
