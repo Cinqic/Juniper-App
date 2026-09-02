@@ -1,0 +1,16 @@
+# Keep text files LF in the working tree on every platform.
+#
+# The Windows release job runs `pnpm validate`, which starts with
+# `prettier --check .`. Prettier defaults to endOfLine: "lf", so a CRLF
+# checkout on a Windows runner would fail the whole job and, because
+# publish needs verify needs windows, block the release.
+* text=auto eol=lf
+
+# Never line-ending-convert binary content.
+*.png binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.gguf binary
+*.jks binary
+*.keystore binary

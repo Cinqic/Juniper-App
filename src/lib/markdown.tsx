@@ -1,15 +1,5 @@
 import type { ReactNode } from 'react'
 
-function safeHref(value: string): string | null {
-  if (value.startsWith('#') || (value.startsWith('/') && !value.startsWith('//'))) return value
-  try {
-    const protocol = new URL(value).protocol
-    return protocol === 'http:' || protocol === 'https:' || protocol === 'mailto:' ? value : null
-  } catch {
-    return null
-  }
-}
-
 function inline(text: string): ReactNode[] {
   const nodes: ReactNode[] = []
   const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^\s)]+\))/g
@@ -22,12 +12,11 @@ function inline(text: string): ReactNode[] {
     else if (token.startsWith('`')) nodes.push(<code key={`${index}-c`}>{token.slice(1, -1)}</code>)
     else {
       const parts = token.match(/^\[([^\]]+)\]\(([^\s)]+)\)$/)
-      const href = parts ? safeHref(parts[2]) : null
       nodes.push(
-        parts && href ? (
-          <a key={`${index}-a`} href={href} target="_blank" rel="noreferrer">
-            {parts[1]}
-          </a>
+        parts ? (
+          <span key={`${index}-link`} className="inert-markdown-link">
+            {parts[1]} ({parts[2]})
+          </span>
         ) : (
           token
         ),

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { defaultAssistant, defaultProvider, modelProfileFromDiscovery } from './defaults'
-import { modelFromInspection, streamChat } from './runtime'
+import { browserPreviewEnabled, modelFromInspection, streamChat } from './runtime'
 
 describe('deterministic fake provider', () => {
   it('streams a truthful Juniper identity response without a provider', async () => {
+    expect(browserPreviewEnabled).toBe(true)
     const events: string[] = []
     await streamChat(
       {

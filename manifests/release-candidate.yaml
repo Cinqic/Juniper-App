@@ -1,6 +1,11 @@
 format: juniper-release-manifest-v1
 version: 0.2.0-rc.1
-status: CANDIDATE - PENDING INDEPENDENT REVIEW
+status: CANDIDATE - INDEPENDENT REVIEW COMPLETE - APPROVED AS RELEASE CANDIDATE
+independent_review:
+  reviewer: Claude Opus 5
+  date: 2026-09-02
+  verdict: approved-as-release-candidate-not-approved-for-final-0.2.0
+  report: docs/phases/independent-review-verdict.md
 canonical_repository: https://github.com/Cinqic/Juniper-App
 canonical_branch: main
 license: MIT
@@ -11,13 +16,27 @@ supported_runtime_classes:
   - llama-cpp
   - openai-compatible
 qualification_models:
-  - optional
+  - smollm:135m
+  - qwen3:0.6b
 validated_in_this_environment:
-  frontend: tested-bundled-node
-  rust: tested-rust-1.90-with-isolated-linux-development-metadata
-  desktop: tested-tauri-dev-and-linux-deb-appimage-build
-  android: blocked-missing-android-ndk-clang
-  real_model_generation: pending-owner-selected-model
-  frontend_tests: 19
-  native_tests: 40
+  frontend: tested-node-22.23.2-pnpm-11.19.0
+  rust: tested-rust-1.90.0-fmt-clippy-deny-warnings-clean
+  desktop: reproduced-linux-deb-and-appimage-build-with-launch-smoke
+  windows: not-built-requires-windows-runner
+  android: signing-configured-release-build-not-yet-executed
+  real_model_generation: validated-ollama-chat-context-tools-and-thinking
+  real_model_tools: validated-qwen3-0.6b-host-authored-success-and-invalid-argument-rejection
+  real_model_thinking: validated-qwen3-0.6b-reasoning-separate-from-answer
+  frontend_tests: 37
+  native_tests: 51
   runtime_diagnostics: bounded-in-memory-content-free
+evidence:
+  validation: reproduced-locally-pnpm-validate-exit-0
+  qualification: docs/qualification/ollama-real-model-evidence.md
+  reconciliation: docs/recovery/local-remote-reconciliation-2026-09-02.md
+resolved_during_review:
+  - tool-and-thinking-round-trips-qualified-against-qwen3-0.6b
+  - android-signing-secrets-installed-2026-09-02
+  - jdk-17-provisioned-for-all-android-ci-jobs
+blockers_for_final_release:
+  - windows-msi-never-built-or-install-smoked

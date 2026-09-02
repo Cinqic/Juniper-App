@@ -6,6 +6,8 @@ dist/
 !.env.example
 src-tauri/target/
 src-tauri/gen/
+*.jks
+*.keystore
 *.log
 *.hold
 *.db
@@ -14,3 +16,4 @@ src-tauri/gen/
 models/
 runtime/
 .DS_Store
+release-artifacts/

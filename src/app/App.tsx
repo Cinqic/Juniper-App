@@ -341,7 +341,7 @@ export default function App() {
           )}
           {page === 'models' && <ModelsPage data={data} update={update} />}
           {page === 'tools' && <ToolsPage data={data} update={update} />}
-          {page === 'settings' && <SettingsPage data={data} update={update} />}
+          {page === 'settings' && <SettingsPage data={data} update={update} navigate={setPage} />}
           {page === 'privacy' && (
             <PrivacyPage
               data={data}
@@ -646,7 +646,11 @@ function ConversationView({
           ],
           tools: enabledTools,
           generation: activeAssistant.generation,
-          permissionGrants: data.permissions,
+          permissionGrants: data.permissions.filter(
+            (grant) =>
+              grant.assistantId === activeAssistant.id &&
+              (grant.scope === 'assistant' || grant.conversationId === conversation.id),
+          ),
           hostContext: {
             memories: data.memories,
             conversations: data.conversations.filter((chat) => !chat.privateChat),

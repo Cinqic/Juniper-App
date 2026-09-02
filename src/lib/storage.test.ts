@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { initialAppData } from './defaults'
-import { loadAppData, saveAppData } from './storage'
+import { inferTransportLocation, loadAppData, saveAppData } from './storage'
 
 describe('browser-preview storage', () => {
   beforeEach(() => localStorage.clear())
@@ -88,5 +88,20 @@ describe('browser-preview storage', () => {
     ]
     saveAppData(data)
     expect(loadAppData().attachments.map((item) => item.id)).toEqual(['saved-file'])
+  })
+
+  it.each([
+    ['http://localhost:11434', 'on-device'],
+    ['http://model.localhost:11434', 'on-device'],
+    ['http://127.8.4.2:11434', 'on-device'],
+    ['http://[::1]:11434', 'on-device'],
+    ['http://192.168.1.2:11434', 'local-network'],
+    ['http://169.254.3.4:11434', 'local-network'],
+    ['http://[fd00::1234]:11434', 'local-network'],
+    ['http://[fe80::1234]:11434', 'local-network'],
+    ['https://api.example.test', 'remote'],
+    ['not a URL', 'unknown'],
+  ])('classifies provider route %s as %s', (url, expected) => {
+    expect(inferTransportLocation(url)).toBe(expected)
   })
 })

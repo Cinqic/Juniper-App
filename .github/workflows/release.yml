@@ -6,139 +6,365 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to build
+        description: Existing immutable tag to build
         required: true
+        type: string
+      publish:
+        description: Publish after every build and verification gate passes
+        required: true
+        default: false
+        type: boolean
+      confirm_commit:
+        description: Exact tagged commit SHA required when publish is enabled
+        required: false
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   NODE_VERSION: '22'
   PNPM_VERSION: '11.19.0'
 
 jobs:
-  linux:
+  contract:
+    name: Immutable release contract
     runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.contract.outputs.tag }}
+      version: ${{ steps.contract.outputs.version }}
+      commit: ${{ steps.contract.outputs.commit }}
+      publish: ${{ steps.contract.outputs.publish }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
-      - uses: actions/setup-node@v4
+          ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - uses: pnpm/action-setup@v4
+      - name: Verify tag, commit, and version agreement
+        id: contract
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          CONFIRM_COMMIT: ${{ inputs.confirm_commit }}
+          REQUESTED_PUBLISH: ${{ inputs.publish }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -n "$RELEASE_TAG"
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          commit=$(git rev-list -n 1 "$RELEASE_TAG")
+          test "$commit" = "$(git rev-parse HEAD)"
+          test "$(git tag --points-at HEAD | grep -Fx "$RELEASE_TAG" | wc -l)" -eq 1
+          RELEASE_TAG="$RELEASE_TAG" node scripts/check-version.mjs
+          version=${RELEASE_TAG#v}
+          publish=false
+          if test "$GITHUB_EVENT_NAME" = push || test "$REQUESTED_PUBLISH" = true; then
+            publish=true
+            test -n "$CONFIRM_COMMIT" || test "$GITHUB_EVENT_NAME" = push
+            test -z "$CONFIRM_COMMIT" || test "$CONFIRM_COMMIT" = "$commit"
+            if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "Release $RELEASE_TAG already exists; refusing to overwrite it." >&2
+              exit 1
+            fi
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: Linux x86_64 build and install smoke
+    needs: contract
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.contract.outputs.tag }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: 1.90.0
           components: rustfmt, clippy
       - name: Install Linux prerequisites
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev
+          libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb
       - run: pnpm install --frozen-lockfile
       - run: pnpm validate
-      - run: pnpm tauri build --bundles deb,appimage
-      - name: Collect Linux artifacts and checksums
+      - name: Build DEB and AppImage from locked source
+        run: pnpm tauri build --bundles deb,appimage -- --locked
+      - name: Collect exactly one artifact of each type
+        env:
+          VERSION: ${{ needs.contract.outputs.version }}
         run: |
+          mapfile -d '' debs < <(find src-tauri/target/release/bundle -type f -name '*.deb' -print0)
+          mapfile -d '' appimages < <(find src-tauri/target/release/bundle -type f -name '*.AppImage' -print0)
+          test "${#debs[@]}" -eq 1
+          test "${#appimages[@]}" -eq 1
           mkdir release-artifacts
-          find src-tauri/target/release/bundle -type f \( -name '*.deb' -o -name '*.AppImage' \) -exec cp {} release-artifacts/ \;
-          sha256sum release-artifacts/* | tee release-artifacts/SHA256SUMS-linux.txt
-      - uses: actions/upload-artifact@v4
+          cp "${debs[0]}" "release-artifacts/Juniper-$VERSION-linux-x86_64.deb"
+          cp "${appimages[0]}" "release-artifacts/Juniper-$VERSION-linux-x86_64.AppImage"
+      - name: Install, launch, and uninstall Linux bundles
+        env:
+          VERSION: ${{ needs.contract.outputs.version }}
+        run: scripts/verify-linux-bundles.sh release-artifacts "$VERSION"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: juniper-linux
+          name: juniper-linux-x86_64
           path: release-artifacts
+          if-no-files-found: error
 
   windows:
+    name: Windows x86_64 MSI install smoke
+    needs: contract
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
-      - uses: actions/setup-node@v4
+          ref: ${{ needs.contract.outputs.tag }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: 1.90.0
+          components: rustfmt, clippy
       - run: pnpm install --frozen-lockfile
       - run: pnpm validate
-      - run: pnpm tauri build --bundles msi
-      - shell: pwsh
+      - name: Build MSI from locked source
+        run: pnpm tauri build --bundles msi -- --locked
+      - name: Collect exactly one MSI
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.contract.outputs.version }}
         run: |
+          $msis = @(Get-ChildItem -Recurse src-tauri/target/release/bundle -Filter *.msi)
+          if ($msis.Count -ne 1) { throw "Expected one MSI, found $($msis.Count)." }
           New-Item -ItemType Directory -Force release-artifacts | Out-Null
-          Get-ChildItem -Recurse src-tauri/target/release/bundle -Filter *.msi | Copy-Item -Destination release-artifacts
-          Get-FileHash release-artifacts/*.msi -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } | Set-Content release-artifacts/SHA256SUMS-windows.txt
-      - uses: actions/upload-artifact@v4
+          Copy-Item $msis[0].FullName "release-artifacts/Juniper-$env:VERSION-windows-x86_64.msi"
+      - name: Inspect, install, launch, and uninstall MSI
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.contract.outputs.version }}
+        run: >-
+          ./scripts/verify-windows-msi.ps1
+          -MsiPath "release-artifacts/Juniper-$env:VERSION-windows-x86_64.msi"
+          -ExpectedAppVersion "$env:VERSION"
+          -ExpectedMsiVersion ((Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).bundle.windows.wix.version)
+          -EvidencePath 'release-artifacts/SIGNING-windows.txt'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: juniper-windows
+          name: juniper-windows-x86_64
           path: release-artifacts
+          if-no-files-found: error
 
   android:
+    name: Signed Android universal APK smoke
+    needs: contract
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
-      - uses: actions/setup-node@v4
+          ref: ${{ needs.contract.outputs.tag }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
         with:
+          toolchain: 1.90.0
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
-      - uses: android-actions/setup-android@v3
-      - name: Install Android prerequisites
-        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973"
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm tauri android init
-      - name: Build release APK
-        env:
-          TAURI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.TAURI_ANDROID_KEYSTORE_PASSWORD }}
-          TAURI_ANDROID_KEY_PASSWORD: ${{ secrets.TAURI_ANDROID_KEY_PASSWORD }}
-        run: |
-          test -n "$TAURI_ANDROID_KEYSTORE_PASSWORD" || { echo 'Missing Android signing secrets; refusing to publish an unsigned APK.'; exit 1; }
-          pnpm tauri android build --apk --ci
-      - name: Collect Android artifact and checksum
-        run: |
-          mkdir release-artifacts
-          find src-tauri/gen/android -type f -name '*release*.apk' -exec cp {} release-artifacts/ \;
-          test "$(find release-artifacts -name '*.apk' | wc -l)" -eq 1
-          sha256sum release-artifacts/*.apk | tee release-artifacts/SHA256SUMS-android.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
-          name: juniper-android
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+      - name: Install Android SDK packages
+        run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.0.12077973' 'emulator' 'system-images;android-35;google_apis;x86_64'
+      - run: pnpm install --frozen-lockfile
+      - name: Initialize Android from clean source
+        run: pnpm tauri android init --ci
+      - name: Provision ephemeral Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          RELEASE_TAG: ${{ needs.contract.outputs.tag }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_PASSWORD"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/juniper-release.jks"
+          chmod 600 "$RUNNER_TEMP/juniper-release.jks"
+          {
+            printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
+            printf 'storeFile=%s\n' "$RUNNER_TEMP/juniper-release.jks"
+            printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
+          } > src-tauri/gen/android/keystore.properties
+          chmod 600 src-tauri/gen/android/keystore.properties
+          node scripts/configure-android-signing.mjs
+      - name: Build signed release APK from locked source
+        run: pnpm tauri android build --apk --ci -- --locked
+      - name: Collect and verify exactly one signed APK
+        env:
+          VERSION: ${{ needs.contract.outputs.version }}
+        run: |
+          mapfile -d '' apks < <(find src-tauri/gen/android -type f -name '*release*.apk' -print0)
+          test "${#apks[@]}" -eq 1
+          mkdir release-artifacts
+          cp "${apks[0]}" "release-artifacts/Juniper-$VERSION-android-universal.apk"
+          apksigner verify --verbose --print-certs "release-artifacts/Juniper-$VERSION-android-universal.apk" | tee release-artifacts/SIGNING-android.txt
+          aapt dump badging "release-artifacts/Juniper-$VERSION-android-universal.apk" | tee release-artifacts/PACKAGE-android.txt
+          grep -F "package: name='com.cinqic.juniper' versionCode='2001' versionName='$VERSION'" release-artifacts/PACKAGE-android.txt
+      - name: Install, launch, lifecycle smoke, and uninstall APK
+        uses: reactivecircus/android-emulator-runner@1dcd0090116d15e7c562f8db72807de5e036a4ed # v2.34.0
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          script: |
+            adb install "release-artifacts/Juniper-${{ needs.contract.outputs.version }}-android-universal.apk"
+            adb shell monkey -p com.cinqic.juniper 1
+            sleep 8
+            adb shell pidof com.cinqic.juniper
+            adb shell settings put system accelerometer_rotation 0
+            adb shell settings put system user_rotation 1
+            sleep 3
+            adb shell am force-stop com.cinqic.juniper
+            adb shell monkey -p com.cinqic.juniper 1
+            sleep 5
+            adb shell pidof com.cinqic.juniper
+            adb uninstall com.cinqic.juniper
+      - name: Remove signing material
+        if: always()
+        run: |
+          shred -u "$RUNNER_TEMP/juniper-release.jks" 2>/dev/null || true
+          shred -u src-tauri/gen/android/keystore.properties 2>/dev/null || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: juniper-android-universal
           path: release-artifacts
+          if-no-files-found: error
 
-  publish:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, windows, android]
-    runs-on: ubuntu-latest
+  verify:
+    name: Downloaded artifact verification and provenance
+    needs: [contract, linux, windows, android]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: juniper-*
           path: release-artifacts
           merge-multiple: true
-      - name: Build release notes
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          {
-            echo "# Juniper ${version}"; echo
-            echo 'Juniper is a local-first AI application for compatible providers and runtimes.'; echo
-            echo '## Downloads'; echo
-            for f in release-artifacts/*; do [ "${f##*/}" = SHA256SUMS-* ] || echo "- \`${f##*/}\`"; done
-            echo; echo '## Checksums'; echo; cat release-artifacts/SHA256SUMS-*.txt
-            echo; echo '## Notes'; echo; echo '- Configure a compatible Ollama, llama.cpp, or OpenAI-compatible provider.'
-            echo '- Telemetry is off; provider network requests are user-configured.'
-            echo '- Managed llama.cpp process ownership, MCP client calls, native on-device GGUF inference, and real-model qualification are not claimed.'
-            echo '- Source: https://github.com/Cinqic/Juniper-App'; echo '- License: MIT'
-          } > release-artifacts/RELEASE_NOTES.md
-      - uses: softprops/action-gh-release@v2
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Juniper ${{ github.ref_name }}
-          body_path: release-artifacts/RELEASE_NOTES.md
-          files: release-artifacts/*
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+      - name: Install Android verification tools
+        run: sdkmanager 'build-tools;35.0.0'
+      - name: Require the complete artifact matrix and recompute hashes
+        env:
+          VERSION: ${{ needs.contract.outputs.version }}
+        run: |
+          test -f "release-artifacts/Juniper-$VERSION-linux-x86_64.deb"
+          test -f "release-artifacts/Juniper-$VERSION-linux-x86_64.AppImage"
+          test -f "release-artifacts/Juniper-$VERSION-windows-x86_64.msi"
+          test -f "release-artifacts/Juniper-$VERSION-android-universal.apk"
+          test -f release-artifacts/SIGNING-windows.txt
+          test -f release-artifacts/SIGNING-android.txt
+          test "$(find release-artifacts -maxdepth 1 -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.msi' -o -name '*.apk' \) | wc -l)" -eq 4
+          (cd release-artifacts && sha256sum Juniper-* > SHA256SUMS.txt)
+          (cd release-artifacts && sha256sum --check SHA256SUMS.txt)
+          apksigner verify --verbose --print-certs "release-artifacts/Juniper-$VERSION-android-universal.apk"
+          dpkg-deb --field "release-artifacts/Juniper-$VERSION-linux-x86_64.deb" Version | grep -Fx "$VERSION"
+          file release-artifacts/Juniper-*
+      - name: Attest executable release artifacts
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: release-artifacts/Juniper-*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: juniper-verified-release
+          path: release-artifacts
+          if-no-files-found: error
+
+  publish:
+    name: Atomic GitHub prerelease publication
+    if: needs.contract.outputs.publish == 'true'
+    needs: [contract, verify]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: juniper-verified-release
+          path: release-artifacts
+      - name: Generate release notes from verified evidence
+        env:
+          VERSION: ${{ needs.contract.outputs.version }}
+          TAG: ${{ needs.contract.outputs.tag }}
+          COMMIT: ${{ needs.contract.outputs.commit }}
+        run: |
+          {
+            echo "# Juniper $VERSION"
+            echo
+            echo "Prerelease built from immutable tag \`$TAG\` at commit \`$COMMIT\`."
+            echo
+            echo '## Downloads'
+            echo
+            find release-artifacts -maxdepth 1 -type f -name 'Juniper-*' -printf -- '- `%f`\n' | sort
+            echo
+            echo '## Verification'
+            echo
+            echo '- SHA-256 values are in `SHA256SUMS.txt`.'
+            echo '- Android certificate details are in `SIGNING-android.txt`.'
+            echo '- Windows Authenticode status is in `SIGNING-windows.txt`; no signature is implied unless it says `Valid`.'
+            echo '- GitHub artifact attestations link each executable artifact to this workflow and commit.'
+            echo
+            echo '## Runtime notes'
+            echo
+            echo '- No model is bundled. Configure a compatible Ollama, llama.cpp, or OpenAI-compatible endpoint.'
+            echo '- Desktop credentials use the operating-system credential store. Secure credential storage is unavailable on Android.'
+            echo '- Android loopback addresses refer to the phone itself; use an explicit LAN endpoint to reach a computer.'
+            echo '- Managed llama.cpp processes, MCP client calls, native GGUF inference, iOS, and macOS are not included.'
+            echo
+            echo 'Source: https://github.com/Cinqic/Juniper-App'
+            echo 'License: MIT'
+          } > RELEASE_NOTES.md
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ needs.contract.outputs.tag }}
+          name: Juniper ${{ needs.contract.outputs.version }}
+          prerelease: true
+          body_path: RELEASE_NOTES.md
+          fail_on_unmatched_files: true
+          files: |
+            release-artifacts/Juniper-*
+            release-artifacts/SHA256SUMS.txt
+            release-artifacts/SIGNING-*.txt
+            release-artifacts/PACKAGE-*.txt
