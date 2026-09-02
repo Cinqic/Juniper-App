@@ -3085,4 +3085,160 @@ data: [DONE]"#,
             );
         });
     }
+
+    // Real-model qualification harness for tests/qualification/*.yaml.
+    // Gated on an owner-approved, already-installed model so ordinary runs stay
+    // hermetic. Suites whose `applies_when` capability gate is unmet are reported
+    // as not-applicable rather than silently counted as passing.
+    #[test]
+    #[ignore = "requires the owner-approved JUNIPER_LIVE_OLLAMA_MODEL and a local Ollama service"]
+    fn live_ollama_qualification_suites_record_real_model_evidence() {
+        let model = std::env::var("JUNIPER_LIVE_OLLAMA_MODEL")
+            .expect("set JUNIPER_LIVE_OLLAMA_MODEL to an already-installed model");
+        let base_url = std::env::var("JUNIPER_LIVE_OLLAMA_URL")
+            .unwrap_or_else(|_| "http://127.0.0.1:11434".into());
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+
+        runtime.block_on(async {
+            let inspection = inspect_model("ollama", &base_url, &model, None)
+                .await
+                .expect("installed model should be inspectable");
+
+            // Capability honesty: Juniper must report exactly what the runtime
+            // declares, never widen it.
+            assert_eq!(inspection.model_id, model);
+            assert_eq!(inspection.metadata_source, "ollama:/api/show");
+            let declares_tools = inspection.capabilities.iter().any(|item| item == "tools");
+            let declares_thinking = inspection
+                .capabilities
+                .iter()
+                .any(|item| item == "thinking");
+            println!(
+                "QUALIFICATION model={model} capabilities={:?} context_length={:?}",
+                inspection.capabilities, inspection.context_length
+            );
+
+            // --- generic-chat.yaml (applies_when chat: supported) ---------------
+            let mut request = request();
+            request.request_id = "qualification-chat".into();
+            request.provider.base_url = base_url.clone();
+            request.model.model_id = model.clone();
+            request.model.display_name = model.clone();
+            // Mirror the runtime's declared capabilities rather than the fixture's.
+            request.model.capabilities.tools = if declares_tools {
+                "supported".into()
+            } else {
+                "unsupported".into()
+            };
+            request.model.capabilities.thinking = if declares_thinking {
+                "supported".into()
+            } else {
+                "unsupported".into()
+            };
+            request.generation.max_output = Some(48);
+            request.messages = vec![
+                crate::domain::ChatMessage {
+                    role: "system".into(),
+                    content: "You are Juniper. Answer in one short sentence.".into(),
+                },
+                crate::domain::ChatMessage {
+                    role: "user".into(),
+                    content: "Earlier turn that may be truncated.".into(),
+                },
+                crate::domain::ChatMessage {
+                    role: "user".into(),
+                    content: "Give a short answer in two sentences.".into(),
+                },
+            ];
+
+            // A model that does not declare tools must not receive a tools payload.
+            let tools = tool_payload(&request);
+            assert!(
+                declares_tools || tools.is_empty(),
+                "tools payload must stay empty for a model that does not declare tool support"
+            );
+            let compiled = request_messages(&request).expect("messages should compile");
+            let body = ollama_body(&request, &compiled, &tools);
+            let outgoing = body["messages"]
+                .as_array()
+                .expect("outgoing messages should be an array");
+            // generic-context.yaml: the current user message appears exactly once.
+            let current = "Give a short answer in two sentences.";
+            assert_eq!(
+                outgoing
+                    .iter()
+                    .filter(|message| message["content"] == current)
+                    .count(),
+                1,
+                "the current user message must appear exactly once"
+            );
+
+            let events = Arc::new(Mutex::new(Vec::<Value>::new()));
+            let captured = events.clone();
+            handle.listen("juniper://chat/qualification-chat", move |event| {
+                if let Ok(value) = serde_json::from_str(event.payload())
+                    && let Ok(mut events) = captured.lock()
+                {
+                    events.push(value);
+                }
+            });
+            stream(
+                request,
+                handle.clone(),
+                Cancellation::default(),
+                &AppState::default(),
+            )
+            .await;
+
+            let (text, done_count, saw_error, tool_events) = {
+                let events = events.lock().expect("qualification events should lock");
+                (
+                    events
+                        .iter()
+                        .filter_map(|event| event["delta"].as_str())
+                        .collect::<String>(),
+                    events.iter().filter(|event| event["done"] == true).count(),
+                    events.iter().any(|event| !event["error"].is_null()),
+                    events
+                        .iter()
+                        .filter(|event| !event["toolCalls"].is_null())
+                        .count(),
+                )
+            };
+            assert!(!saw_error, "qualification stream reported an error");
+            assert!(!text.trim().is_empty(), "live model returned no text");
+            assert_eq!(
+                done_count, 1,
+                "the stream must terminate with one done event"
+            );
+            println!(
+                "QUALIFICATION generic-chat: PASS chars={} done_events={done_count}",
+                text.chars().count()
+            );
+            println!("QUALIFICATION generic-chat sample={:?}", text.trim());
+            println!("QUALIFICATION generic-context current-message-once: PASS");
+
+            // --- generic-tools.yaml / generic-thinking.yaml ---------------------
+            // These gate on declared capabilities. A completion-only model cannot
+            // qualify them; report not-applicable instead of a false pass.
+            if declares_tools {
+                println!("QUALIFICATION generic-tools: APPLICABLE tool_events={tool_events}");
+            } else {
+                println!(
+                    "QUALIFICATION generic-tools: NOT-APPLICABLE (model declares {:?})",
+                    inspection.capabilities
+                );
+            }
+            if declares_thinking {
+                println!("QUALIFICATION generic-thinking: APPLICABLE");
+            } else {
+                println!(
+                    "QUALIFICATION generic-thinking: NOT-APPLICABLE (model declares {:?})",
+                    inspection.capabilities
+                );
+            }
+        });
+    }
 }
