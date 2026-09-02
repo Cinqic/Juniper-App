@@ -200,11 +200,36 @@ already LF, so this changes no content. And `validation.yml` now cancels
 superseded runs, removing a gitleaks-action race that reported
 "Invalid revision range" when two pushes overlapped.
 
+## First release attempt — v0.2.0-rc.1
+
+The tag was pushed on 2026-09-02 after `main` was green. All three platform
+jobs failed and `publish` was **skipped**, so nothing was published — the
+gating behaved exactly as designed. Every failure was in release plumbing that
+had never executed; none were in application code.
+
+| Job     | Root cause                                                                                                                                                                                                                                                                                        |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows | `icons/icon.ico` absent. `tauri-build` needs an ICO to emit the Windows resource, and the repository shipped only `icon.png`.                                                                                                                                                                     |
+| Linux   | `verify-linux-bundles.sh` ran `apt-get install -y "$deb"` with a bare relative path. `apt` reads an argument that does not start with `/` or `./` as a package name, so it failed with _"Unable to locate package release-artifacts"_. The build and the AppImage smoke both succeeded.           |
+| Android | `configure-android-signing.mjs` guarded both of its imports on the presence of `FileInputStream`. Tauri's generated Gradle script already imports `java.util.Properties`, so the script added a duplicate and Kotlin failed with _"Conflicting import, imported name 'Properties' is ambiguous"_. |
+
+The Android **signing provisioning step passed**, confirming the secrets and the
+keystore are correct; the failure was one step later, in the Gradle build.
+
+The Windows job also cleared `prettier --check`, confirming the preventive
+`.gitattributes` did its job — that check would otherwise have failed first and
+masked the icon error.
+
+Fixes: generate a 7-resolution `icons/icon.ico` from the existing placeholder
+artwork and register it; pass the `.deb` through `realpath`; guard each Gradle
+import independently. The signing script was re-tested against a template that
+already imports `Properties` and is now correct and idempotent.
+
 ## Remaining blockers
 
-1. **Windows MSI is unproven.** It requires a Windows runner. The build and its
-   verification script have never executed. This is the one platform whose
-   release path rests entirely on untested code.
+1. **Windows MSI is still unproven end to end.** The first release attempt got
+   as far as the native build before failing on the missing ICO, so the MSI
+   bundling, install, launch, and uninstall smoke have still never run.
 
 2. **A true pre-tag dry run is not possible as designed.** `workflow_dispatch`
    requires an already-existing tag, and `check-version.mjs` requires it to be
