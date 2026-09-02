@@ -21,6 +21,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "validate": "pnpm format && pnpm lint && pnpm typecheck && pnpm test && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --locked --manifest-path src-tauri/Cargo.toml && pnpm schema:validate && pnpm version:check",
+    "validate:no-native-tests": "pnpm format && pnpm lint && pnpm typecheck && pnpm test && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && pnpm schema:validate && pnpm version:check",
     "schema:validate": "node scripts/validate-schemas.mjs",
     "version:check": "node scripts/check-version.mjs"
   },

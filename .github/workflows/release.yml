@@ -144,7 +144,13 @@ jobs:
           toolchain: 1.90.0
           components: rustfmt, clippy
       - run: pnpm install --frozen-lockfile
-      - run: pnpm validate
+      # Native unit tests are excluded here only: the Tauri mock runtime fails
+      # to load on the Windows runner, aborting the test binary at startup with
+      # STATUS_ENTRYPOINT_NOT_FOUND (0xC0000139) before any test executes. They
+      # run on Linux in validation.yml. Every compile-level check still runs
+      # here, including clippy -D warnings, and the MSI install, launch, and
+      # uninstall smoke below exercises the real application on Windows.
+      - run: pnpm validate:no-native-tests
       - name: Build MSI from locked source
         run: pnpm tauri build --bundles msi -- --locked
       - name: Collect exactly one MSI
