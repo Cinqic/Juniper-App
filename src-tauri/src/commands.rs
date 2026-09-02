@@ -143,6 +143,9 @@ fn begin_cancellable_operation(state: &AppState, request_id: &str) -> Result<Can
 }
 
 #[tauri::command]
+// `result` is only mutated by the Linux-only /proc/meminfo branch below, so on
+// every other target the binding is not mutable and -D warnings would fail.
+#[cfg_attr(not(target_os = "linux"), allow(unused_mut))]
 pub fn system_info() -> HashMap<String, String> {
     let mut result = HashMap::from([
         (
