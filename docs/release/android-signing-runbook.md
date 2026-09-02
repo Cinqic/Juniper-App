@@ -1,8 +1,28 @@
 # Android release signing runbook
 
-Owner-only. These steps create the signing identity for `com.cinqic.juniper`
-and install it as repository secrets. **Run these yourself** — the keystore and
-its passwords should never pass through an agent session or a chat transcript.
+**Status: completed 2026-09-02.** The release keystore exists and all four
+repository secrets are installed on `Cinqic/Juniper-App`. Nothing here needs to
+be run again unless the keystore is rotated or the secrets are lost.
+
+The keystore, its password, and a plain-language recovery note live in
+`~/Documents/Juniper-Signing/` (directory `700`, files `600`). That folder is
+the **only** copy of the password — GitHub secrets cannot be read back out.
+Back it up off this machine.
+
+| Property    | Value                                   |
+| ----------- | --------------------------------------- |
+| File        | `juniper-release.jks`                   |
+| Format      | PKCS12                                  |
+| Alias       | `juniper`                               |
+| Key         | 4096-bit RSA, SHA384withRSA             |
+| Subject     | `CN=Cinqic, OU=Juniper, O=Cinqic, C=US` |
+| Valid until | 2054-01-18                              |
+
+Verified end to end: the base64 secret round-trips to a byte-identical
+keystore, and the decoded keystore opens with alias `juniper` under the stored
+password — the same sequence `release.yml` performs.
+
+The steps below are retained for rotation and disaster recovery.
 
 ## Why this is yours to do
 

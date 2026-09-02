@@ -142,12 +142,24 @@ actually requires `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEY_ALIAS`,
 
 ## Blockers
 
-1. **Android signing secrets are absent.** `gh secret list` returns empty. The
-   Android job hard-fails by design without them. Because `publish` needs
-   `verify` needs `android`, a tag push today would fail and publish **nothing** —
-   safe, but it would leave a permanent tag and a failed run. Generating the
-   release keystore is an owner decision: the signing identity permanently
-   determines who can ship Android updates for `com.cinqic.juniper`.
+1. ~~**Android signing secrets are absent.**~~ **Resolved 2026-09-02.** A
+   4096-bit RSA release keystore (`CN=Cinqic`, alias `juniper`, PKCS12, valid to 2054) was generated and all four secrets — `ANDROID_KEYSTORE_BASE64`,
+   `ANDROID_KEY_ALIAS`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD` —
+   are installed on the repository. The keystore and password are held locally
+   at `~/Documents/Juniper-Signing/`, which is the only copy of the password.
+   Provisioning was verified by replaying `release.yml`'s own steps: the base64
+   secret round-trips byte-identically and the keystore opens under alias
+   `juniper`.
+
+1b. **A defect blocked Android regardless of secrets.** All three Android jobs
+invoked `android-actions/setup-android`, which requires JDK 17+, on runners
+defaulting to Java 11 — `sdkmanager --licenses` aborted with
+_"This tool requires JDK 17 or later. Your version was detected as 11.0.32."_
+The validation job was new and had never executed, and no tag had ever been
+pushed, so this had never surfaced. Fixed by provisioning Temurin JDK 17
+before each `setup-android`; validation CI is green on the fix. Had the
+secrets been added without this, the Android release would still have
+failed.
 
 2. **A true pre-tag dry run is not possible as designed.** `workflow_dispatch`
    requires an already-existing tag, and `check-version.mjs` requires it to be
@@ -181,8 +193,8 @@ confirms the improved checker reports the original link as `FAIL HTTP 404`.
 
 ## Conditions for promoting to `0.2.0`
 
-1. Owner provides the four Android signing secrets and a release keystore
-   (see the [Android signing runbook](../release/android-signing-runbook.md))
+1. ~~Owner provides the four Android signing secrets and a release keystore~~ —
+   done, see the [Android signing runbook](../release/android-signing-runbook.md)
 2. `release.yml` completes green on all three platforms
 3. Tool and thinking suites qualified against a tools-capable model
 4. Artifacts published with `SHA256SUMS`, then the website updated to point at

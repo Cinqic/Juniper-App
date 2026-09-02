@@ -22,7 +22,7 @@ validated_in_this_environment:
   rust: tested-rust-1.90.0-fmt-clippy-deny-warnings-clean
   desktop: reproduced-linux-deb-and-appimage-build-with-launch-smoke
   windows: not-built-requires-windows-runner
-  android: blocked-missing-repository-signing-secrets
+  android: signing-configured-release-build-not-yet-executed
   real_model_generation: validated-ollama-smollm-135m-chat-and-context
   real_model_tools: not-validated-model-declares-completion-only
   real_model_thinking: not-validated-model-declares-completion-only
@@ -33,7 +33,9 @@ evidence:
   validation: reproduced-locally-pnpm-validate-exit-0
   qualification: docs/qualification/smollm-135m-evidence.md
   reconciliation: docs/recovery/local-remote-reconciliation-2026-09-02.md
+resolved_during_review:
+  - android-signing-secrets-installed-2026-09-02
+  - jdk-17-provisioned-for-all-android-ci-jobs
 blockers_for_final_release:
-  - android-signing-secrets-absent-owner-must-provide
   - windows-msi-never-built-or-install-smoked
   - tool-and-thinking-round-trips-never-run-against-a-real-model
