@@ -7,7 +7,7 @@ Status: CANDIDATE - PENDING INDEPENDENT REVIEW
 - Starting canonical commit: 9c900021435505ea5b2bb16647ebd5bf2bb035f5
 - Working branch: luna/juniper-model-agnostic-completion
 - Follow-up remediation commit: efd4b96
-- Latest validation commit: 437a44e22592ac39df51dc6cdc771a6ec1537874
+- Latest validation commit: 92ab73b49a0d23dba073af38a4169689429cd6ac
 - Product version: 0.2.0-rc.1
 
 ## Architecture changes
@@ -45,8 +45,9 @@ progress; user/model text is never placed in a shell command.
 - Tauri application state is saved through SQLite schema v3, with migrations,
   foreign keys, normalized entity tables, normalized attachment metadata, an
   app-state snapshot, and private chat and chat-scoped permission exclusion.
-  Native attachment paths remain outside the webview payload. Browser
-  localStorage is isolated to the development preview.
+  Native attachment paths remain outside the webview payload and are restored
+  as opaque native grants after restart. Browser localStorage is isolated to
+  the development preview.
 - Prompt composition is deterministic: Juniper identity, assistant prompt,
   compiled personality, response preference, host tool guidance, curated
   memory, history, attachment context, and the current user message.
@@ -89,15 +90,15 @@ Passing with the bundled Node runtime:
 - Rust cargo check --locked
 - Rust cargo check --tests --locked
 - Rust cargo clippy --all-targets -- -D warnings
-- Rust cargo test --locked — 39 tests passed
+- Rust cargo test --locked — 40 tests passed
 - pnpm tauri build --bundles deb,appimage — native binary plus `.deb` and
   `.AppImage` bundles produced. Current artifact hashes:
   - `.deb`: `78ebcc356afd5fd4b272734b799babd4f7c2b7244c091c0d90249b42e4473aff`
   - `.AppImage`: `1dd3fcf09f6c804ef49883ae9b2b1583291c61dc7f01f372795ab00e07af5511`
 - bounded pnpm tauri dev smoke — Vite and the compiled Tauri binary launched
   successfully until the headless timeout; no GUI interaction is claimed
-- Hosted GitHub Actions `validate` — passed in 4m39s on
-  [run 33573380900](https://github.com/Cinqic/Juniper-App/actions/runs/33573380900)
+- Hosted GitHub Actions `validate` — passed in 4m41s on
+  [run 33590757543](https://github.com/Cinqic/Juniper-App/actions/runs/33590757543)
   for [PR #2](https://github.com/Cinqic/Juniper-App/pull/2)
 
 Native validation used Rust 1.90.0 and temporary user-local Linux development
