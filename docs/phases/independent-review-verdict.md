@@ -220,6 +220,24 @@ The Windows job also cleared `prettier --check`, confirming the preventive
 `.gitattributes` did its job — that check would otherwise have failed first and
 masked the icon error.
 
+### Second attempt
+
+Linux passed. Windows and Android failed further along:
+
+| Job     | Root cause                                                                                                                                                                                                                                                                                                                     |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Windows | `cargo clippy -D warnings` failed on `unused_mut` in `system_info`. `result` is only mutated by the Linux-only `/proc/meminfo` branch, so on any other target the binding need not be mutable. Clippy had **never run on Windows** — validation CI is Linux-only — so no platform-conditional code had ever been linted there. |
+| Android | `apksigner` and `aapt` were not on `PATH`. They live in `$ANDROID_HOME/build-tools/35.0.0`, which `setup-android` does not export. The APK itself **built and was collected successfully**, so signing works end to end.                                                                                                       |
+
+Fixes: `#[cfg_attr(not(target_os = "linux"), allow(unused_mut))]`, and export
+build-tools onto `PATH` in both the Android and verification jobs.
+
+An audit of all 15 `#[cfg]` sites confirms the codebase contains no
+Windows-specific code — only additive `unix` and `linux` branches — so the
+single cfg-gated mutation above was the entire Windows lint surface.
+
+### First attempt
+
 Fixes: generate a 7-resolution `icons/icon.ico` from the existing placeholder
 artwork and register it; pass the `.deb` through `realpath`; guard each Gradle
 import independently. The signing script was re-tested against a template that
