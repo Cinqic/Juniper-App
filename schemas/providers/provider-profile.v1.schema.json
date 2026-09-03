@@ -7,7 +7,7 @@
   "properties": {
     "id": { "type": "string" },
     "name": { "type": "string", "minLength": 1, "maxLength": 100 },
-    "kind": { "enum": ["ollama", "openai-compatible", "llama-cpp"] },
+    "kind": { "enum": ["juniper-local", "ollama", "openai-compatible", "llama-cpp"] },
     "baseUrl": { "type": "string", "format": "uri" },
     "locality": { "enum": ["local", "remote", "unknown"] },
     "transportLocation": { "enum": ["on-device", "local-network", "remote", "unknown"] },

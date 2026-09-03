@@ -12,5 +12,8 @@
 | Local/remote confusion                | Locality is a typed profile property, shown in header, model list, and privacy center.                                      |
 | Malformed assistant import            | Versioned schema validation and inert JSON parsing.                                                                         |
 | Database corruption                   | SQLite migrations, foreign-key enforcement, and normalized entities.                                                        |
+| Untrusted model download              | Catalog entries are checked in, HTTPS-only, size-bounded, and SHA-256 verified before atomic installation.                  |
+| Path traversal or symlink escape      | Managed paths derive only from safe catalog variant IDs; symlinks are rejected for verification and resume.                 |
+| Local runtime network exposure        | Juniper selects a loopback-only port and stops the child process after each generation; no LAN bind is requested.           |
 
-This document is a v0.2 self-review artifact, not an independent security audit.
+This document is a v0.3 self-review artifact, not an independent security audit.

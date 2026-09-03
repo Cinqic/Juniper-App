@@ -52,6 +52,8 @@ if ($install.ExitCode -notin @(0, 3010)) { throw "MSI install failed with $($ins
 
 $exe = Get-ChildItem -Path $env:ProgramFiles, ${env:ProgramFiles(x86)} -Filter Juniper.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $exe) { throw 'Installed Juniper.exe was not found.' }
+$runtime = Get-ChildItem -Path $exe.Directory.FullName -Filter llama-server.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $runtime) { throw 'Installed Juniper local runtime was not found.' }
 $process = Start-Process -FilePath $exe.FullName -PassThru
 Start-Sleep -Seconds 10
 if ($process.HasExited) { throw "Juniper exited during launch smoke test with $($process.ExitCode)" }

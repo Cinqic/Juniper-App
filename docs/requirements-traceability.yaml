@@ -164,3 +164,50 @@ requirements:
     tests: []
     phase: 11
     status: ACCEPTED-LIMITATION
+  REQ-MODEL-CATALOG:
+    statement: Checked-in under-1B model catalog exposes source, license, chat metadata, architecture, size, and SHA-256 pins
+    implementation: [config/models/catalog.json, src/lib/model-catalog.ts, src-tauri/src/catalog.rs]
+    tests: [src/lib/model-catalog.test.ts, src-tauri/src/catalog.rs]
+    phase: 12
+    status: PASS-FRONTEND-AND-NATIVE-TESTS
+  REQ-DEVICE-RECOMMENDATION:
+    statement: Device memory, storage, architecture, and pressure inform explainable model recommendations with safe storage guards
+    implementation: [src-tauri/src/device.rs, src/lib/model-catalog.ts, src/app/ModelsMarket.tsx]
+    tests: [src/lib/model-catalog.test.ts, src-tauri/src/device.rs]
+    phase: 12
+    status: PASS-FRONTEND-AND-NATIVE-TESTS
+  REQ-MANAGED-DOWNLOAD:
+    statement: HTTPS-only managed downloads resume safely, enforce expected size, verify SHA-256, support pause/resume, and install atomically
+    implementation:
+      [
+        src-tauri/src/managed_models.rs,
+        src/lib/runtime.ts,
+        src/app/ModelsMarket.tsx,
+        docs/architecture/model-market.md,
+      ]
+    tests: [src/lib/model-catalog.test.ts, src-tauri/src/managed_models.rs]
+    phase: 12
+    status: IMPLEMENTED-NATIVE-BOUNDARY-TESTED
+  REQ-STANDALONE-RUNTIME:
+    statement: Juniper local chat owns a loopback llama-server lifecycle without probing or falling back to Ollama
+    implementation:
+      [
+        src-tauri/src/local_runtime.rs,
+        src-tauri/src/commands.rs,
+        docs/adr/0016-standalone-local-runtime.md,
+      ]
+    tests: [src-tauri/src/commands.rs, src-tauri/src/providers.rs]
+    phase: 12
+    status: IMPLEMENTED-BUNDLE-SMOKE-PENDING
+  REQ-RUNTIME-PACKAGING:
+    statement: Desktop release workflow builds a pinned llama.cpp runtime into Tauri resources without committing binaries or model weights
+    implementation:
+      [
+        scripts/build-llama-runtime.sh,
+        src-tauri/tauri.conf.json,
+        src-tauri/runtime/README.md,
+        .github/workflows/release.yml,
+      ]
+    tests: [scripts/build-llama-runtime.sh]
+    phase: 12
+    status: CI-BUILD-PENDING

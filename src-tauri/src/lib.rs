@@ -1,7 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod catalog;
 mod commands;
+mod device;
 mod domain;
+mod local_runtime;
+mod managed_models;
 mod providers;
 mod storage;
 mod tools;
@@ -22,6 +26,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::system_info,
+            commands::model_catalog,
+            commands::device_capabilities,
+            commands::managed_models,
+            commands::download_managed_model,
+            commands::cancel_managed_model,
+            commands::delete_managed_model,
             commands::runtime_logs,
             commands::load_app_data,
             commands::save_app_data,

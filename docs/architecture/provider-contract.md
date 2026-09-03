@@ -2,9 +2,9 @@
 
 Providers expose `listModels`, `healthCheck`, `inspectModel`, `pullModel`,
 `deleteModel`, `runningModels`, `capabilityProbe`, and `streamChat` semantics.
-v0.2 implements a native Ollama path plus generic OpenAI-compatible servers.
-llama.cpp is supported through
-the same endpoint contract, including its local `/v1` server path.
+v0.3 implements a Juniper-owned local `llama-server` path plus optional Ollama
+and generic OpenAI-compatible servers. llama.cpp-compatible endpoints are
+supported through the same contract, including a local `/v1` server path.
 
 Capabilities are tri-state: `supported`, `unsupported`, or `unknown`.
 Unknown never enables a tool/thinking/generation control. Runtime metadata is

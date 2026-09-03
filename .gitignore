@@ -14,6 +14,12 @@ src-tauri/gen/
 *.db-shm
 *.db-wal
 models/
+!config/models/
+!config/models/catalog.json
 runtime/
+!src-tauri/runtime/
+!src-tauri/runtime/README.md
+src-tauri/runtime/llama-server
+src-tauri/runtime/llama-server.exe
 .DS_Store
 release-artifacts/

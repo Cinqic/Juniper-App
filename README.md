@@ -2,18 +2,18 @@
 
 Juniper is a local-first AI desktop and Android app for people who want a thoughtful assistant, visible model controls, and a clear boundary around private data. It works with compatible text-generation models through supported runtimes; no model family is required and no model is bundled.
 
-**Version `0.2.0-rc.1` — release candidate (prerelease).** Windows, Linux, and Android artifacts are built, install-smoked, and published. See [Download](#download).
+**Version `0.3.0-rc.1` — standalone-runtime release candidate.** The release workflow builds and packages the Juniper-owned local runtime for desktop targets, then publishes install-smoked artifacts after the verification gates pass. See [Download](#download).
 
 ## Download
 
-Installers are published on the [GitHub releases page](https://github.com/Cinqic/Juniper-App/releases/tag/v0.2.0-rc.1). You do not need Git, a build toolchain, or a GitHub account.
+Installers will be published on the [GitHub releases page](https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.1) after the release workflow completes. You do not need Git, a build toolchain, or a GitHub account to use a published desktop artifact.
 
-| Platform          | File                                       | Notes                                                    |
-| ----------------- | ------------------------------------------ | -------------------------------------------------------- |
-| Windows 10/11 x64 | `Juniper-0.2.0-rc.1-windows-x86_64.msi`    | Not Authenticode-signed; SmartScreen will warn.          |
-| Linux x86_64      | `Juniper-0.2.0-rc.1-linux-x86_64.AppImage` | `chmod +x`, then run. No installation required.          |
-| Linux x86_64      | `Juniper-0.2.0-rc.1-linux-x86_64.deb`      | `sudo apt install ./Juniper-...deb`                      |
-| Android 7.0+      | `Juniper-0.2.0-rc.1-android-universal.apk` | Signed release APK; enable install from unknown sources. |
+| Platform          | File                                       | Notes                                                             |
+| ----------------- | ------------------------------------------ | ----------------------------------------------------------------- |
+| Windows 10/11 x64 | `Juniper-0.3.0-rc.1-windows-x86_64.msi`    | The bundled local runtime is Juniper-owned; SmartScreen may warn. |
+| Linux x86_64      | `Juniper-0.3.0-rc.1-linux-x86_64.AppImage` | `chmod +x`, then run. No installation required.                   |
+| Linux x86_64      | `Juniper-0.3.0-rc.1-linux-x86_64.deb`      | `sudo apt install ./Juniper-...deb`                               |
+| Android 7.0+      | `Juniper-0.3.0-rc.1-android-universal.apk` | Signed release APK; enable install from unknown sources.          |
 
 Verify a download against `SHA256SUMS.txt` from the same release:
 
@@ -23,13 +23,15 @@ sha256sum --check --ignore-missing SHA256SUMS.txt
 
 `SIGNING-android.txt` records the APK signing certificate and `SIGNING-windows.txt` records the MSI Authenticode status. Every executable artifact also carries a [GitHub artifact attestation](https://github.com/Cinqic/Juniper-App/attestations) linking it to the workflow run and commit that produced it.
 
-**You also need a model runtime.** Juniper ships no model and no inference engine. Install [Ollama](https://ollama.com/download) (simplest), or point Juniper at any OpenAI-compatible or llama.cpp-compatible endpoint. On first run, open Models, choose Download a model, and enter any Ollama model reference.
+Juniper’s desktop bundle owns its loopback `llama-server` process, so ordinary local use does not require Ollama, a daemon, or an account. On first run, open Models Market, review the device-aware recommendations, and download a verified model. Model weights are separate user-owned files and are never bundled in the installer.
 
 ## What Juniper does
 
 - A chat workspace with onboarding, streaming, markdown, export, private chats, and mobile layouts.
 - Assistant profiles with personality controls, model selection, tool policy, memory policy, import, and export.
-- Provider and model management for Ollama plus OpenAI-compatible and llama.cpp-compatible endpoints. Ollama discovery, inspection, pull progress, cancellation, and deletion use its native API.
+- A first-class Juniper local provider with device detection, model recommendations, verified resumable downloads, atomic installation, pause/resume, and removal.
+- A curated catalog of four instruction-tuned GGUF models below 1B parameters, with source revision, license, size, and SHA-256 shown before download.
+- Optional Ollama, OpenAI-compatible, and llama.cpp-compatible provider connections for advanced users and existing setups.
 - A deterministic context builder that keeps the system prompt, curated memories, enabled tool definitions, and recent conversation within a context budget.
 - A host-authored tool boundary with bounded calculator, unit conversion, datetime, attachment, memory, search, and system-info contracts. A tool the request did not enable is denied, never executed.
 - Native SQLite persistence with migrations, OS-keychain credential storage on desktop, scoped text attachments, diagnostics, and privacy settings.
@@ -38,10 +40,11 @@ sha256sum --check --ignore-missing SHA256SUMS.txt
 
 These are deliberate exclusions in this release, not oversights:
 
-- **No native GGUF inference.** Juniper has no built-in inference engine. A GGUF file you select is imported into Ollama, which runs it.
-- **No managed llama.cpp process.** Juniper talks to a llama.cpp server you already run; it does not start, supervise, or stop one.
+- **No Ollama dependency.** Ollama remains an optional external provider and legacy import path; it is not probed or used as a fallback by the Juniper local provider.
+- **Desktop runtime provenance.** The release workflow builds the pinned `llama.cpp` server from source and places it in the Tauri resource slot. A source checkout needs CMake and uses `scripts/build-llama-runtime.sh` before a local bundle can run the native provider.
 - **No MCP client.** The Settings entry is present and explicitly disabled.
 - **No secure credential storage on Android.** Juniper refuses to store a provider API key there rather than falling back to insecure storage. Use a provider that needs no key, or use the desktop app.
+- **Android local inference packaging is still pending in this candidate.** Android can inspect the catalog and manage app state, but this release does not claim a packaged native local inference process on Android yet.
 - **No iOS or macOS build.**
 - **No telemetry, analytics, crash reporting, or account.**
 
@@ -57,11 +60,12 @@ See [PRIVACY.md](PRIVACY.md), [SECURITY.md](SECURITY.md), and [docs/privacy/netw
 
 ## Build from source
 
-Install Node.js 22+, pnpm 11, Rust 1.90+, and the platform prerequisites in the [Tauri prerequisite guide](https://tauri.app/start/prerequisites/).
+Install Node.js 22+, pnpm 11, Rust 1.90+, CMake, Git, and the platform prerequisites in the [Tauri prerequisite guide](https://tauri.app/start/prerequisites/).
 
 ```bash
 pnpm install --frozen-lockfile
 pnpm validate      # canonical check: format, lint, types, tests, clippy, schemas, version
+scripts/build-llama-runtime.sh
 pnpm tauri dev     # run the desktop app
 pnpm tauri build   # produce a native bundle
 ```
@@ -84,21 +88,21 @@ docs/          architecture, ADRs, privacy, security, release, phase history
 
 ## Testing and qualification
 
-`pnpm validate` runs 38 frontend tests and 54 native tests. See [docs/testing/strategy.md](docs/testing/strategy.md).
+`pnpm validate` runs the frontend and native test suites, static checks, schema validation, and version checks. See [docs/testing/strategy.md](docs/testing/strategy.md).
 
-Real-model qualification runs against a locally installed Ollama model rather than a fixture:
+The historical provider qualification can still run against a locally installed Ollama model:
 
 ```bash
 JUNIPER_LIVE_OLLAMA_MODEL=qwen3:0.6b \
   cargo test --manifest-path src-tauri/Cargo.toml --lib -- --ignored --nocapture
 ```
 
-Suites whose capability gate the model does not meet are reported NOT-APPLICABLE, never as passes. Recorded results are in [docs/qualification/ollama-real-model-evidence.md](docs/qualification/ollama-real-model-evidence.md).
+Suites whose capability gate the model does not meet are reported NOT-APPLICABLE, never as passes. That evidence covers the optional Ollama adapter; the standalone runtime is qualified separately by release artifact smoke and a model download/inference run.
 
 ## Known limitations
 
-- The Windows MSI is not Authenticode-signed, so Windows SmartScreen shows an unrecognized-publisher warning.
-- `0.2.0-rc.1` is a prerelease. It is published for evaluation and is not yet promoted to a final `0.2.0`.
+- The Windows MSI may be unsigned, so Windows SmartScreen can show an unrecognized-publisher warning.
+- `0.3.0-rc.1` is a prerelease. It is published for evaluation and is not yet promoted to a final `0.3.0`.
 - Android loopback addresses refer to the phone itself. Reaching a computer on your network needs an explicit LAN endpoint.
 - Browser-preview attachments are development-only; the real attachment path is the desktop native picker.
 

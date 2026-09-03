@@ -31,8 +31,8 @@ const releaseTag = process.env.RELEASE_TAG
 if (releaseTag && releaseTag !== `v${expected}`) {
   throw new Error(`Release tag mismatch: expected v${expected}, received ${releaseTag}.`)
 }
-const expectedAndroidVersionCodes = new Map([['0.2.0-rc.1', 2001]])
-const expectedMsiVersions = new Map([['0.2.0-rc.1', '0.2.0.1']])
+const expectedAndroidVersionCodes = new Map([['0.3.0-rc.1', 3001]])
+const expectedMsiVersions = new Map([['0.3.0-rc.1', '0.3.0.1']])
 const androidVersionCode = tauri.bundle?.android?.versionCode
 if (androidVersionCode !== expectedAndroidVersionCodes.get(expected)) {
   throw new Error(

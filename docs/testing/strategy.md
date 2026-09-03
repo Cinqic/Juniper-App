@@ -6,12 +6,12 @@ tests, JSON schema checks, and version consistency in one sequence.
 
 ## Deterministic tests
 
-Frontend tests (38) cover the zero-model shell and navigation, assistant
+Frontend tests cover the zero-model shell and navigation, assistant
 import/export, context order and truncation, private-chat exclusion from both
 persistence and user export, attachment metadata privacy, model-fit estimates,
 markdown rendering, and browser-preview streaming.
 
-Native tests (54) cover the safe calculator, unit conversion, host-authored
+Native tests cover the safe calculator, unit conversion, host-authored
 result shape, tool loop bounds, the default-deny tool gate, permission scope
 matching, capability gating of generation controls, provider JSON/SSE/pull
 parsing, fake HTTP discovery/inspection/chat/tool/error servers, unknown-model
@@ -37,6 +37,12 @@ gate. The harness reads the capabilities the runtime actually reports from
 `/api/show` and reports a suite whose gate is unmet as NOT-APPLICABLE. A
 capability a model does not have is never recorded as a pass. Recorded results
 are in [../qualification/ollama-real-model-evidence.md](../qualification/ollama-real-model-evidence.md).
+
+The standalone local path adds deterministic catalog, device-fit, symlink
+rejection, and managed-state tests. A release build must additionally run the
+pinned runtime build script and the Linux/Windows install smoke; those checks
+prove that the Tauri resource exists and that the app-owned process can be
+started without Ollama.
 
 `tests/fixtures/qwen3-8b-qualification.yaml` is a historical fixture retained
 for reference. It is not evidence of a real-model result.

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "provider": "juniper-local",
+  "kind": "juniper-local",
+  "baseUrl": "http://127.0.0.1",
+  "executionLocation": "on-device",
+  "modelPolicy": "use-verified-managed-models-and-juniper-runtime"
+}

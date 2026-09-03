@@ -99,9 +99,13 @@ jobs:
         run: >-
           sudo apt-get update && sudo apt-get install -y
           libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev
-          libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb
+          libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb cmake
       - run: pnpm install --frozen-lockfile
       - run: pnpm validate
+      - name: Build pinned Juniper local runtime
+        run: scripts/build-llama-runtime.sh
+      - name: Require the native runtime resource before bundling
+        run: test -x src-tauri/runtime/llama-server
       - name: Build DEB and AppImage from locked source
         run: pnpm tauri build --bundles deb,appimage -- --locked
       - name: Collect exactly one artifact of each type
@@ -144,6 +148,12 @@ jobs:
           toolchain: 1.90.0
           components: rustfmt, clippy
       - run: pnpm install --frozen-lockfile
+      - name: Build pinned Juniper local runtime
+        shell: bash
+        run: scripts/build-llama-runtime.sh
+      - name: Require the native runtime resource before bundling
+        shell: pwsh
+        run: if (-not (Test-Path -LiteralPath 'src-tauri/runtime/llama-server.exe' -PathType Leaf)) { throw 'llama-server.exe was not built.' }
       # Native unit tests are excluded here only: the Tauri mock runtime fails
       # to load on the Windows runner, aborting the test binary at startup with
       # STATUS_ENTRYPOINT_NOT_FOUND (0xC0000139) before any test executes. They
@@ -242,7 +252,7 @@ jobs:
           cp "${apks[0]}" "release-artifacts/Juniper-$VERSION-android-universal.apk"
           apksigner verify --verbose --print-certs "release-artifacts/Juniper-$VERSION-android-universal.apk" | tee release-artifacts/SIGNING-android.txt
           aapt dump badging "release-artifacts/Juniper-$VERSION-android-universal.apk" | tee release-artifacts/PACKAGE-android.txt
-          grep -F "package: name='com.cinqic.juniper' versionCode='2001' versionName='$VERSION'" release-artifacts/PACKAGE-android.txt
+          grep -F "package: name='com.cinqic.juniper' versionCode='3001' versionName='$VERSION'" release-artifacts/PACKAGE-android.txt
       - name: Install, launch, lifecycle smoke, and uninstall APK
         uses: reactivecircus/android-emulator-runner@1dcd0090116d15e7c562f8db72807de5e036a4ed # v2.34.0
         with:
@@ -371,10 +381,10 @@ jobs:
             echo
             echo '## Runtime notes'
             echo
-            echo '- No model is bundled. Configure a compatible Ollama, llama.cpp, or OpenAI-compatible endpoint.'
+            echo '- Models Market downloads verified GGUF weights on demand; the desktop bundle owns its loopback llama.cpp runtime and does not require Ollama.'
             echo '- Desktop credentials use the operating-system credential store. Secure credential storage is unavailable on Android.'
             echo '- Android loopback addresses refer to the phone itself; use an explicit LAN endpoint to reach a computer.'
-            echo '- Managed llama.cpp processes, MCP client calls, native GGUF inference, iOS, and macOS are not included.'
+            echo '- External providers remain optional. MCP client calls, iOS, and macOS are not included.'
             echo
             echo 'Source: https://github.com/Cinqic/Juniper-App'
             echo 'License: MIT'

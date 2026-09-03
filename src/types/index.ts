@@ -12,7 +12,7 @@ export type Page =
   | 'privacy'
   | 'diagnostics'
 
-export type ProviderKind = 'ollama' | 'openai-compatible' | 'llama-cpp'
+export type ProviderKind = 'juniper-local' | 'ollama' | 'openai-compatible' | 'llama-cpp'
 
 export interface ProviderCapabilities {
   chat: SupportLevel
@@ -67,6 +67,8 @@ export interface ModelProfile {
   status: 'ready' | 'not-found' | 'unknown'
   capabilities: ProviderCapabilities
   description: string
+  catalogId?: string
+  managedVariantId?: string
 }
 
 export interface GenerationOverrides {
@@ -302,6 +304,17 @@ export interface RuntimeLogEntry {
   code?: string
   providerKind?: string
   modelId?: string
+}
+
+export interface ManagedModel {
+  catalogId: string
+  variantId: string
+  fileName: string
+  path: string
+  sizeBytes: number
+  sha256: string
+  verified: boolean
+  state: 'ready' | 'partial' | 'corrupt'
 }
 
 export interface NormalizedToolCall {

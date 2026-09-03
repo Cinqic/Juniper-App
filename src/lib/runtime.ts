@@ -14,6 +14,13 @@ import type {
   ProviderProfile,
   RuntimeLogEntry,
 } from '../types'
+import {
+  MODEL_CATALOG,
+  browserDeviceCapabilities,
+  parseCatalog,
+  type DeviceCapabilities,
+  type ModelCatalog,
+} from './model-catalog'
 import { normalizeAppData } from './storage'
 
 export const runningInTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -58,7 +65,7 @@ async function fakeStream(
 ): Promise<void> {
   const latest = request.messages.at(-1)?.content.toLowerCase() ?? ''
   let answer =
-    'This is a development preview. Connect Ollama or another provider to have Juniper answer with a real model.'
+    'This is a development preview. Open the Juniper desktop or Android app and choose a local model from Models Market to generate a real answer.'
   if (latest.includes('who are you'))
     answer = `I’m Juniper — the assistant experience you configured, currently using ${request.model.displayName} underneath. The browser preview is deterministic and clearly marked as development-only.`
   else if (latest.includes('847291') && latest.includes('19347'))
@@ -149,6 +156,53 @@ export async function cancelModelPull(requestId: string): Promise<void> {
   if (runningInTauri) await invoke('cancel_model_pull', { requestId })
 }
 
+export async function getModelCatalog(): Promise<ModelCatalog> {
+  if (!runningInTauri) return MODEL_CATALOG
+  const models = await invoke<unknown>('model_catalog')
+  return parseCatalog({ version: 1, minimumAppVersion: '0.3.0-rc.1', models })
+}
+
+export async function getDeviceCapabilities(): Promise<DeviceCapabilities> {
+  if (!runningInTauri) {
+    return browserDeviceCapabilities()
+  }
+  return invoke<DeviceCapabilities>('device_capabilities')
+}
+
+export async function getManagedModels(): Promise<import('../types').ManagedModel[]> {
+  if (!runningInTauri) return []
+  return invoke<import('../types').ManagedModel[]>('managed_models')
+}
+
+export async function downloadManagedModel(
+  catalogId: string,
+  onProgress: (progress: ModelPullProgress) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  if (!runningInTauri) throw new Error('Model downloads require the Juniper native runtime.')
+  const requestId = `managed-${crypto.randomUUID()}`
+  const topic = `juniper://model-download/${requestId}`
+  const unlisten = await listen<ModelPullProgress>(topic, (event) => onProgress(event.payload))
+  const cancel = () => void cancelManagedModel(requestId)
+  signal.addEventListener('abort', cancel, { once: true })
+  try {
+    await invoke('download_managed_model', { catalogId, requestId })
+    if (signal.aborted) throw abortError()
+  } finally {
+    signal.removeEventListener('abort', cancel)
+    await unlisten()
+  }
+}
+
+export async function cancelManagedModel(requestId: string): Promise<void> {
+  if (runningInTauri) await invoke('cancel_managed_model', { requestId })
+}
+
+export async function deleteManagedModel(catalogId: string): Promise<void> {
+  if (!runningInTauri) throw new Error('Model management requires the Juniper native runtime.')
+  await invoke('delete_managed_model', { catalogId })
+}
+
 export async function deleteProviderModel(
   provider: ProviderProfile,
   modelId: string,
@@ -236,7 +290,7 @@ export async function deleteProviderCredential(reference: string): Promise<void>
 export async function getDiagnostics(): Promise<Record<string, string>> {
   if (runningInTauri) return invoke<Record<string, string>>('system_info')
   return {
-    application: 'Juniper 0.2.0-rc.1',
+    application: 'Juniper 0.3.0-rc.1',
     runtime: browserPreviewEnabled
       ? 'Browser preview (development only)'
       : 'Native runtime unavailable',

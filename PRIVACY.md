@@ -1,12 +1,12 @@
 # Juniper privacy
 
-Juniper v0.2 has no telemetry, analytics, advertising SDK, crash reporting,
+Juniper v0.3 has no telemetry, analytics, advertising SDK, crash reporting,
 automatic upload, or Cinqic account requirement. Chats and curated memories
 stay in the local application data directory when using a local provider.
 
 When a user configures a remote provider, that provider receives the prompts,
 context, attachments, and tool inputs included in the request. The UI marks
-that route REMOTE. Network model downloads and future MCP/web tools are
+that route REMOTE. Model Market downloads and future MCP/web tools are
 explicit actions, not silent fallback.
 
 Desktop provider credentials are stored in the operating system credential

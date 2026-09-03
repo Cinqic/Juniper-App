@@ -33,10 +33,10 @@ export const defaultCapabilities: ProviderCapabilities = {
 }
 
 export const defaultProvider: ProviderProfile = {
-  id: 'ollama-local',
-  name: 'Ollama on this machine',
-  kind: 'ollama',
-  baseUrl: 'http://127.0.0.1:11434',
+  id: 'juniper-local',
+  name: 'Juniper on this device',
+  kind: 'juniper-local',
+  baseUrl: 'http://127.0.0.1',
   locality: 'local',
   transportLocation: 'on-device',
   enabled: true,

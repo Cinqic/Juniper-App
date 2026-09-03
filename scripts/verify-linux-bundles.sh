@@ -11,6 +11,7 @@ test -f "$appimage"
 file "$deb" "$appimage"
 dpkg-deb --info "$deb" | tee "$artifact_dir/PACKAGE-linux.txt"
 dpkg-deb --field "$deb" Version | grep -Fx "$version"
+dpkg-deb --contents "$deb" | grep -Eq '/resources/runtime/llama-server$'
 chmod +x "$appimage"
 
 set +e

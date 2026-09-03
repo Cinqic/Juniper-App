@@ -2,6 +2,7 @@ use crate::domain::{
     Attachment, ChatRequest, DiscoveredModel, GgufSelection, ModelInspection, RuntimeLogEntry,
 };
 use crate::providers;
+use crate::{catalog, device, managed_models};
 use serde_json::Value;
 use std::{
     collections::{HashMap, VecDeque, hash_map::Entry},
@@ -157,7 +158,7 @@ pub fn system_info() -> HashMap<String, String> {
     let mut result = HashMap::from([
         (
             String::from("application"),
-            String::from("Juniper 0.2.0-rc.1"),
+            String::from("Juniper 0.3.0-rc.1"),
         ),
         (String::from("os"), std::env::consts::OS.to_owned()),
         (
@@ -178,6 +179,50 @@ pub fn system_info() -> HashMap<String, String> {
         result.insert("memory".into(), line.replace("MemTotal:", "").trim().into());
     }
     result
+}
+
+#[tauri::command]
+pub fn model_catalog() -> Result<Vec<catalog::CatalogEntry>, String> {
+    catalog::entries()
+}
+
+#[tauri::command]
+pub fn device_capabilities(app: AppHandle) -> Result<device::DeviceCapabilities, String> {
+    let directory = managed_models::models_directory(&app)?;
+    Ok(device::collect(&directory))
+}
+
+#[tauri::command]
+pub fn managed_models(app: AppHandle) -> Result<Vec<managed_models::ManagedModel>, String> {
+    managed_models::list(&app)
+}
+
+#[tauri::command]
+pub fn delete_managed_model(app: AppHandle, catalog_id: String) -> Result<(), String> {
+    managed_models::remove(&app, &catalog_id)
+}
+
+#[tauri::command]
+pub async fn download_managed_model(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    catalog_id: String,
+    request_id: String,
+) -> Result<(), String> {
+    let cancellation = begin_cancellable_operation(state.inner(), &request_id)?;
+    let result =
+        managed_models::download(app, state.inner(), &catalog_id, &request_id, cancellation).await;
+    state
+        .cancellations
+        .lock()
+        .map_err(|_| "Cancellation state unavailable.")?
+        .remove(&request_id);
+    result
+}
+
+#[tauri::command]
+pub fn cancel_managed_model(state: State<'_, AppState>, request_id: String) -> Result<(), String> {
+    cancel_chat(state, request_id)
 }
 
 #[tauri::command]
@@ -531,7 +576,24 @@ pub async fn chat_stream(
     request: ChatRequest,
 ) -> Result<(), String> {
     let cancellation = begin_cancellable_operation(state.inner(), &request.request_id)?;
-    providers::stream(request.clone(), app, cancellation, state.inner()).await;
+    if request.provider.kind == "juniper-local" {
+        let event_app = app.clone();
+        if let Err(error) =
+            crate::local_runtime::stream_chat(app, request.clone(), cancellation, state.inner())
+                .await
+        {
+            crate::local_runtime::emit_error(&event_app, &request.request_id, &error);
+            record_runtime_log(
+                state.inner(),
+                "local_runtime.error",
+                error.split(':').next(),
+                Some("juniper-local"),
+                Some(&request.model.model_id),
+            );
+        }
+    } else {
+        providers::stream(request.clone(), app, cancellation, state.inner()).await;
+    }
     state
         .cancellations
         .lock()

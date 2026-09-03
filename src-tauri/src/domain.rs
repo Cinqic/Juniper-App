@@ -45,6 +45,10 @@ pub struct ModelProfile {
     pub provider_id: String,
     pub model_id: String,
     pub display_name: String,
+    #[serde(default)]
+    pub catalog_id: Option<String>,
+    #[serde(default)]
+    pub managed_variant_id: Option<String>,
     #[serde(default = "default_execution_location")]
     pub execution_location: String,
     #[serde(default)]

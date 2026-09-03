@@ -451,7 +451,7 @@ export function ModelsPage({
     let active = true
     void Promise.all(
       data.providers
-        .filter((provider) => provider.enabled)
+        .filter((provider) => provider.enabled && provider.kind !== 'juniper-local')
         .map(async (provider) => {
           try {
             const models = await runningProviderModels(provider)
@@ -606,7 +606,9 @@ export function ModelsPage({
       modelIds: Awaited<ReturnType<typeof listProviderModels>>
     }> = []
     const failedProviderIds = new Set<string>()
-    for (const provider of data.providers.filter((item) => item.enabled)) {
+    for (const provider of data.providers.filter(
+      (item) => item.enabled && item.kind !== 'juniper-local',
+    )) {
       try {
         discovered.push({ provider, modelIds: await listProviderModels(provider) })
       } catch {
@@ -756,9 +758,9 @@ export function ModelsPage({
   return (
     <>
       <PageHeading
-        eyebrow="Infrastructure"
+        eyebrow="Local first"
         title="Models"
-        description="Models provide inference. Juniper provides the environment around them."
+        description="Choose a model for this device, or connect an external provider under Advanced."
         action={
           <button
             className="secondary-button"
@@ -809,236 +811,224 @@ export function ModelsPage({
         </div>
       )}
       <div className="provider-stack">
-        {data.providers.map((provider) => (
-          <div className="provider-card" key={provider.id}>
-            <div className="provider-icon">{provider.kind === 'ollama' ? '◉' : '↗'}</div>
-            <div className="provider-body">
-              <div className="provider-title">
-                <h3>{provider.name}</h3>
-                <span className={`status-pill ${provider.transportLocation}`}>
-                  <i />
-                  {labelExecutionLocation(provider.transportLocation)}
-                </span>
-              </div>
-              <p>{provider.baseUrl}</p>
-              <div className="provider-footer">
-                <span>
-                  {provider.enabled
-                    ? provider.status === 'connected'
-                      ? 'Connected'
-                      : 'Connection not checked'
-                    : 'Disabled'}
-                </span>
-                <button
-                  className="text-button"
-                  onClick={() => void testProvider(provider)}
-                  disabled={checkingProvider === provider.id}
-                >
-                  {checkingProvider === provider.id ? 'Checking…' : 'Test connection →'}
-                </button>
-                <button className="text-button" onClick={() => startProviderForm(provider)}>
-                  Edit
-                </button>
-                <button className="text-button" onClick={() => toggleProvider(provider)}>
-                  {provider.enabled ? 'Disable' : 'Enable'}
-                </button>
-                <button className="text-button" onClick={() => void removeProvider(provider)}>
-                  Remove
-                </button>
+        {data.providers
+          .filter((provider) => provider.kind !== 'juniper-local')
+          .map((provider) => (
+            <div className="provider-card" key={provider.id}>
+              <div className="provider-icon">{provider.kind === 'ollama' ? '◉' : '↗'}</div>
+              <div className="provider-body">
+                <div className="provider-title">
+                  <h3>{provider.name}</h3>
+                  <span className={`status-pill ${provider.transportLocation}`}>
+                    <i />
+                    {labelExecutionLocation(provider.transportLocation)}
+                  </span>
+                </div>
+                <p>{provider.baseUrl}</p>
+                <div className="provider-footer">
+                  <span>
+                    {provider.enabled
+                      ? provider.status === 'connected'
+                        ? 'Connected'
+                        : 'Connection not checked'
+                      : 'Disabled'}
+                  </span>
+                  <button
+                    className="text-button"
+                    onClick={() => void testProvider(provider)}
+                    disabled={checkingProvider === provider.id}
+                  >
+                    {checkingProvider === provider.id ? 'Checking…' : 'Test connection →'}
+                  </button>
+                  <button className="text-button" onClick={() => startProviderForm(provider)}>
+                    Edit
+                  </button>
+                  <button className="text-button" onClick={() => toggleProvider(provider)}>
+                    {provider.enabled ? 'Disable' : 'Enable'}
+                  </button>
+                  <button className="text-button" onClick={() => void removeProvider(provider)}>
+                    Remove
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))}
       </div>
-      <div className="models-section">
-        <div className="subheading">
-          <div>
-            <span className="eyebrow">Available models</span>
-            <h2>Model library</h2>
-          </div>
-          <button
-            className="text-button"
-            onClick={() => void refreshModels()}
-            disabled={refreshingModels}
-          >
-            {refreshingModels ? 'Refreshing…' : 'Refresh list ↻'}
-          </button>
-        </div>
-        <div className="model-download-card">
-          <div>
-            <span className="eyebrow">Ollama model downloader</span>
-            <h3>Download a model</h3>
-            <p>Enter any compatible Ollama model reference. Juniper sends it directly to Ollama.</p>
-          </div>
-          <div className="model-download-form">
-            <input
-              value={modelReference}
-              onChange={(event) => setModelReference(event.target.value)}
-              placeholder="model-name-or-reference"
-              aria-label="Ollama model reference"
-              maxLength={256}
-              disabled={pullController.current !== null}
-            />
-            {pullController.current ? (
-              <button className="secondary-button" onClick={cancelDownload}>
-                Cancel
-              </button>
-            ) : (
-              <button
-                className="primary-button"
-                onClick={() => void downloadModel()}
-                disabled={!modelReference.trim()}
-              >
-                Download
-              </button>
-            )}
+      <details className="external-model-tools">
+        <summary>Advanced: external providers and imported models</summary>
+        <div className="models-section">
+          <div className="subheading">
+            <div>
+              <span className="eyebrow">Available models</span>
+              <h2>Model library</h2>
+            </div>
+            <button
+              className="text-button"
+              onClick={() => void refreshModels()}
+              disabled={refreshingModels}
+            >
+              {refreshingModels ? 'Refreshing…' : 'Refresh list ↻'}
+            </button>
           </div>
           {pullStatus && (
-            <div className="pull-progress" role="status">
-              <span>{pullStatus}</span>
-              {pullProgress.total ? (
-                <span>
-                  {Math.round(((pullProgress.completed ?? 0) / pullProgress.total) * 100)}%
-                </span>
-              ) : null}
+            <div className="market-message" role="status">
+              <span>
+                {pullStatus}
+                {pullProgress.total
+                  ? ` · ${Math.round(((pullProgress.completed ?? 0) / pullProgress.total) * 100)}%`
+                  : ''}
+              </span>
+              <button className="text-button" onClick={cancelDownload}>
+                Pause
+              </button>
             </div>
           )}
-        </div>
-        {data.models.length === 0 && (
-          <div className="empty-small">
-            No models installed yet. Download or add a compatible model to get started.
-          </div>
-        )}
-        {data.models.map((model) => (
-          <div className="model-row" key={model.id}>
-            <div className="model-symbol">✦</div>
-            <div className="model-main">
-              <div className="model-title">
-                <h3>{model.displayName}</h3>
-                <span className={`status-pill ${model.executionLocation}`}>
-                  <i />
-                  {labelExecutionLocation(model.executionLocation)}
-                </span>
-                {runningModelIds[model.providerId]?.includes(model.modelId) && (
-                  <span className="status-pill on-device">
-                    <i />
-                    Loaded in runtime
-                  </span>
-                )}
-              </div>
-              <p>{model.description}</p>
-              <div className="model-tags">
-                <span>Tools {labelCapability(model.capabilities.tools)}</span>
-                <span>Thinking {labelCapability(model.capabilities.thinking)}</span>
-                <span>{model.contextLength?.toLocaleString() ?? '—'} context</span>
-                <span>Estimated fit {modelFitLabel(model, hostMemory)}</span>
-                <span>
-                  {model.compatibilityStatus === 'not-chat-compatible'
-                    ? 'Not chat-compatible'
-                    : 'Chat status unknown or ready'}
-                </span>
-              </div>
-              {data.settings.developerMode && (
-                <details className="model-details">
-                  <summary>Developer details</summary>
-                  <small>
-                    {[model.family, model.architecture, model.parameterSize, model.quantization]
-                      .filter(Boolean)
-                      .join(' · ') || 'No additional runtime metadata'}
-                    {model.template ? ` · template: ${model.template}` : ''}
-                    {model.rawCapabilities?.length
-                      ? ` · capabilities: ${model.rawCapabilities.join(', ')}`
-                      : ''}
-                  </small>
-                </details>
-              )}
+          {data.models.filter(
+            (model) =>
+              data.providers.find((provider) => provider.id === model.providerId)?.kind !==
+              'juniper-local',
+          ).length === 0 && (
+            <div className="empty-small">
+              No external models are connected. Use Models Market above for local models.
             </div>
-            <div className="model-right">
-              <strong>
-                {runningModelIds[model.providerId]?.includes(model.modelId)
-                  ? 'Running'
-                  : modelStatusLabel(model)}
-              </strong>
+          )}
+          {data.models
+            .filter(
+              (model) =>
+                data.providers.find((provider) => provider.id === model.providerId)?.kind !==
+                'juniper-local',
+            )
+            .map((model) => (
+              <div className="model-row" key={model.id}>
+                <div className="model-symbol">✦</div>
+                <div className="model-main">
+                  <div className="model-title">
+                    <h3>{model.displayName}</h3>
+                    <span className={`status-pill ${model.executionLocation}`}>
+                      <i />
+                      {labelExecutionLocation(model.executionLocation)}
+                    </span>
+                    {runningModelIds[model.providerId]?.includes(model.modelId) && (
+                      <span className="status-pill on-device">
+                        <i />
+                        Loaded in runtime
+                      </span>
+                    )}
+                  </div>
+                  <p>{model.description}</p>
+                  <div className="model-tags">
+                    <span>Tools {labelCapability(model.capabilities.tools)}</span>
+                    <span>Thinking {labelCapability(model.capabilities.thinking)}</span>
+                    <span>{model.contextLength?.toLocaleString() ?? '—'} context</span>
+                    <span>Estimated fit {modelFitLabel(model, hostMemory)}</span>
+                    <span>
+                      {model.compatibilityStatus === 'not-chat-compatible'
+                        ? 'Not chat-compatible'
+                        : 'Chat status unknown or ready'}
+                    </span>
+                  </div>
+                  {data.settings.developerMode && (
+                    <details className="model-details">
+                      <summary>Developer details</summary>
+                      <small>
+                        {[model.family, model.architecture, model.parameterSize, model.quantization]
+                          .filter(Boolean)
+                          .join(' · ') || 'No additional runtime metadata'}
+                        {model.template ? ` · template: ${model.template}` : ''}
+                        {model.rawCapabilities?.length
+                          ? ` · capabilities: ${model.rawCapabilities.join(', ')}`
+                          : ''}
+                      </small>
+                    </details>
+                  )}
+                </div>
+                <div className="model-right">
+                  <strong>
+                    {runningModelIds[model.providerId]?.includes(model.modelId)
+                      ? 'Running'
+                      : modelStatusLabel(model)}
+                  </strong>
+                  <small>
+                    {
+                      data.assistants.filter((assistant) => assistant.modelProfileId === model.id)
+                        .length
+                    }{' '}
+                    assistants
+                  </small>
+                  {data.providers.find((provider) => provider.id === model.providerId)?.kind ===
+                    'ollama' && (
+                    <>
+                      {model.status === 'not-found' && (
+                        <button
+                          className="text-button"
+                          onClick={() => void downloadModel(model.modelId)}
+                        >
+                          Re-download
+                        </button>
+                      )}
+                      <button className="text-button" onClick={() => void deleteModel(model)}>
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          <div className="model-dropzone">
+            <span>⌁</span>
+            <div>
+              <strong>Bring a local GGUF model</strong>
               <small>
-                {
-                  data.assistants.filter((assistant) => assistant.modelProfileId === model.id)
-                    .length
-                }{' '}
-                assistants
+                {ggufSelection
+                  ? `${ggufSelection.name} · ${(ggufSelection.sizeBytes / 1_000_000).toFixed(1)} MB selected`
+                  : 'Desktop picker validates and scopes the selected file'}
               </small>
-              {data.providers.find((provider) => provider.id === model.providerId)?.kind ===
-                'ollama' && (
-                <>
-                  {model.status === 'not-found' && (
+            </div>
+            <div>
+              <button className="secondary-button" onClick={() => void chooseGguf()}>
+                {ggufSelection ? 'Choose another .gguf' : 'Choose .gguf'}
+              </button>
+              {ggufSelection && (
+                <div className="gguf-import-form">
+                  <label>
+                    External runtime model name
+                    <input
+                      value={ggufModelName}
+                      onChange={(event) => setGgufModelName(event.target.value)}
+                      maxLength={128}
+                    />
+                  </label>
+                  {ggufImportController.current ? (
+                    <button className="secondary-button" onClick={cancelGguf}>
+                      Cancel import
+                    </button>
+                  ) : (
                     <button
-                      className="text-button"
-                      onClick={() => void downloadModel(model.modelId)}
+                      className="primary-button"
+                      onClick={() => void importSelectedGguf()}
+                      disabled={!ggufModelName.trim()}
                     >
-                      Re-download
+                      Import through Ollama
                     </button>
                   )}
-                  <button className="text-button" onClick={() => void deleteModel(model)}>
-                    Delete
-                  </button>
-                </>
+                  {ggufImportStatus && <small role="status">{ggufImportStatus}</small>}
+                </div>
               )}
             </div>
           </div>
-        ))}
-        <div className="model-dropzone">
-          <span>⌁</span>
-          <div>
-            <strong>Bring a local GGUF model</strong>
+          <div className="hardware-note">
+            <strong>Fit guidance</strong>
+            <span>
+              {hostMemory
+                ? `Detected host memory: ${hostMemory}. Model fit still depends on quantization and runtime overhead.`
+                : 'Host memory is unavailable here. Juniper will not guess whether a model fits.'}
+            </span>
             <small>
-              {ggufSelection
-                ? `${ggufSelection.name} · ${(ggufSelection.sizeBytes / 1_000_000).toFixed(1)} MB selected`
-                : 'Desktop picker validates and scopes the selected file'}
+              GPU acceleration and throughput remain unknown unless the provider reports them.
             </small>
           </div>
-          <div>
-            <button className="secondary-button" onClick={() => void chooseGguf()}>
-              {ggufSelection ? 'Choose another .gguf' : 'Choose .gguf'}
-            </button>
-            {ggufSelection && (
-              <div className="gguf-import-form">
-                <label>
-                  Ollama model name
-                  <input
-                    value={ggufModelName}
-                    onChange={(event) => setGgufModelName(event.target.value)}
-                    maxLength={128}
-                  />
-                </label>
-                {ggufImportController.current ? (
-                  <button className="secondary-button" onClick={cancelGguf}>
-                    Cancel import
-                  </button>
-                ) : (
-                  <button
-                    className="primary-button"
-                    onClick={() => void importSelectedGguf()}
-                    disabled={!ggufModelName.trim()}
-                  >
-                    Import into Ollama
-                  </button>
-                )}
-                {ggufImportStatus && <small role="status">{ggufImportStatus}</small>}
-              </div>
-            )}
-          </div>
         </div>
-        <div className="hardware-note">
-          <strong>Fit guidance</strong>
-          <span>
-            {hostMemory
-              ? `Detected host memory: ${hostMemory}. Model fit still depends on quantization and runtime overhead.`
-              : 'Host memory is unavailable here. Juniper will not guess whether a model fits.'}
-          </span>
-          <small>
-            GPU acceleration and throughput remain unknown unless the provider reports them.
-          </small>
-        </div>
-      </div>
+      </details>
     </>
   )
 }

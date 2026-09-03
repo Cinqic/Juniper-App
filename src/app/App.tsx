@@ -18,6 +18,7 @@ import { loadAppData, saveAppData } from '../lib/storage'
 import { MessageBubble } from './MessageBubble'
 import { ToolsPage } from './ToolsPage'
 import { AssistantAvatar, JuniperMark } from './branding'
+import { ModelsMarket } from './ModelsMarket'
 import {
   AssistantsPage,
   DiagnosticsPage,
@@ -340,7 +341,12 @@ export default function App() {
               onSelectAssistant={setActiveAssistantId}
             />
           )}
-          {page === 'models' && <ModelsPage data={data} update={update} />}
+          {page === 'models' && (
+            <>
+              <ModelsMarket data={data} update={update} />
+              <ModelsPage data={data} update={update} />
+            </>
+          )}
           {page === 'tools' && <ToolsPage data={data} update={update} />}
           {page === 'settings' && <SettingsPage data={data} update={update} navigate={setPage} />}
           {page === 'privacy' && (
