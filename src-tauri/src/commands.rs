@@ -1,10 +1,10 @@
 use crate::domain::{
     Attachment, ChatRequest, DiscoveredModel, GgufSelection, ModelInspection, RuntimeLogEntry,
 };
-use crate::{providers, tools};
-use serde_json::{Value, json};
+use crate::providers;
+use serde_json::Value;
 use std::{
-    collections::{HashMap, HashSet, VecDeque, hash_map::Entry},
+    collections::{HashMap, VecDeque, hash_map::Entry},
     fs::{File, OpenOptions},
     io::{Read, Write},
     path::PathBuf,
@@ -29,6 +29,13 @@ pub const MAX_RUNTIME_LOGS: usize = 200;
 const MAX_ATTACHMENT_BYTES: u64 = 1024 * 1024;
 const MAX_GGUF_BYTES: u64 = 2 * 1024 * 1024 * 1024 * 1024;
 const MAX_APP_DATA_BYTES: usize = 64 * 1024 * 1024;
+
+/// Text types Juniper will read as an attachment. The picker filter and the
+/// grant check must agree, so both read this one list.
+const SUPPORTED_ATTACHMENT_EXTENSIONS: &[&str] = &[
+    "txt", "md", "json", "csv", "toml", "yaml", "yml", "rs", "ts", "tsx", "js", "jsx", "py", "css",
+    "html",
+];
 
 fn open_regular_file(path: &std::path::Path, unavailable: &str) -> Result<File, String> {
     let path_metadata = std::fs::symlink_metadata(path).map_err(|_| unavailable.to_owned())?;
@@ -158,6 +165,10 @@ pub fn system_info() -> HashMap<String, String> {
             std::env::consts::ARCH.to_owned(),
         ),
         (String::from("runtime"), String::from("Tauri 2 / Rust")),
+        (
+            String::from("database"),
+            format!("SQLite schema v{}", crate::storage::SCHEMA_VERSION),
+        ),
         (String::from("telemetry"), String::from("Off")),
     ]);
     #[cfg(target_os = "linux")]
@@ -167,14 +178,6 @@ pub fn system_info() -> HashMap<String, String> {
         result.insert("memory".into(), line.replace("MemTotal:", "").trim().into());
     }
     result
-}
-
-#[tauri::command]
-pub fn app_data_directory(app: AppHandle) -> Result<String, String> {
-    app.path()
-        .app_data_dir()
-        .map(|path| path.to_string_lossy().into_owned())
-        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -623,13 +626,7 @@ fn is_supported_attachment_path(path: &std::path::Path) -> bool {
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    let allowed: HashSet<&str> = [
-        "txt", "md", "json", "csv", "toml", "yaml", "yml", "rs", "ts", "tsx", "js", "jsx", "py",
-        "css", "html",
-    ]
-    .into_iter()
-    .collect();
-    allowed.contains(extension.as_str())
+    SUPPORTED_ATTACHMENT_EXTENSIONS.contains(&extension.as_str())
 }
 
 #[tauri::command]
@@ -640,13 +637,7 @@ pub fn pick_attachment(
     let selected = app
         .dialog()
         .file()
-        .add_filter(
-            "Text files",
-            &[
-                "txt", "md", "json", "csv", "toml", "yaml", "yml", "rs", "ts", "tsx", "js", "jsx",
-                "py", "css", "html",
-            ],
-        )
+        .add_filter("Text files", SUPPORTED_ATTACHMENT_EXTENSIONS)
         .blocking_pick_file();
     let Some(file) = selected else {
         return Ok(None);
@@ -787,25 +778,6 @@ pub fn secure_set_credential(reference: String, secret: String) -> Result<(), St
 }
 
 #[tauri::command]
-pub fn secure_has_credential(reference: String) -> Result<bool, String> {
-    if !valid_credential_reference(&reference) {
-        return Err("Credential reference is invalid.".into());
-    }
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        match credential_entry(&reference)?.get_password() {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
-        }
-    }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        let _ = reference;
-        Ok(false)
-    }
-}
-
-#[tauri::command]
 pub fn secure_delete_credential(reference: String) -> Result<(), String> {
     if !valid_credential_reference(&reference) {
         return Err("Credential reference is invalid.".into());
@@ -821,31 +793,6 @@ pub fn secure_delete_credential(reference: String) -> Result<(), String> {
         let _ = reference;
         Ok(())
     }
-}
-
-#[tauri::command]
-pub fn tool_evaluate(expression: String) -> Result<serde_json::Value, String> {
-    tools::evaluate(&expression)
-        .map(|value| json!({ "value": value }))
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn tool_convert(value: f64, from: String, to: String) -> Result<serde_json::Value, String> {
-    tools::convert(value, &from, &to)
-        .map(|result| json!({ "value": result, "from": from, "to": to }))
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn tool_execute(
-    call_id: String,
-    name: String,
-    arguments: Value,
-    round: u32,
-    calls_this_round: u32,
-) -> Value {
-    tools::execute_call(&call_id, &name, &arguments, round, calls_this_round)
 }
 
 #[cfg(test)]

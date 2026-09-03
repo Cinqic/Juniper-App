@@ -132,3 +132,60 @@ That is expected at 135M and 0.6B parameters and is **not** what these suites
 measure. The suites measure the runtime contract: normalized streaming,
 termination, capability honesty, host-authored tool execution, reasoning
 separation, and context assembly.
+
+## Re-verification — 2026-09-03, final review
+
+Both suites were re-run from a clean state during the final independent review,
+after the tool-permission and thinking fixes described in
+[the final review report](../release/0.2.0-rc.1-final-review.md). Same host,
+same Ollama 0.33.2.
+
+```
+QUALIFICATION model=smollm:135m capabilities=["completion"] context_length=Some(2048)
+QUALIFICATION generic-chat: PASS chars=187 done_events=1
+QUALIFICATION generic-context current-message-once: PASS
+QUALIFICATION generic-tools: NOT-APPLICABLE (model declares ["completion"])
+QUALIFICATION generic-thinking: NOT-APPLICABLE (model declares ["completion"])
+test result: ok. 2 passed; 0 failed
+```
+
+```
+QUALIFICATION model=qwen3:0.6b capabilities=["completion", "tools", "thinking"] context_length=Some(40960)
+QUALIFICATION generic-chat: PASS chars=128 done_events=1
+QUALIFICATION generic-context current-message-once: PASS
+QUALIFICATION generic-tools: PASS host_authored_results=1 statuses=["success"]
+QUALIFICATION generic-tools detail: name=Some("calculator.evaluate") status=Some("success") result={"value":16392538977.0} error=null
+QUALIFICATION generic-thinking: PASS reasoning_chars=604 separate_from_answer=true
+test result: ok. 2 passed; 0 failed
+```
+
+The host-authored `calculator.evaluate` result reproduced exactly
+(`16392538977.0`), confirming that tightening the tool gate to default-deny did
+not close the legitimate path: a tool the request _does_ enable still executes
+and still returns a host-authored result.
+
+### A real defect this qualification run exposed
+
+`live_ollama_owner_approved_model_uses_the_native_adapter` **failed** against
+`qwen3:0.6b` with _"live model returned no text"_, while passing against
+`smollm:135m`. This was not a test defect.
+
+`ollama_body` only sent Ollama's `think` field when the model's declared
+thinking capability was exactly `supported`. A model discovered without
+inspection reports `unknown`, so `think` was omitted entirely and Ollama applied
+the _model's own default_ — thinking on. On a thinking-capable model the whole
+output budget was then spent on reasoning and the user received an empty answer,
+even though the assistant was explicitly configured with Thinking = Off.
+
+Reproduced directly against the runtime:
+
+```
+$ curl .../api/chat -d '{"model":"qwen3:0.6b","options":{"num_predict":64}, ...}'
+content= ''
+thinking_len= 252
+```
+
+Ollama accepts `think: false` for a model without thinking support, but rejects
+`think: true` (`"smollm:135m" does not support thinking`). Disabling is
+therefore always safe to send; only enabling needs the capability gate. Fixed
+accordingly, and the previously failing live test now passes.

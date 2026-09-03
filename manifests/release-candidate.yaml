@@ -1,11 +1,19 @@
 format: juniper-release-manifest-v1
 version: 0.2.0-rc.1
-status: CANDIDATE - INDEPENDENT REVIEW COMPLETE - APPROVED AS RELEASE CANDIDATE
+status: PRERELEASE PUBLISHED - ALL PLATFORM ARTIFACTS BUILT, SMOKED, AND VERIFIED
+release:
+  tag: v0.2.0-rc.1
+  commit: 81e75cb020fd8945531dba7e6e36c362114abd34
+  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.2.0-rc.1
+  prerelease: true
+  published: 2026-09-02
+  workflow_run: 33694253827
 independent_review:
   reviewer: Claude Opus 5
-  date: 2026-09-02
-  verdict: approved-as-release-candidate-not-approved-for-final-0.2.0
-  report: docs/phases/independent-review-verdict.md
+  date: 2026-09-03
+  verdict: approved-as-release-candidate-with-documented-limitations
+  report: docs/release/0.2.0-rc.1-final-review.md
+  supersedes: docs/phases/independent-review-verdict.md
 canonical_repository: https://github.com/Cinqic/Juniper-App
 canonical_branch: main
 license: MIT
@@ -18,25 +26,47 @@ supported_runtime_classes:
 qualification_models:
   - smollm:135m
   - qwen3:0.6b
+published_artifacts:
+  - name: Juniper-0.2.0-rc.1-windows-x86_64.msi
+    sha256: 6243e553f20422d440578bf3459b4048ab39af58090c3bbc5201e764b22923f0
+    signing: authenticode-not-signed
+  - name: Juniper-0.2.0-rc.1-linux-x86_64.AppImage
+    sha256: 43fd82a89e7c656fe5759d9804a3b6062f47ca54e638037bb6fb0123ac951818
+  - name: Juniper-0.2.0-rc.1-linux-x86_64.deb
+    sha256: 6aa1212c7c7f927f0ad3b520d403d08246ce9713d175862bbd9d5567ac920193
+  - name: Juniper-0.2.0-rc.1-android-universal.apk
+    sha256: 3ee68ac6ed50ef923950ca48c5bb0c91dc52bb2c4f37856bbb2392ecde0c75f0
+    signing: apk-signature-scheme-v2-rsa-4096-cn-cinqic
 validated_in_this_environment:
   frontend: tested-node-22.23.2-pnpm-11.19.0
   rust: tested-rust-1.90.0-fmt-clippy-deny-warnings-clean
   desktop: reproduced-linux-deb-and-appimage-build-with-launch-smoke
-  windows: not-built-requires-windows-runner
-  android: signing-configured-release-build-not-yet-executed
+  windows: built-and-install-smoked-on-windows-runner
+  android: signed-apk-built-and-emulator-lifecycle-smoked
   real_model_generation: validated-ollama-chat-context-tools-and-thinking
+  real_model_chat: validated-smollm-135m-and-qwen3-0.6b
   real_model_tools: validated-qwen3-0.6b-host-authored-success-and-invalid-argument-rejection
   real_model_thinking: validated-qwen3-0.6b-reasoning-separate-from-answer
-  frontend_tests: 37
-  native_tests: 51
+  published_artifact_download: all-four-artifacts-downloaded-and-sha256-verified
+  frontend_tests: 38
+  native_tests: 54
   runtime_diagnostics: bounded-in-memory-content-free
 evidence:
   validation: reproduced-locally-pnpm-validate-exit-0
   qualification: docs/qualification/ollama-real-model-evidence.md
   reconciliation: docs/recovery/local-remote-reconciliation-2026-09-02.md
-resolved_during_review:
-  - tool-and-thinking-round-trips-qualified-against-qwen3-0.6b
-  - android-signing-secrets-installed-2026-09-02
-  - jdk-17-provisioned-for-all-android-ci-jobs
-blockers_for_final_release:
-  - windows-msi-never-built-or-install-smoked
+  final_review: docs/release/0.2.0-rc.1-final-review.md
+resolved_since_previous_review:
+  - windows-msi-built-installed-launched-and-uninstalled-on-a-windows-runner
+  - android-signed-apk-built-and-emulator-lifecycle-smoked
+  - prerelease-published-with-sha256sums-and-artifact-attestations
+  - tool-permission-boundary-defaulted-to-deny-for-tools-not-in-the-request
+  - thinking-off-now-honoured-when-the-model-capability-is-unknown
+  - release-notes-download-list-repaired
+accepted_limitations:
+  - windows-msi-is-not-authenticode-signed
+  - no-native-gguf-inference-no-managed-llama-cpp-process-no-mcp-client
+  - no-secure-credential-storage-on-android-refuses-rather-than-degrading
+  - no-ios-or-macos-build
+  - native-unit-tests-do-not-run-on-windows-tauri-mock-runtime-cannot-load
+blockers_for_final_release: []

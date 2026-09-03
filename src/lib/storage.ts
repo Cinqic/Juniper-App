@@ -1,5 +1,5 @@
 import type { AppData, AttachmentRecord } from '../types'
-import { initialAppData } from './defaults'
+import { initialAppData, JUNIPER_ACCENT } from './defaults'
 
 const STORAGE_KEY = 'juniper.app-data.v1'
 
@@ -14,12 +14,18 @@ export function loadAppData(): AppData {
   }
 }
 
-export function saveAppData(data: AppData): void {
-  if (typeof localStorage === 'undefined') return
+/**
+ * Drops private chats and everything scoped to them.
+ *
+ * Private chats are promised to the user as session-only, so this is applied to
+ * every path that writes them outside memory — persistence and user export
+ * alike.
+ */
+export function withoutPrivateChats(data: AppData): AppData {
   const privateConversationIds = new Set(
     data.conversations.filter((chat) => chat.privateChat).map((chat) => chat.id),
   )
-  const persistent = {
+  return {
     ...data,
     conversations: data.conversations.filter((chat) => !chat.privateChat),
     attachments: data.attachments.filter(
@@ -28,12 +34,15 @@ export function saveAppData(data: AppData): void {
     permissions: data.permissions.filter(
       (grant) =>
         grant.scope !== 'chat' ||
-        !data.conversations.some(
-          (conversation) => conversation.privateChat && conversation.id === grant.conversationId,
-        ),
+        !grant.conversationId ||
+        !privateConversationIds.has(grant.conversationId),
     ),
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(persistent))
+}
+
+export function saveAppData(data: AppData): void {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(withoutPrivateChats(data)))
 }
 
 export function normalizeAppData(value: unknown): AppData {
@@ -42,6 +51,7 @@ export function normalizeAppData(value: unknown): AppData {
   const parsed = value as Partial<AppData>
   const parsedSettings =
     parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {}
+  const savedAccent = typeof parsedSettings.accent === 'string' ? parsedSettings.accent : undefined
   const providers = (Array.isArray(parsed.providers) ? parsed.providers : defaults.providers).map(
     (provider) => ({
       ...provider,
@@ -102,6 +112,12 @@ export function normalizeAppData(value: unknown): AppData {
       (assistant) => ({
         ...assistant,
         schemaVersion: 2,
+        ...(assistant.id === 'assistant-juniper' && assistant.avatar === 'J'
+          ? { avatar: defaults.assistants[0]!.avatar }
+          : {}),
+        ...(assistant.id === 'assistant-juniper' && assistant.accent === '#6f8f72'
+          ? { accent: JUNIPER_ACCENT }
+          : {}),
         modelProfileId: assistant.modelProfileId ?? null,
         generation: {
           ...assistant.generation,
@@ -122,7 +138,11 @@ export function normalizeAppData(value: unknown): AppData {
     memories: Array.isArray(parsed.memories) ? parsed.memories : defaults.memories,
     attachments,
     permissions: Array.isArray(parsed.permissions) ? parsed.permissions : defaults.permissions,
-    settings: { ...defaults.settings, ...parsedSettings },
+    settings: {
+      ...defaults.settings,
+      ...parsedSettings,
+      ...(savedAccent === '#6f8f72' ? { accent: JUNIPER_ACCENT } : {}),
+    },
   }
 }
 
@@ -152,7 +172,6 @@ export function inferTransportLocation(baseUrl: string | undefined, locality?: s
   } catch {
     // Fall through to unknown rather than guessing from a malformed endpoint.
   }
-  if (locality === 'local') return 'unknown' as const
   return 'unknown' as const
 }
 

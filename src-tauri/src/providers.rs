@@ -618,6 +618,44 @@ async fn stream_openai_compatible<R: Runtime>(
     ))
 }
 
+/// What the host is allowed to do with a tool call the model just emitted.
+///
+/// A model can name any tool it likes, including one the user never enabled, so
+/// the name is resolved against the request's tool list before anything runs.
+/// Anything unrecognized is denied rather than executed.
+enum ToolGate<'a> {
+    NotEnabled,
+    Allowed,
+    NeedsPermission(&'a crate::domain::ToolDefinition),
+}
+
+fn tool_gate<'a>(
+    request: &'a ChatRequest,
+    call_name: &str,
+    session_grants: &HashSet<String>,
+) -> ToolGate<'a> {
+    let Some(tool) = request.tools.iter().find(|tool| tool.name == call_name) else {
+        return ToolGate::NotEnabled;
+    };
+    if tool.risk == "automatic-safe" {
+        return ToolGate::Allowed;
+    }
+    let already_granted = session_grants.contains(call_name)
+        || request.permission_grants.iter().any(|grant| {
+            permission_grant_allows(
+                grant,
+                call_name,
+                &request.assistant_id,
+                &request.conversation_id,
+            )
+        });
+    if already_granted {
+        ToolGate::Allowed
+    } else {
+        ToolGate::NeedsPermission(tool)
+    }
+}
+
 // This boundary intentionally carries the request, UI event sink, cancellation, and
 // mutable host session together so every tool decision stays in one auditable loop.
 #[allow(clippy::too_many_arguments)]
@@ -646,18 +684,29 @@ async fn host_tool_turn<R: Runtime>(
             "type": "function",
             "function": { "name": call.name, "arguments": serde_json::to_string(&call.arguments).map_err(|_| ProviderError::new("MALFORMED_TOOL_CALL", "Tool arguments could not be serialized."))? }
         }));
-        let tool = request.tools.iter().find(|tool| tool.name == call.name);
-        if let Some(tool) = tool.filter(|tool| tool.risk != "automatic-safe") {
-            let already_granted = session_grants.contains(&call.name)
-                || request.permission_grants.iter().any(|grant| {
-                    permission_grant_allows(
-                        grant,
-                        &call.name,
-                        &request.assistant_id,
-                        &request.conversation_id,
-                    )
-                });
-            if !already_granted {
+        match tool_gate(request, &call.name, session_grants) {
+            ToolGate::NotEnabled => {
+                record_runtime_log(
+                    state,
+                    "tool.denied",
+                    Some("TOOL_NOT_ENABLED"),
+                    Some(&request.provider.kind),
+                    None,
+                );
+                results.push(tools::host_result(
+                    &call.id,
+                    &call.name,
+                    "denied",
+                    None,
+                    Some(json!({
+                        "code": "TOOL_NOT_ENABLED",
+                        "message": "This tool is not enabled for this request."
+                    })),
+                ));
+                continue;
+            }
+            ToolGate::Allowed => {}
+            ToolGate::NeedsPermission(tool) => {
                 let decision =
                     request_permission(request, call, tool, app, topic, state, cancellation)
                         .await?;
@@ -988,10 +1037,10 @@ fn openai_body(request: &ChatRequest, messages: &[Value], tools: &[Value]) -> Va
         options.insert("tools".into(), Value::Array(tools.to_vec()));
         options.insert("tool_choice".into(), json!("auto"));
     }
-    if supports_thinking(request)
-        && !matches!(generation.thinking.as_deref(), Some("auto") | None)
-        && matches!(generation.thinking.as_deref(), Some("off"))
-    {
+    // Unlike Ollama's `think`, `reasoning_effort` is an OpenAI extension that
+    // many OpenAI-compatible servers reject as an unknown field, so it stays
+    // gated on a declared thinking capability.
+    if supports_thinking(request) && generation.thinking.as_deref() == Some("off") {
         options.insert("reasoning_effort".into(), json!("none"));
     }
     body
@@ -1087,13 +1136,19 @@ fn ollama_body(request: &ChatRequest, messages: &[Value], tools: &[Value]) -> Va
     if !options.is_empty() {
         body["options"] = Value::Object(options);
     }
-    if supports_thinking(request)
-        && let Some(thinking) = &request.generation.thinking
-    {
+    // Turning thinking *off* is sent whatever the declared capability, because
+    // omitting `think` lets Ollama apply the model's own default. On a thinking
+    // model whose capabilities were never inspected that silently spends the
+    // output budget on reasoning and returns an empty answer. Ollama accepts
+    // `think: false` for models without thinking, but rejects `think: true`
+    // ("does not support thinking"), so only enabling stays capability-gated.
+    if let Some(thinking) = &request.generation.thinking {
         match thinking.as_str() {
             "off" => body["think"] = json!(false),
-            "on" => body["think"] = json!(true),
-            "low" | "medium" | "high" => body["think"] = json!(thinking),
+            "on" if supports_thinking(request) => body["think"] = json!(true),
+            "low" | "medium" | "high" if supports_thinking(request) => {
+                body["think"] = json!(thinking)
+            }
             _ => {}
         }
     }
@@ -2038,7 +2093,17 @@ mod tests {
         assert!(tools.is_empty());
         let body = ollama_body(&request, &[], &tools);
         assert_eq!(body["options"], Value::Null);
-        assert_eq!(body["think"], Value::Null);
+        // The request asks for thinking "off". Unknown capabilities must not
+        // *enable* anything, but disabling is always safe to send and is what
+        // stops a thinking model from spending the whole budget on reasoning.
+        assert_eq!(body["think"], false);
+
+        request.generation.thinking = Some("on".into());
+        assert_eq!(
+            ollama_body(&request, &[], &tools)["think"],
+            Value::Null,
+            "unknown thinking capability must never be escalated to enabled"
+        );
     }
 
     #[test]
@@ -2266,6 +2331,151 @@ mod tests {
             "assistant-test",
             "any-conversation"
         ));
+    }
+
+    #[test]
+    fn thinking_off_is_sent_even_when_the_capability_is_unknown() {
+        let mut request = request();
+        // A model discovered without inspection reports "unknown".
+        request.model.capabilities.thinking = "unknown".into();
+        request.generation.thinking = Some("off".into());
+        let body = ollama_body(&request, &[], &[]);
+        assert_eq!(
+            body["think"], false,
+            "omitting think lets a thinking model spend the whole budget on reasoning"
+        );
+
+        // Enabling thinking stays gated: Ollama rejects `think: true` on a
+        // model that does not support it.
+        request.generation.thinking = Some("on".into());
+        assert_eq!(ollama_body(&request, &[], &[])["think"], Value::Null);
+        request.generation.thinking = Some("high".into());
+        assert_eq!(ollama_body(&request, &[], &[])["think"], Value::Null);
+
+        request.model.capabilities.thinking = "supported".into();
+        request.generation.thinking = Some("on".into());
+        assert_eq!(ollama_body(&request, &[], &[])["think"], true);
+        request.generation.thinking = Some("high".into());
+        assert_eq!(ollama_body(&request, &[], &[])["think"], "high");
+
+        // "auto" defers to the provider default and sends nothing.
+        request.generation.thinking = Some("auto".into());
+        assert_eq!(ollama_body(&request, &[], &[])["think"], Value::Null);
+    }
+
+    #[test]
+    fn tool_gate_denies_tools_the_request_never_enabled() {
+        let mut request = request();
+        let session_grants = HashSet::new();
+
+        // The only enabled tool is the automatic-safe calculator.
+        assert!(matches!(
+            tool_gate(&request, "calculator.evaluate", &session_grants),
+            ToolGate::Allowed
+        ));
+
+        // A model can emit any name it likes. Every host data tool that is not
+        // in the request must be denied outright, never silently executed.
+        for name in [
+            "memory.list",
+            "memory.save",
+            "memory.delete",
+            "chat.search",
+            "file.read",
+            "file.metadata",
+            "system.info",
+            "not.a.real.tool",
+        ] {
+            assert!(
+                matches!(
+                    tool_gate(&request, name, &session_grants),
+                    ToolGate::NotEnabled
+                ),
+                "{name} is not in request.tools and must be denied"
+            );
+        }
+
+        // Once enabled, a tool above automatic-safe still needs a grant.
+        request.tools = serde_json::from_value(json!([{
+            "name": "memory.save",
+            "description": "Save a memory",
+            "risk": "user-data",
+            "enabled": true,
+            "schema": { "type": "object" }
+        }]))
+        .expect("tool definition should deserialize");
+        assert!(matches!(
+            tool_gate(&request, "memory.save", &session_grants),
+            ToolGate::NeedsPermission(_)
+        ));
+
+        // A matching stored grant satisfies the gate without re-prompting.
+        request.permission_grants = vec![PermissionGrant {
+            id: "grant-1".into(),
+            tool_name: "memory.save".into(),
+            scope: "chat".into(),
+            assistant_id: "assistant-test".into(),
+            conversation_id: Some("conversation-test".into()),
+        }];
+        assert!(matches!(
+            tool_gate(&request, "memory.save", &session_grants),
+            ToolGate::Allowed
+        ));
+
+        // A grant for a different conversation does not.
+        request.permission_grants[0].conversation_id = Some("other-conversation".into());
+        assert!(matches!(
+            tool_gate(&request, "memory.save", &session_grants),
+            ToolGate::NeedsPermission(_)
+        ));
+    }
+
+    #[test]
+    fn unenabled_tool_calls_are_denied_without_touching_host_data() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let mut request = request();
+        request.host_context = serde_json::from_value(json!({
+            "memories": [],
+            "conversations": []
+        }))
+        .expect("host context should deserialize");
+        // Model asks for a host data tool that the request never enabled.
+        let calls = vec![NormalizedToolCall {
+            id: "call-1".into(),
+            name: "memory.save".into(),
+            arguments: json!({ "content": "exfiltrated" }),
+        }];
+        let mut session_grants = HashSet::new();
+        let mut host_context = request.host_context.clone();
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let (_assistant_calls, results) = runtime
+            .block_on(async {
+                host_tool_turn(
+                    &request,
+                    &calls,
+                    0,
+                    &Cancellation::default(),
+                    &handle,
+                    "test-topic",
+                    &AppState::default(),
+                    &mut session_grants,
+                    &mut host_context,
+                )
+                .await
+            })
+            .expect("denied tool calls should not fail the turn");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["status"], "denied");
+        assert_eq!(results[0]["error"]["code"], "TOOL_NOT_ENABLED");
+        assert_eq!(
+            results[0]["protocolVersion"], "juniper-tool-protocol-v1",
+            "the denial must still be host-authored"
+        );
+        assert!(
+            host_context.memories.is_empty(),
+            "a denied memory.save must not mutate host state"
+        );
     }
 
     #[test]

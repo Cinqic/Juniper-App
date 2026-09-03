@@ -340,6 +340,19 @@ jobs:
           TAG: ${{ needs.contract.outputs.tag }}
           COMMIT: ${{ needs.contract.outputs.commit }}
         run: |
+          set -o pipefail
+          # Each artifact becomes a direct download link. `find -printf` is
+          # deliberately not piped into `sort` without pipefail: a failure there
+          # would otherwise be masked and publish an empty Downloads section.
+          downloads=$(
+            find release-artifacts -maxdepth 1 -type f -name 'Juniper-*' -printf '%f\n' \
+              | sort \
+              | while IFS= read -r file; do
+                  printf -- '- [%s](https://github.com/%s/releases/download/%s/%s)\n' \
+                    "$file" "$GITHUB_REPOSITORY" "$TAG" "$file"
+                done
+          )
+          test -n "$downloads"
           {
             echo "# Juniper $VERSION"
             echo
@@ -347,7 +360,7 @@ jobs:
             echo
             echo '## Downloads'
             echo
-            find release-artifacts -maxdepth 1 -type f -name 'Juniper-*' -printf -- '- `%f`\n' | sort
+            echo "$downloads"
             echo
             echo '## Verification'
             echo

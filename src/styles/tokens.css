@@ -7,56 +7,81 @@
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
-  color: #20322a;
-  background: #f6f3ec;
+  color: #121512;
+  background: #f6f7f4;
+  color-scheme: light;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --bg: #f6f3ec;
-  --surface: #fffdf8;
-  --surface-alt: #efede5;
-  --ink: #20322a;
-  --muted: #718078;
-  --faint: #9aa49d;
-  --line: #e3e2d8;
-  --accent: #6f8f72;
-  --accent-dark: #496d51;
-  --accent-pale: #e6eee5;
-  --danger: #a65952;
-  --warning: #b48550;
-  --success: #5d886a;
+  --bg: #f6f7f4;
+  --surface: #ffffff;
+  --surface-alt: #eef1ed;
+  --surface-muted: #f8faf7;
+  --ink: #121512;
+  --muted: #5f685f;
+  --faint: #8a938b;
+  --line: #d9dfd9;
+  --line-strong: #b9c4b9;
+  --accent: #32cd32;
+  --accent-active: #28a428;
+  --accent-dark: #1f7f1f;
+  --accent-pale: #e5f5e5;
+  --danger: #c84e4e;
+  --error: #ff6b6b;
+  --warning: #a97934;
+  --success: #228a28;
+  --logo-bg: #0a0a0a;
   --radius-sm: 8px;
   --radius-md: 14px;
   --radius-lg: 22px;
-  --shadow-soft: 0 16px 45px rgb(48 64 54 / 6%);
+  --shadow-soft: 0 16px 45px rgb(0 0 0 / 8%);
 }
 
 :root[data-theme='dark'] {
-  color: #e8eee9;
-  background: #18211d;
-  --bg: #18211d;
-  --surface: #222d27;
-  --surface-alt: #2c3830;
-  --ink: #e8eee9;
-  --muted: #a2b1a6;
-  --faint: #7a8e80;
-  --line: #38453c;
-  --accent: #8eb791;
-  --accent-dark: #b5d5b6;
-  --accent-pale: #2c4032;
-  --shadow-soft: 0 16px 45px rgb(0 0 0 / 18%);
+  color: #ffffff;
+  background: #0a0a0a;
+  color-scheme: dark;
+  --bg: #0a0a0a;
+  --surface: #161616;
+  --surface-alt: #1e1e1e;
+  --surface-muted: #121212;
+  --ink: #ffffff;
+  --muted: #a0a0a0;
+  --faint: #737373;
+  --line: #2a2a2a;
+  --line-strong: #3b3b3b;
+  --accent: #32cd32;
+  --accent-active: #28a428;
+  --accent-dark: #32cd32;
+  --accent-pale: #132913;
+  --danger: #ff6b6b;
+  --error: #ff6b6b;
+  --warning: #d6a85f;
+  --success: #32cd32;
+  --shadow-soft: 0 16px 45px rgb(0 0 0 / 28%);
 }
 
 @media (prefers-color-scheme: dark) {
   :root[data-theme='system'] {
-    color: #e8eee9;
-    background: #18211d;
-    --bg: #18211d;
-    --surface: #222d27;
-    --surface-alt: #2c3830;
-    --ink: #e8eee9;
-    --muted: #a2b1a6;
-    --faint: #7a8e80;
-    --line: #38453c;
-    --accent-pale: #2c4032;
+    color: #ffffff;
+    background: #0a0a0a;
+    color-scheme: dark;
+    --bg: #0a0a0a;
+    --surface: #161616;
+    --surface-alt: #1e1e1e;
+    --surface-muted: #121212;
+    --ink: #ffffff;
+    --muted: #a0a0a0;
+    --faint: #737373;
+    --line: #2a2a2a;
+    --line-strong: #3b3b3b;
+    --accent: #32cd32;
+    --accent-active: #28a428;
+    --accent-dark: #32cd32;
+    --accent-pale: #132913;
+    --danger: #ff6b6b;
+    --error: #ff6b6b;
+    --warning: #d6a85f;
+    --success: #32cd32;
+    --shadow-soft: 0 16px 45px rgb(0 0 0 / 28%);
   }
 }

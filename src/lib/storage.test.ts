@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { initialAppData } from './defaults'
-import { inferTransportLocation, loadAppData, saveAppData } from './storage'
+import { inferTransportLocation, loadAppData, saveAppData, withoutPrivateChats } from './storage'
 
 describe('browser-preview storage', () => {
   beforeEach(() => localStorage.clear())
@@ -88,6 +88,54 @@ describe('browser-preview storage', () => {
     ]
     saveAppData(data)
     expect(loadAppData().attachments.map((item) => item.id)).toEqual(['saved-file'])
+  })
+
+  it('excludes private chats and their scoped records from user exports', () => {
+    const data = initialAppData()
+    data.conversations = [
+      {
+        id: 'private',
+        title: 'Private',
+        assistantId: data.assistants[0]!.id,
+        createdAt: '',
+        updatedAt: '',
+        privateChat: true,
+        messages: [],
+      },
+      {
+        id: 'saved',
+        title: 'Saved',
+        assistantId: data.assistants[0]!.id,
+        createdAt: '',
+        updatedAt: '',
+        messages: [],
+      },
+    ]
+    data.attachments = [
+      {
+        id: 'private-file',
+        conversationId: 'private',
+        name: 'private.txt',
+        sizeBytes: 12,
+        contentType: 'text/plain',
+      },
+    ]
+    data.permissions = [
+      {
+        id: 'grant-private',
+        toolName: 'file.read',
+        scope: 'chat',
+        assistantId: data.assistants[0]!.id,
+        conversationId: 'private',
+        createdAt: '',
+        updatedAt: '',
+      },
+    ]
+    const exported = withoutPrivateChats(data)
+    expect(exported.conversations.map((chat) => chat.id)).toEqual(['saved'])
+    expect(exported.attachments).toHaveLength(0)
+    expect(exported.permissions).toHaveLength(0)
+    expect(JSON.stringify(exported)).not.toContain('private.txt')
   })
 
   it.each([

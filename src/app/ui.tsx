@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Page } from '../types'
+import { JuniperMark } from './branding'
 
 const navItems: Array<{ id: Page; label: string; icon: string }> = [
   { id: 'chats', label: 'Chats', icon: '✦' },
@@ -21,7 +22,7 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="brand">
-        <span className="leaf-mark">J</span>
+        <JuniperMark className="brand-mark" alt="" aria-hidden="true" />
         <div>
           <strong>Juniper</strong>
           <small>your AI, your machine</small>

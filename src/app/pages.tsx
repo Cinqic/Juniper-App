@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { MAX_ASSISTANT_IMPORT_BYTES, parseAssistant, serializeAssistant } from '../lib/assistant'
 import { defaultAssistant, defaultProvider, modelProfileFromDiscovery } from '../lib/defaults'
-import { inferTransportLocation } from '../lib/storage'
+import { inferTransportLocation, withoutPrivateChats } from '../lib/storage'
 import {
   checkProviderConnection,
   deleteProviderCredential,
@@ -20,6 +20,7 @@ import {
   saveProviderCredential,
 } from '../lib/runtime'
 import { PageHeading } from './ui'
+import { AssistantAvatar, JuniperMark } from './branding'
 import type {
   AppData,
   Assistant,
@@ -105,9 +106,7 @@ export function AssistantsPage({
                 }}
               >
                 <div className="card-top">
-                  <div className="assistant-avatar large" style={{ background: assistant.accent }}>
-                    {assistant.avatar}
-                  </div>
+                  <AssistantAvatar assistant={assistant} className="assistant-avatar large" />
                   <span className="card-more">···</span>
                 </div>
                 <h3>{assistant.name}</h3>
@@ -1372,7 +1371,6 @@ export function PrivacyPage({
   const model = activeModel
   const provider = activeProvider
   const privateChat = currentConversation?.privateChat === true
-  const networkTools = 'Off — no network tools are enabled in this release.'
   function clearChats() {
     if (window.confirm('Clear all saved chats?'))
       update((current) => ({
@@ -1400,7 +1398,7 @@ export function PrivacyPage({
             <span className="eyebrow">Telemetry</span>
             <h2>Off</h2>
             <p>
-              Juniper v0.2 has no analytics, advertising, crash reporting, or automatic conversation
+              Juniper has no analytics, advertising, crash reporting, or automatic conversation
               uploads.
             </p>
           </div>
@@ -1447,7 +1445,7 @@ export function PrivacyPage({
             </div>
             <div>
               <dt>Network tools</dt>
-              <dd>{networkTools}</dd>
+              <dd>Off — no network tools are enabled in this release.</dd>
             </div>
           </dl>
           <p>
@@ -1475,7 +1473,7 @@ export function PrivacyPage({
         <div>
           <span className="eyebrow">You are in control</span>
           <h2>Data actions</h2>
-          <p>Exports never include provider API keys.</p>
+          <p>Exports never include provider API keys or private chats.</p>
         </div>
         <div className="action-buttons">
           <button
@@ -1487,7 +1485,7 @@ export function PrivacyPage({
                   {
                     format: 'juniper-export',
                     version: 2,
-                    ...data,
+                    ...withoutPrivateChats(data),
                     providers: data.providers.map(redactProvider),
                   },
                   null,
@@ -1536,7 +1534,6 @@ export function DiagnosticsPage({ data }: { data: AppData }) {
           </div>
           {Object.entries({
             ...diagnostics,
-            database: 'SQLite schema v3',
             telemetry: 'Off',
             models: `${data.models.length} profile(s)`,
           }).map(([key, value]) => (
@@ -1567,8 +1564,8 @@ export function DiagnosticsPage({ data }: { data: AppData }) {
             </div>
           ))}
           <div className="diagnostic-note">
-            Model qualification is capability-aware. Real generation qualification is pending until
-            the owner chooses an installed model.
+            Capabilities are read from the runtime. A capability the runtime does not declare is
+            never treated as supported.
           </div>
         </section>
         <section className="diagnostics-card">
@@ -1626,7 +1623,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
       eyebrow: 'Welcome to Juniper',
       title: 'Your AI. Your models. Your machine.',
       copy: 'A local-first environment that turns compatible models into personal Juniper assistants.',
-      art: 'J',
+      art: 'logo',
     },
     {
       eyebrow: 'Private by default',
@@ -1652,7 +1649,9 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
     <div className="onboarding-backdrop">
       <div className="onboarding">
         <div className="onboarding-art">
-          <div className="onboarding-orb">{current.art}</div>
+          <div className="onboarding-orb">
+            {current.art === 'logo' ? <JuniperMark alt="Juniper" /> : current.art}
+          </div>
           <span className="orbit orbit-one" />
           <span className="orbit orbit-two" />
           <div className="onboarding-progress">

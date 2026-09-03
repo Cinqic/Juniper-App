@@ -33,7 +33,7 @@
     "longDescription": "A local-first AI environment that turns compatible models into personal Juniper assistants.",
     "publisher": "Cinqic",
     "targets": ["deb", "appimage", "msi"],
-    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "icon": ["icons/icon.png", "icons/icon.ico", "icons/icon.icns"],
     "android": {
       "minSdkVersion": 24,
       "versionCode": 2001

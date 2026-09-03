@@ -23,7 +23,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::system_info,
             commands::runtime_logs,
-            commands::app_data_directory,
             commands::load_app_data,
             commands::save_app_data,
             commands::health_check,
@@ -42,11 +41,7 @@ pub fn run() {
             commands::pick_gguf,
             commands::read_attachment,
             commands::secure_set_credential,
-            commands::secure_has_credential,
-            commands::secure_delete_credential,
-            commands::tool_evaluate,
-            commands::tool_convert,
-            commands::tool_execute
+            commands::secure_delete_credential
         ])
         .run(tauri::generate_context!())
         .expect("error while running Juniper");

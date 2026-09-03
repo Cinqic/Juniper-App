@@ -1,5 +1,15 @@
 # Juniper 0.2.0-rc.1 — independent review verdict
 
+> **Superseded — historical record.** This is the 2026-09-02 review, written
+> before the release pipeline completed. Its "Remaining blockers" and "Accepted
+> limitations" sections are **out of date**: the Windows MSI was subsequently
+> built, installed, launched, and uninstalled on a Windows runner; a signed
+> Android APK was built and put through an emulator lifecycle smoke; and the
+> prerelease was published. It is kept unedited as a dated record of what was
+> known at the time. For the current release state see
+> [the final review](../release/0.2.0-rc.1-final-review.md) and
+> [the release manifest](../../manifests/release-candidate.yaml).
+
 ## Provenance
 
 - Reviewer: Claude Opus 5, acting as the independent reviewer named by the

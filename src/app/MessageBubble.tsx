@@ -1,5 +1,6 @@
 import type { Assistant, ChatMessage } from '../types'
 import { Markdown } from '../lib/markdown'
+import { AssistantAvatar } from './branding'
 
 function textPart(message: ChatMessage): string {
   return message.parts
@@ -34,9 +35,7 @@ export function MessageBubble({
           'You'
         ) : (
           <>
-            <span className="mini-avatar" style={{ background: assistant.accent }}>
-              {assistant.avatar}
-            </span>
+            <AssistantAvatar assistant={assistant} className="mini-avatar" />
             {assistant.name}
           </>
         )}

@@ -17,6 +17,7 @@ import {
 import { loadAppData, saveAppData } from '../lib/storage'
 import { MessageBubble } from './MessageBubble'
 import { ToolsPage } from './ToolsPage'
+import { AssistantAvatar, JuniperMark } from './branding'
 import {
   AssistantsPage,
   DiagnosticsPage,
@@ -151,7 +152,7 @@ export default function App() {
     runningInTauri ? initialAppData() : loadAppData(),
   )
   const [hydrated, setHydrated] = useState(!runningInTauri)
-  const [page, setPage] = useState<Page>(data.settings.onboardingComplete ? 'chats' : 'chats')
+  const [page, setPage] = useState<Page>('chats')
   const [selectedChatId, setSelectedChatId] = useState<string | null>(
     data.conversations[0]?.id ?? null,
   )
@@ -220,11 +221,11 @@ export default function App() {
         update((current) => {
           const next = [...current.models]
           for (const discovered of models) {
-            const existing = next.find(
+            const existingIndex = next.findIndex(
               (model) => model.providerId === provider.id && model.modelId === discovered.modelId,
             )
-            if (existing) {
-              existing.status = 'ready'
+            if (existingIndex >= 0) {
+              next[existingIndex] = { ...next[existingIndex]!, status: 'ready' }
               continue
             }
             next.push(
@@ -301,7 +302,7 @@ export default function App() {
       <main className="main-pane">
         <header className="topbar">
           <div className="mobile-brand">
-            <span className="leaf-mark">J</span>
+            <JuniperMark className="brand-mark" alt="" aria-hidden="true" />
             <span>Juniper</span>
           </div>
           <div className="topbar-context">
@@ -316,7 +317,7 @@ export default function App() {
             aria-label="Open settings"
             onClick={() => setPage('settings')}
           >
-            {activeAssistant.avatar}
+            <AssistantAvatar assistant={activeAssistant} className="avatar-button-mark" />
           </button>
         </header>
         <div className="page-content">
@@ -485,6 +486,9 @@ function ChatPage({
       <section className="chat-main">
         {conversation ? (
           <ConversationView
+            // Remount per conversation so the draft, staged attachments, and
+            // context inspector never carry over into a different chat.
+            key={conversation.id}
             data={data}
             update={update}
             conversation={conversation}
@@ -515,7 +519,7 @@ function ChatPage({
 function EmptyChat({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="empty-chat">
-      <div className="welcome-orb">J</div>
+      <JuniperMark className="welcome-orb" alt="Juniper" />
       <span className="eyebrow">A calmer place to think</span>
       <h1>What are we figuring out today?</h1>
       <p>Juniper brings personality, context, memory, and tools around the model you choose.</p>
@@ -838,9 +842,7 @@ function ConversationView({
     <div className="conversation">
       <div className="conversation-header">
         <div className="assistant-identity">
-          <div className="assistant-avatar" style={{ background: activeAssistant.accent }}>
-            {activeAssistant.avatar}
-          </div>
+          <AssistantAvatar assistant={activeAssistant} />
           <div>
             <strong>{activeAssistant.name}</strong>
             <span>
@@ -909,7 +911,7 @@ function ConversationView({
       <div className="message-scroll">
         {messages.length === 0 ? (
           <div className="conversation-welcome">
-            <div className="welcome-orb small">J</div>
+            <AssistantAvatar assistant={activeAssistant} className="welcome-orb small" />
             <h2>{activeAssistant.welcomeMessage}</h2>
             <p>
               {modelUnavailable

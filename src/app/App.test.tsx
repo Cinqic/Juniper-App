@@ -76,7 +76,7 @@ describe('Juniper application shell', () => {
     if (!refreshedLinks) throw new Error('Advanced settings links not found')
     const diagnosticsLink = buttonByText(refreshedLinks, 'Diagnostics')
     await act(async () => diagnosticsLink.click())
-    expect(container.textContent).toContain('SQLite schema v3')
+    expect(container.textContent).toContain('Browser preview (development only)')
 
     await act(async () => buttonByText(container, 'Privacy center').click())
     expect(container.textContent).toContain('Privacy center')
@@ -88,7 +88,7 @@ describe('Juniper application shell', () => {
 
     await act(async () => buttonByText(container, 'Diagnostics').click())
     expect(container.textContent).toContain('Diagnostics')
-    expect(container.textContent).toContain('SQLite schema v3')
+    expect(container.textContent).toContain('Browser preview (development only)')
   })
 
   it('switches the conversation model without rewriting historical attribution', async () => {

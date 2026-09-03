@@ -1,32 +1,64 @@
 # Testing strategy
 
-`pnpm validate` is the canonical validation command. It is intended to run
-formatting, lint, TypeScript, frontend tests, Rust formatting/clippy/tests,
-and JSON schema syntax checks in one sequence.
+`pnpm validate` is the canonical validation command. It runs formatting, lint,
+TypeScript, frontend tests, Rust formatting, Clippy with `-D warnings`, Rust
+tests, JSON schema checks, and version consistency in one sequence.
 
-Deterministic frontend tests cover the zero-model shell and navigation,
-assistant import/export, context order and truncation, private persistence,
-attachment metadata privacy, model-fit estimates, and browser-preview streaming. Rust tests cover the
-safe calculator, unit conversion, protocol result shape, loop bounds, permission scope matching,
-provider JSON/SSE/pull parsing, fake HTTP discovery/inspection/chat/tool/error,
-unknown-model behavior, timeout/cancellation fixtures, scoped attachment/GGUF grants,
-read-time attachment revalidation, bounded runtime logs, restart-safe attachment persistence,
-and schema version (40 tests).
-Real-model qualification is reserved for an owner-selected installed model.
-The historical Qwen fixture is optional.
+## Deterministic tests
 
-Frontend build, lint, formatting, schema validation, deterministic tests, and
-browser UI smoke checks were completed with the bundled Node runtime. Ollama
-was reachable but had no installed models, so no real-model generation is
-claimed. Native `cargo check`, test compilation, strict Clippy, and the full
-Rust test suite pass with temporary user-local Linux development metadata. The
-Linux Tauri `.deb` and `.AppImage` bundles also build in that isolated
-prerequisite environment. Android tests additionally require the Android NDK
-clang toolchain.
+Frontend tests (38) cover the zero-model shell and navigation, assistant
+import/export, context order and truncation, private-chat exclusion from both
+persistence and user export, attachment metadata privacy, model-fit estimates,
+markdown rendering, and browser-preview streaming.
 
-The fault-injection review targets malformed provider records, unknown tool
-names, invalid arguments, private-chat leakage, attachment IDs outside the
-picker grant set, denied permissions, oversized results, and tool-loop
-overruns. These invariants are represented by the provider, tool, storage, and
-frontend tests; a release reviewer should run the same fixtures against any
-adapter change.
+Native tests (54) cover the safe calculator, unit conversion, host-authored
+result shape, tool loop bounds, the default-deny tool gate, permission scope
+matching, capability gating of generation controls, provider JSON/SSE/pull
+parsing, fake HTTP discovery/inspection/chat/tool/error servers, unknown-model
+behavior, timeout and cancellation, scoped attachment and GGUF grants,
+read-time attachment revalidation, bounded runtime logs, restart-safe
+attachment persistence, and SQLite migrations across schema v1 to v3.
+
+Two native tests are `#[ignore]`d because they require a live Ollama service
+and an owner-selected installed model. They are not counted as passes when
+skipped.
+
+## Real-model qualification
+
+Qualification runs against a real installed model, not a fixture:
+
+```bash
+JUNIPER_LIVE_OLLAMA_MODEL=<installed model> \
+  cargo test --manifest-path src-tauri/Cargo.toml --lib -- --ignored --nocapture
+```
+
+The suites in `tests/qualification/` each declare an `applies_when` capability
+gate. The harness reads the capabilities the runtime actually reports from
+`/api/show` and reports a suite whose gate is unmet as NOT-APPLICABLE. A
+capability a model does not have is never recorded as a pass. Recorded results
+are in [../qualification/ollama-real-model-evidence.md](../qualification/ollama-real-model-evidence.md).
+
+`tests/fixtures/qwen3-8b-qualification.yaml` is a historical fixture retained
+for reference. It is not evidence of a real-model result.
+
+## Platform validation
+
+Linux builds, `.deb`/`.AppImage` bundling, and a launch smoke are reproducible
+locally and in CI. Windows MSI bundling plus an install, launch, and uninstall
+smoke run on a Windows runner. A signed Android APK is built and put through an
+emulator install, launch, rotation, relaunch, and uninstall smoke.
+
+Native unit tests are excluded from the Windows release job only: the Tauri mock
+runtime fails to load there, aborting the test binary at startup with
+`STATUS_ENTRYPOINT_NOT_FOUND` before any test runs. Every compile-level check,
+including `cargo clippy -D warnings`, still runs on Windows, and the native
+tests run on Linux.
+
+## Fault injection
+
+The fault-injection review targets malformed provider records, tool calls the
+request never enabled, unknown tool names, invalid arguments, private-chat
+leakage, attachment IDs outside the picker grant set, denied permissions,
+oversized results, and tool-loop overruns. These invariants are represented by
+the provider, tool, storage, and frontend tests; a release reviewer should run
+the same fixtures against any adapter change.

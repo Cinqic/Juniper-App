@@ -26,8 +26,8 @@ const assistant = {
   schemaVersion: 2,
   name: 'Juniper',
   description: 'Test assistant',
-  avatar: 'J',
-  accent: '#6f8f72',
+  avatar: '✦',
+  accent: '#32CD32',
   modelProfileId: null,
   systemPrompt: 'You are Juniper.',
   personality: {

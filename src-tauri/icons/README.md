@@ -1,5 +1,11 @@
-# Temporary icon boundary
+# Juniper application icons
 
-Official Cinqic branding assets are not present in this repository. Packaging
-does not reference fabricated binary icons in v0.1; the owner should add
-licensed platform icons before publishing a signed release.
+These assets are generated from the official Juniper artwork at the repository
+boundary. The same source artwork is used for the web favicon, desktop bundle
+icons, Windows ICO, macOS ICNS, and Android/iOS launcher derivatives.
+
+Regenerate all platform derivatives with:
+
+```bash
+pnpm tauri icon "/path/to/Juniper Logo.png" -o src-tauri/icons
+```

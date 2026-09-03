@@ -76,19 +76,23 @@ select:focus-visible {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
-.leaf-mark {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
-  border-radius: 12px 12px 12px 3px;
-  background: var(--accent-pale);
-  color: var(--accent-dark);
-  font-family: Georgia, serif;
-  font-size: 21px;
-  font-weight: 700;
-  transform: rotate(-8deg);
+.juniper-mark {
+  display: block;
+  object-fit: cover;
+}
+.brand-mark {
+  display: block;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--logo-bg);
+}
+.brand-mark,
+.assistant-avatar-image,
+.avatar-button-mark {
+  object-fit: cover;
 }
 .new-chat,
 .primary-button,
@@ -138,6 +142,9 @@ select:focus-visible {
 .primary-button:hover,
 .new-chat:hover {
   transform: translateY(-1px);
+}
+.primary-button:hover {
+  background: var(--accent-active);
 }
 .secondary-button {
   border: 1px solid var(--line);
@@ -193,6 +200,7 @@ button:disabled {
   color: var(--ink);
 }
 .nav-item.active {
+  box-shadow: inset 2px 0 var(--accent-active);
   font-weight: 650;
 }
 .nav-icon {
@@ -295,8 +303,8 @@ button:disabled {
   border-color: color-mix(in srgb, var(--success) 28%, var(--line));
 }
 .status-pill.local-network {
-  color: #8c6f2c;
-  border-color: color-mix(in srgb, #8c6f2c 28%, var(--line));
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 28%, var(--line));
 }
 .status-pill.remote {
   color: var(--warning);
@@ -310,11 +318,21 @@ button:disabled {
   place-items: center;
   width: 35px;
   height: 35px;
+  padding: 3px;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 50%;
-  background: var(--accent-pale);
-  color: var(--accent-dark);
+  background: var(--logo-bg);
+}
+.avatar-button-mark {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  color: var(--ink);
   font-family: Georgia, serif;
+  font-size: 15px;
   font-weight: 700;
 }
 .mobile-brand {
@@ -504,6 +522,11 @@ button:disabled {
   font-size: 21px;
   font-weight: 700;
 }
+.assistant-avatar-image {
+  border: 1px solid var(--line);
+  background: var(--logo-bg);
+  object-fit: cover;
+}
 .assistant-avatar.large {
   width: 55px;
   height: 55px;
@@ -548,11 +571,12 @@ button:disabled {
   height: 98px;
   margin-bottom: 28px;
   border-radius: 36px 36px 36px 9px;
-  background: linear-gradient(140deg, var(--accent), #b5c989);
+  border: 1px solid var(--line-strong);
+  background: var(--logo-bg);
   color: white;
   font-family: Georgia, serif;
   font-size: 49px;
-  box-shadow: 0 18px 30px rgb(87 121 84 / 17%);
+  box-shadow: var(--shadow-soft);
   transform: rotate(-5deg);
 }
 .welcome-orb.small {
@@ -652,8 +676,8 @@ button:disabled {
   margin: 12px 0 0;
   padding: 13px;
   border-radius: 9px;
-  background: #202b25;
-  color: #e5eee7;
+  background: var(--surface-muted);
+  color: var(--ink);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   line-height: 1.55;
@@ -807,7 +831,7 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--bg);
-  box-shadow: 0 8px 22px rgb(46 63 51 / 4%);
+  box-shadow: var(--shadow-soft);
 }
 .composer textarea {
   min-width: 0;
@@ -1228,7 +1252,7 @@ select {
   display: grid;
   place-items: center;
   padding: 1.5rem;
-  background: rgb(20 27 23 / 48%);
+  background: rgb(0 0 0 / 58%);
 }
 
 .permission-dialog {
@@ -1237,7 +1261,7 @@ select {
   border: 1px solid var(--line-strong);
   border-radius: 1.25rem;
   background: var(--surface);
-  box-shadow: 0 1.5rem 4rem rgb(20 27 23 / 22%);
+  box-shadow: var(--shadow-soft);
 }
 
 .permission-dialog h2 {
@@ -1791,7 +1815,7 @@ select {
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgb(32 50 42 / 28%);
+  background: rgb(0 0 0 / 58%);
   backdrop-filter: blur(8px);
 }
 .onboarding {
@@ -1802,7 +1826,7 @@ select {
   min-height: 430px;
   border-radius: 25px;
   background: var(--surface);
-  box-shadow: 0 30px 80px rgb(27 46 35 / 22%);
+  box-shadow: var(--shadow-soft);
 }
 .onboarding-art {
   position: relative;
@@ -1817,12 +1841,18 @@ select {
   width: 112px;
   height: 112px;
   border-radius: 38px 38px 38px 10px;
-  background: linear-gradient(140deg, var(--accent), #b5c989);
+  border: 1px solid var(--line-strong);
+  background: var(--logo-bg);
   color: white;
   font-family: Georgia, serif;
   font-size: 56px;
-  box-shadow: 0 20px 30px rgb(87 121 84 / 18%);
+  box-shadow: var(--shadow-soft);
   transform: rotate(-8deg);
+}
+.onboarding-orb .juniper-mark {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
 }
 .orbit {
   position: absolute;
@@ -1966,10 +1996,10 @@ select {
   .mobile-brand {
     display: flex;
   }
-  .mobile-brand .leaf-mark {
-    width: 27px;
-    height: 27px;
-    font-size: 17px;
+  .mobile-brand .brand-mark {
+    flex-basis: 30px;
+    width: 30px;
+    height: 30px;
   }
   .page-content {
     padding: 32px 17px 45px;
