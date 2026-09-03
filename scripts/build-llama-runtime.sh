@@ -31,6 +31,7 @@ git -C "$source_dir" checkout --force "$llama_commit"
 
 cmake -S "$source_dir" -B "$build_dir" \
   -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_SHARED_LIBS=OFF \
   -DGGML_NATIVE=OFF \
   -DGGML_OPENMP=OFF \
   -DLLAMA_BUILD_COMMON=ON \

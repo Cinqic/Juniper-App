@@ -410,7 +410,7 @@ fn emit_progress<R: Runtime>(
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
