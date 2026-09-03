@@ -41,7 +41,9 @@ cmake -S "$source_dir" -B "$build_dir" \
   -DLLAMA_CURL=OFF \
   -DLLAMA_BUILD_UI=OFF \
   -DLLAMA_USE_PREBUILT_UI=OFF
-cmake --build "$build_dir" --config Release --target llama-server --parallel
+# Keep hosted runners within their memory budget; override for a larger builder.
+cmake --build "$build_dir" --config Release --target llama-server \
+  --parallel "${JUNIPER_LLAMA_BUILD_PARALLEL:-2}"
 
 server_path=$(find "$build_dir" -type f \( -name llama-server -o -name llama-server.exe \) -perm -u+x -print -quit)
 if [[ -z "$server_path" ]]; then
