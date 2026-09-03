@@ -414,6 +414,7 @@ fn emit_progress<R: Runtime>(
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     fn variant_for_test(size_bytes: u64, sha256: &str) -> CatalogVariant {
         CatalogVariant {
             id: "test-model-q4".into(),
