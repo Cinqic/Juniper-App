@@ -260,28 +260,21 @@ jobs:
           arch: x86_64
           profile: pixel_6
           script: |
-            adb install "release-artifacts/Juniper-${{ needs.contract.outputs.version }}-android-universal.apk"
-            adb shell am start -n com.cinqic.juniper/.MainActivity
-            sleep 8
-            adb shell pidof com.cinqic.juniper
-            adb shell settings put system accelerometer_rotation 0
-            adb shell settings put system user_rotation 1
-            sleep 3
-            adb shell am force-stop com.cinqic.juniper
-            adb shell am start -W -n com.cinqic.juniper/.MainActivity
-            sleep 25
-            adb shell dumpsys activity activities | grep -F 'com.cinqic.juniper/.MainActivity'
-            adb uninstall com.cinqic.juniper
+            bash scripts/verify-android-lifecycle.sh \
+              "release-artifacts/Juniper-${{ needs.contract.outputs.version }}-android-universal.apk" \
+              com.cinqic.juniper \
+              release-artifacts/android-lifecycle
       - name: Remove signing material
         if: always()
         run: |
           shred -u "$RUNNER_TEMP/juniper-release.jks" 2>/dev/null || true
           shred -u src-tauri/gen/android/keystore.properties 2>/dev/null || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: juniper-android-universal
           path: release-artifacts
-          if-no-files-found: error
+          if-no-files-found: warn
 
   verify:
     name: Downloaded artifact verification and provenance

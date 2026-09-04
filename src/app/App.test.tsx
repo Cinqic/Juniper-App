@@ -190,6 +190,31 @@ describe('Juniper application shell', () => {
     expect(container.textContent).not.toContain('Route Model A')
   })
 
+  it('does not offer Markdown export for private chats', async () => {
+    const data = initialAppData()
+    data.settings.onboardingComplete = true
+    data.conversations = [
+      {
+        id: 'private-chat',
+        title: 'Private chat',
+        assistantId: data.assistants[0]!.id,
+        createdAt: '',
+        updatedAt: '',
+        privateChat: true,
+        messages: [],
+      },
+    ]
+    localStorage.setItem('juniper.app-data.v1', JSON.stringify(data))
+    act(() => root.unmount())
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<App />)
+    })
+
+    const exportButton = buttonByText(container, 'Export')
+    expect(exportButton.disabled).toBe(true)
+  })
+
   it('labels model fit as an estimate and stays unknown without runtime data', () => {
     const provider = initialAppData().providers[0]!
     const model = modelProfileFromDiscovery(provider, 'fit-model', { fileSizeBytes: 1024 })

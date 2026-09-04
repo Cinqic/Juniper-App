@@ -26,6 +26,8 @@ import { normalizeAppData } from './storage'
 export const runningInTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 export const browserPreviewEnabled = import.meta.env.DEV
 
+let pendingNativeSave: Promise<void> = Promise.resolve()
+
 function abortError(): DOMException {
   return new DOMException('Generation cancelled', 'AbortError')
 }
@@ -274,7 +276,15 @@ export async function loadNativeAppData(): Promise<AppData | null> {
 }
 
 export async function saveNativeAppData(data: AppData): Promise<void> {
-  if (runningInTauri) await invoke('save_app_data', { data })
+  if (!runningInTauri) return
+
+  // App state is persisted as a full snapshot. Serialize writes so a slower
+  // snapshot cannot finish after a newer one and roll the database backward.
+  const write = pendingNativeSave
+    .catch(() => undefined)
+    .then(() => invoke<void>('save_app_data', { data }))
+  pendingNativeSave = write.catch(() => undefined)
+  await write
 }
 
 export async function saveProviderCredential(reference: string, secret: string): Promise<void> {

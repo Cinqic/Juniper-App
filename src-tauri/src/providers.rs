@@ -14,7 +14,7 @@ use tokio::sync::oneshot;
 use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
-const CLIENT_NAME: &str = "Juniper/0.2";
+const CLIENT_NAME: &str = "Juniper/0.3";
 const MAX_ATTACHMENT_BYTES: usize = 1024 * 1024;
 const MAX_ATTACHMENT_COUNT: usize = 8;
 const MAX_TOTAL_ATTACHMENT_BYTES: usize = 4 * 1024 * 1024;

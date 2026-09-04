@@ -38,10 +38,28 @@ const SUPPORTED_ATTACHMENT_EXTENSIONS: &[&str] = &[
     "html",
 ];
 
+#[cfg(windows)]
+fn is_reparse_point(metadata: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(not(windows))]
+fn is_reparse_point(_metadata: &std::fs::Metadata) -> bool {
+    false
+}
+
 fn open_regular_file(path: &std::path::Path, unavailable: &str) -> Result<File, String> {
     let path_metadata = std::fs::symlink_metadata(path).map_err(|_| unavailable.to_owned())?;
-    if path_metadata.file_type().is_symlink() || !path_metadata.is_file() {
-        return Err("Symbolic links and non-regular files are not accepted.".into());
+    if path_metadata.file_type().is_symlink()
+        || is_reparse_point(&path_metadata)
+        || !path_metadata.is_file()
+    {
+        return Err(
+            "Symbolic links, reparse points, and non-regular files are not accepted.".into(),
+        );
     }
     let mut options = OpenOptions::new();
     options.read(true);
@@ -662,7 +680,7 @@ fn register_attachment_path(state: &AppState, path: PathBuf) -> Result<Attachmen
         return Err("The selected file is too large. Text attachments are limited to 1 MB.".into());
     }
     if !is_supported_attachment_path(&path) {
-        return Err("This attachment type is not supported as text in v0.2.".into());
+        return Err("This attachment type is not supported as text in this release.".into());
     }
     let id = Uuid::new_v4().to_string();
     state
