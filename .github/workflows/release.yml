@@ -261,16 +261,14 @@ jobs:
           profile: pixel_6
           script: |
             adb install "release-artifacts/Juniper-${{ needs.contract.outputs.version }}-android-universal.apk"
-            activity=$(adb shell cmd package resolve-activity --brief com.cinqic.juniper | tr -d '\r')
-            test -n "$activity"
-            adb shell am start -n "$activity"
+            adb shell am start -n com.cinqic.juniper/.MainActivity
             sleep 8
             adb shell pidof com.cinqic.juniper
             adb shell settings put system accelerometer_rotation 0
             adb shell settings put system user_rotation 1
             sleep 3
             adb shell am force-stop com.cinqic.juniper
-            adb shell am start -n "$activity"
+            adb shell am start -n com.cinqic.juniper/.MainActivity
             sleep 5
             adb shell pidof com.cinqic.juniper
             adb uninstall com.cinqic.juniper
