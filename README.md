@@ -8,8 +8,8 @@ Juniper is a local-first AI desktop and Android app for people who want a though
 
 Installers will be published on the [GitHub releases page](https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.10) after the release workflow completes. You do not need Git, a build toolchain, or a GitHub account to use a published desktop artifact.
 
-| Platform          | File                                       | Notes                                                             |
-| ----------------- | ------------------------------------------ | ----------------------------------------------------------------- |
+| Platform          | File                                        | Notes                                                             |
+| ----------------- | ------------------------------------------- | ----------------------------------------------------------------- |
 | Windows 10/11 x64 | `Juniper-0.3.0-rc.10-windows-x86_64.msi`    | The bundled local runtime is Juniper-owned; SmartScreen may warn. |
 | Linux x86_64      | `Juniper-0.3.0-rc.10-linux-x86_64.AppImage` | `chmod +x`, then run. No installation required.                   |
 | Linux x86_64      | `Juniper-0.3.0-rc.10-linux-x86_64.deb`      | `sudo apt install ./Juniper-...deb`                               |
