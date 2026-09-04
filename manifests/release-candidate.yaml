@@ -1,10 +1,10 @@
 format: juniper-release-manifest-v1
-version: 0.3.0-rc.8
+version: 0.3.0-rc.9
 status: PENDING PRERELEASE - VALIDATION IN PROGRESS
 release:
-  tag: v0.3.0-rc.8
+  tag: v0.3.0-rc.9
   commit: PENDING-MERGE
-  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.8
+  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.9
   prerelease: true
 canonical_repository: https://github.com/Cinqic/Juniper-App
 canonical_branch: main
