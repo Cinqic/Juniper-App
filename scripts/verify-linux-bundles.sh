@@ -13,7 +13,10 @@ dpkg-deb --info "$deb" | tee "$artifact_dir/PACKAGE-linux.txt"
 dpkg-deb --field "$deb" Version | grep -Fx "$version"
 # Tauri resolves Linux resources beside the binary at /usr/lib/juniper, so
 # the packaged path is runtime/llama-server rather than resources/runtime/...
-dpkg-deb --contents "$deb" | grep -Eq '/runtime/llama-server$'
+# Materialize the listing before grepping: with pipefail, grep -q can close
+# early and make dpkg-deb report SIGPIPE even when the match is valid.
+dpkg-deb --contents "$deb" > "$artifact_dir/CONTENTS-linux.txt"
+grep -Eq '/runtime/llama-server$' "$artifact_dir/CONTENTS-linux.txt"
 chmod +x "$appimage"
 
 set +e

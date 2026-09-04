@@ -1,10 +1,10 @@
 format: juniper-release-manifest-v1
-version: 0.3.0-rc.6
+version: 0.3.0-rc.7
 status: RELEASE CANDIDATE - BUILD AND PUBLISH AFTER CI GATES
 release:
-  tag: v0.3.0-rc.6
+  tag: v0.3.0-rc.7
   commit: pending-release-commit
-  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.6
+  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.7
   prerelease: true
 canonical_repository: https://github.com/Cinqic/Juniper-App
 canonical_branch: main
