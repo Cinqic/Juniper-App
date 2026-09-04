@@ -1,6 +1,6 @@
 {
   "name": "juniper-app",
-  "version": "0.3.0-rc.7",
+  "version": "0.3.0-rc.8",
   "private": true,
   "type": "module",
   "description": "Juniper — your AI, your models, your machine.",
@@ -20,10 +20,11 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "validate": "pnpm format && pnpm lint && pnpm typecheck && pnpm test && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --locked --manifest-path src-tauri/Cargo.toml && pnpm schema:validate && pnpm version:check",
-    "validate:no-native-tests": "pnpm format && pnpm lint && pnpm typecheck && pnpm test && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && pnpm schema:validate && pnpm version:check",
+    "validate": "pnpm format && pnpm lint && pnpm typecheck && pnpm test && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --locked --manifest-path src-tauri/Cargo.toml && pnpm schema:validate && pnpm version:check && pnpm branding:verify",
+    "validate:no-native-tests": "pnpm format && pnpm lint && pnpm typecheck && pnpm test && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && pnpm schema:validate && pnpm version:check && pnpm branding:verify",
     "schema:validate": "node scripts/validate-schemas.mjs",
-    "version:check": "node scripts/check-version.mjs"
+    "version:check": "node scripts/check-version.mjs",
+    "branding:verify": "node scripts/verify-branding-assets.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
