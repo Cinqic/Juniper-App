@@ -270,7 +270,7 @@ jobs:
             adb shell am force-stop com.cinqic.juniper
             adb shell am start -W -n com.cinqic.juniper/.MainActivity
             sleep 25
-            adb shell pidof com.cinqic.juniper
+            adb shell dumpsys activity activities | grep -F 'com.cinqic.juniper/.MainActivity'
             adb uninstall com.cinqic.juniper
       - name: Remove signing material
         if: always()
