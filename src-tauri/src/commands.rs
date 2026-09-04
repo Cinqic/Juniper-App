@@ -158,7 +158,7 @@ pub fn system_info() -> HashMap<String, String> {
     let mut result = HashMap::from([
         (
             String::from("application"),
-            String::from("Juniper 0.3.0-rc.10"),
+            String::from("Juniper 0.3.0-rc.11"),
         ),
         (String::from("os"), std::env::consts::OS.to_owned()),
         (

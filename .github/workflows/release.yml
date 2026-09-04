@@ -269,7 +269,12 @@ jobs:
             sleep 3
             adb shell am force-stop com.cinqic.juniper
             adb shell am start -n com.cinqic.juniper/.MainActivity
-            sleep 5
+            for attempt in {1..12}; do
+              if adb shell pidof com.cinqic.juniper; then
+                break
+              fi
+              sleep 3
+            done
             adb shell pidof com.cinqic.juniper
             adb uninstall com.cinqic.juniper
       - name: Remove signing material
