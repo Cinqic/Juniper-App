@@ -1,6 +1,6 @@
 [package]
 name = "juniper"
-version = "0.3.0-rc.7"
+version = "0.3.0-rc.8"
 description = "Juniper local-first AI environment"
 authors = ["Cinqic"]
 edition = "2024"

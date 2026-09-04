@@ -1,10 +1,10 @@
 format: juniper-release-manifest-v1
-version: 0.3.0-rc.7
-status: RELEASED PRERELEASE - CI GATES PASSED
+version: 0.3.0-rc.8
+status: PENDING PRERELEASE - VALIDATION IN PROGRESS
 release:
-  tag: v0.3.0-rc.7
-  commit: b1cbe744653d9d6cac39757694302a418837509a
-  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.7
+  tag: v0.3.0-rc.8
+  commit: PENDING-MERGE
+  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.8
   prerelease: true
 canonical_repository: https://github.com/Cinqic/Juniper-App
 canonical_branch: main
@@ -26,20 +26,7 @@ standalone_runtime:
   source_revision: e107984bcffcfd701e82738092a2b000b6fda7a2
   packaging: tauri-resource-built-by-scripts/build-llama-runtime.sh
   ownership: Juniper-starts-and-stops-loopback-process
-published_artifacts:
-  - name: Juniper-0.3.0-rc.7-android-universal.apk
-    sha256: ac628e7d4c8dc2145f7d8cd176fb9b772c6920144e3ee6704bf5463595ff9130
-  - name: Juniper-0.3.0-rc.7-linux-x86_64.AppImage
-    sha256: 107adf13e7bf61e782ace5df320b539325c4c443582452b7da8ba9126700a4fa
-  - name: Juniper-0.3.0-rc.7-linux-x86_64.deb
-    sha256: 1801d6b29a7319f566d61fad2695523e1f8fc49c3659df08f1b97f31b33e9ee8
-  - name: Juniper-0.3.0-rc.7-windows-x86_64.msi
-    sha256: ce5aa0d202119884c90d3a382ee5433362fedd16e695185f6099f7212a7dbcf6
-  - name: SHA256SUMS.txt
-  - name: PACKAGE-android.txt
-  - name: PACKAGE-linux.txt
-  - name: SIGNING-android.txt
-  - name: SIGNING-windows.txt
+published_artifacts: []
 validated_in_this_environment:
   frontend: tested-with-bundled-node-22-and-pnpm-11
   frontend_tests: 42
