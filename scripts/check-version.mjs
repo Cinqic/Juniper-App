@@ -41,6 +41,7 @@ const expectedAndroidVersionCodes = new Map([
   ['0.3.0-rc.13', 3013],
   ['0.3.0-rc.14', 3014],
   ['0.3.0-rc.20', 3020],
+  ['0.3.0-rc.21', 3021],
 ])
 const expectedMsiVersions = new Map([
   ['0.3.0-rc.7', '0.3.0.7'],
@@ -52,6 +53,7 @@ const expectedMsiVersions = new Map([
   ['0.3.0-rc.13', '0.3.0.13'],
   ['0.3.0-rc.14', '0.3.0.14'],
   ['0.3.0-rc.20', '0.3.0.20'],
+  ['0.3.0-rc.21', '0.3.0.21'],
 ])
 const androidVersionCode = tauri.bundle?.android?.versionCode
 if (androidVersionCode !== expectedAndroidVersionCodes.get(expected)) {
