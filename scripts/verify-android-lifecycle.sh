@@ -59,7 +59,11 @@ trap cleanup EXIT
 
 # Start from a clean package state if an emulator snapshot left an older build.
 adb uninstall "$package_name" >/dev/null 2>&1 || true
-adb install --no-streaming "$apk_path"
+if [[ ! -f "$apk_path" ]]; then
+  fail_smoke "APK was not found at $apk_path."
+fi
+printf 'Installing APK: %s\n' "$apk_path"
+adb install "$apk_path"
 
 adb shell am start -W -n "$component" | tee "$evidence_dir/initial-start.txt"
 wait_for_foreground_activity initial || fail_smoke "MainActivity was not resumed and focused after install."

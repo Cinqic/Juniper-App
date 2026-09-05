@@ -1,10 +1,10 @@
 format: juniper-release-manifest-v1
-version: 0.3.0-rc.13
+version: 0.3.0-rc.14
 status: PENDING PRERELEASE - HOSTED VALIDATION REQUIRED
 release:
-  tag: v0.3.0-rc.13
+  tag: v0.3.0-rc.14
   commit: PENDING-MERGE
-  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.13
+  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.14
   prerelease: true
 canonical_repository: https://github.com/Cinqic/Juniper-App
 canonical_branch: main
