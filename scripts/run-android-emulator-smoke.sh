@@ -113,10 +113,12 @@ wait_for_boot() {
   local seconds=${1:-900}
   local deadline=$((SECONDS + seconds))
   local boot_completed
+  local boot_animation
   while ((SECONDS < deadline)); do
     if adb_timeout 5 get-state 2>/dev/null | grep -Fxq device; then
       boot_completed=$(adb_timeout 5 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r') || boot_completed=''
-      if [[ "$boot_completed" == '1' ]]; then
+      boot_animation=$(adb_timeout 5 shell getprop init.svc.bootanim 2>/dev/null | tr -d '\r') || boot_animation=''
+      if [[ "$boot_completed" == '1' || "$boot_animation" == 'stopped' ]]; then
         return 0
       fi
     fi
