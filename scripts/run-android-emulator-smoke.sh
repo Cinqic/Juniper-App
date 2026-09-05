@@ -92,9 +92,11 @@ if ! "$emulator_bin" -list-avds | grep -Fxq "$avd_name"; then
 fi
 
 printf 'Starting emulator on %s (%s)\n' "$serial" "$emulator_bin"
+"$emulator_bin" -accel-check > "$evidence_dir/accel-check.txt" 2>&1 || true
 ANDROID_SERIAL="$serial" "$emulator_bin" \
   -avd "$avd_name" \
   -port "$emulator_port" \
+  -no-accel \
   -no-window \
   -gpu swiftshader_indirect \
   -no-snapshot \
