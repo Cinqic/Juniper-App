@@ -260,7 +260,7 @@ jobs:
         env:
           VERSION: ${{ needs.contract.outputs.version }}
         run: >-
-          timeout --foreground 20m bash scripts/run-android-emulator-smoke.sh
+          timeout --foreground 30m bash scripts/run-android-emulator-smoke.sh
           "release-artifacts/Juniper-$VERSION-android-universal.apk"
           com.cinqic.juniper release-artifacts/android-lifecycle
       - name: Remove signing material
