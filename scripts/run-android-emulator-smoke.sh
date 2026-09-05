@@ -8,6 +8,11 @@ avd_name=${4:-juniper-api-35}
 emulator_port=${ANDROID_EMULATOR_PORT:-5554}
 serial=${ANDROID_SERIAL:-emulator-${emulator_port}}
 sdk_root=${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK root is required}}
+android_config_home=${ANDROID_SDK_HOME:-${HOME}/.android}
+avd_home=${ANDROID_AVD_HOME:-${android_config_home}/avd}
+
+export ANDROID_SDK_HOME="$android_config_home"
+export ANDROID_AVD_HOME="$avd_home"
 
 resolve_tool() {
   local tool_name=$1
@@ -70,6 +75,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$evidence_dir"
+mkdir -p "$avd_home"
 printf 'Creating clean Android emulator AVD: %s\n' "$avd_name"
 "$avdmanager_bin" delete avd --name "$avd_name" >/dev/null 2>&1 || true
 printf 'no\n' | "$avdmanager_bin" create avd \
@@ -78,6 +84,12 @@ printf 'no\n' | "$avdmanager_bin" create avd \
   --package 'system-images;android-35;google_apis;x86_64' \
   --device 'pixel_6' \
   > "$evidence_dir/avd-create.txt" 2>&1
+
+if ! "$emulator_bin" -list-avds | grep -Fxq "$avd_name"; then
+  printf 'Android emulator AVD was not created at %s.\n' "$avd_home" >&2
+  "$emulator_bin" -list-avds > "$evidence_dir/avd-list.txt" 2>&1 || true
+  exit 1
+fi
 
 printf 'Starting emulator on %s (%s)\n' "$serial" "$emulator_bin"
 ANDROID_SERIAL="$serial" "$emulator_bin" \
