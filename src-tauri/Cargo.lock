@@ -2122,7 +2122,7 @@ dependencies = [
 
 [[package]]
 name = "juniper"
-version = "0.3.0-rc.15"
+version = "0.3.0-rc.16"
 dependencies = [
  "futures-util",
  "keyring",
