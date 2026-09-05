@@ -399,6 +399,10 @@ function ChatPage({
   const effectiveProvider = effectiveModel
     ? data.providers.find((provider) => provider.id === effectiveModel.providerId)
     : undefined
+  const conversationAssistant = conversation
+    ? (data.assistants.find((assistant) => assistant.id === conversation.assistantId) ??
+      activeAssistant)
+    : activeAssistant
   const filtered = data.conversations.filter((chat) =>
     [chat.title, ...chat.messages.map(textPart)]
       .join(' ')
@@ -498,7 +502,7 @@ function ChatPage({
             data={data}
             update={update}
             conversation={conversation}
-            activeAssistant={activeAssistant}
+            activeAssistant={conversationAssistant}
             activeModel={effectiveModel}
             activeProvider={effectiveProvider}
             privateMode={conversation.privateChat === true}
@@ -836,6 +840,7 @@ function ConversationView({
     }
   }
   function exportMarkdown() {
+    if (privateMode) return
     const body = messages
       .map(
         (message) =>
@@ -883,7 +888,7 @@ function ConversationView({
               ))}
             </select>
           </label>
-          <button className="text-button" onClick={exportMarkdown}>
+          <button className="text-button" onClick={exportMarkdown} disabled={privateMode}>
             Export
           </button>
           <button className="text-button" onClick={onRename}>

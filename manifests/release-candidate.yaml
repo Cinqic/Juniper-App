@@ -1,10 +1,10 @@
 format: juniper-release-manifest-v1
-version: 0.3.0-rc.12
-status: PENDING PRERELEASE - VALIDATION IN PROGRESS
+version: 0.3.0-rc.13
+status: PENDING PRERELEASE - HOSTED VALIDATION REQUIRED
 release:
-  tag: v0.3.0-rc.12
+  tag: v0.3.0-rc.13
   commit: PENDING-MERGE
-  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.12
+  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.13
   prerelease: true
 canonical_repository: https://github.com/Cinqic/Juniper-App
 canonical_branch: main
@@ -29,10 +29,11 @@ standalone_runtime:
 published_artifacts: []
 validated_in_this_environment:
   frontend: tested-with-bundled-node-22-and-pnpm-11
-  frontend_tests: 42
+  frontend_tests: 43
   native: cargo-check-and-clippy-deny-warnings
-  native_tests: 57-passed-2-ignored-live-Ollama
-  local_runtime_bundle: PASS-LINUX-WINDOWS-ANDROID-SMOKE
+  native_tests: WINDOWS-STATUS_ENTRYPOINT_NOT_FOUND-before-tests-hosted-Linux-gate-required
+  local_runtime_bundle: PASS-WINDOWS-MSI-BUILD-ANDROID-EMULATOR-BLOCKED-NO-HYPERVISOR
+  ollama: PASS-smollm-135m-local-api
   website: PASS-SITE-VERIFIER
 accepted_limitations:
   - Android-model-management-is-supported-but-native-local-inference-runtime-is-not-yet-packaged

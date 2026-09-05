@@ -176,7 +176,7 @@ pub async fn download<R: Runtime>(
         .https_only(true)
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(300))
-        .user_agent("Juniper/0.2 local model market")
+        .user_agent("Juniper/0.3 local model market")
         .build()
         .map_err(|_| {
             "MODEL_DOWNLOAD_ERROR: Juniper could not initialize its download client.".to_owned()
