@@ -110,7 +110,7 @@ emulator_pid=$!
 printf '%s\n' "$emulator_pid" > "$evidence_dir/emulator.pid"
 
 wait_for_boot() {
-  local seconds=${1:-420}
+  local seconds=${1:-900}
   local deadline=$((SECONDS + seconds))
   local boot_completed
   while ((SECONDS < deadline)); do
