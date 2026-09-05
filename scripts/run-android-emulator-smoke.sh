@@ -54,6 +54,7 @@ capture_failure_evidence() {
     tail -n 500 "$emulator_log" > "$evidence_dir/emulator-failure-tail.txt" || true
   fi
   adb_timeout 10 shell getprop > "$evidence_dir/failure-getprop.txt" 2>&1 || true
+  adb_timeout 10 shell cmd package list packages > "$evidence_dir/failure-package-list.txt" 2>&1 || true
   adb_timeout 10 logcat -d -t 500 > "$evidence_dir/failure-logcat.txt" 2>&1 || true
   adb_timeout 10 devices -l > "$evidence_dir/failure-adb-devices.txt" 2>&1 || true
 }
@@ -109,17 +110,22 @@ ANDROID_SERIAL="$serial" "$emulator_bin" \
 emulator_pid=$!
 printf '%s\n' "$emulator_pid" > "$evidence_dir/emulator.pid"
 
-wait_for_boot() {
+wait_for_android_ready() {
   local seconds=${1:-900}
   local deadline=$((SECONDS + seconds))
   local boot_completed
   local boot_animation
+  local package_list
   while ((SECONDS < deadline)); do
     if adb_timeout 5 get-state 2>/dev/null | grep -Fxq device; then
       boot_completed=$(adb_timeout 5 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r') || boot_completed=''
       boot_animation=$(adb_timeout 5 shell getprop init.svc.bootanim 2>/dev/null | tr -d '\r') || boot_animation=''
       if [[ "$boot_completed" == '1' || "$boot_animation" == 'stopped' ]]; then
-        return 0
+        package_list=$(adb_timeout 10 shell cmd package list packages 2>&1) || package_list=''
+        if grep -Eq '^package:' <<<"$package_list"; then
+          printf '%s\n' "$package_list" > "$evidence_dir/package-list.txt"
+          return 0
+        fi
       fi
     fi
     sleep 2
@@ -127,11 +133,12 @@ wait_for_boot() {
   return 1
 }
 
-if ! wait_for_boot; then
-  printf 'Android emulator did not become ADB-ready before the deadline.\n' >&2
+if ! wait_for_android_ready; then
+  printf 'Android emulator did not become ready for package-manager commands before the deadline.\n' >&2
   exit 1
 fi
 
 export ANDROID_SERIAL="$serial"
+printf 'Android emulator package manager is ready.\n'
 adb_timeout 10 devices -l | tee "$evidence_dir/adb-devices.txt"
 timeout --foreground 12m bash scripts/verify-android-lifecycle.sh "$apk_path" "$package_name" "$evidence_dir"
