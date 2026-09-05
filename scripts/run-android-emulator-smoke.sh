@@ -56,6 +56,7 @@ capture_failure_evidence() {
   adb_timeout 10 shell getprop > "$evidence_dir/failure-getprop.txt" 2>&1 || true
   adb_timeout 10 shell cmd package list packages > "$evidence_dir/failure-package-list.txt" 2>&1 || true
   adb_timeout 10 shell settings get global device_provisioned > "$evidence_dir/failure-settings-probe.txt" 2>&1 || true
+  adb_timeout 10 shell sm list-volumes all > "$evidence_dir/failure-storage-volumes.txt" 2>&1 || true
   adb_timeout 10 logcat -d -t 500 > "$evidence_dir/failure-logcat.txt" 2>&1 || true
   adb_timeout 10 devices -l > "$evidence_dir/failure-adb-devices.txt" 2>&1 || true
 }
@@ -118,6 +119,7 @@ wait_for_android_ready() {
   local boot_animation
   local package_list
   local settings_probe
+  local storage_volumes
   while ((SECONDS < deadline)); do
     if adb_timeout 5 get-state 2>/dev/null | grep -Fxq device; then
       boot_completed=$(adb_timeout 5 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r') || boot_completed=''
@@ -127,9 +129,13 @@ wait_for_android_ready() {
         if grep -Eq '^package:' <<<"$package_list"; then
           settings_probe=$(adb_timeout 10 shell settings get global device_provisioned 2>&1 | tr -d '\r') || settings_probe=''
           if grep -Eq '^(null|[0-9]+)$' <<<"$settings_probe"; then
-            printf '%s\n' "$package_list" > "$evidence_dir/package-list.txt"
-            printf '%s\n' "$settings_probe" > "$evidence_dir/settings-probe.txt"
-            return 0
+            storage_volumes=$(adb_timeout 10 shell sm list-volumes all 2>&1 | tr -d '\r') || storage_volumes=''
+            if grep -Fq 'emulated;0 mounted' <<<"$storage_volumes"; then
+              printf '%s\n' "$package_list" > "$evidence_dir/package-list.txt"
+              printf '%s\n' "$settings_probe" > "$evidence_dir/settings-probe.txt"
+              printf '%s\n' "$storage_volumes" > "$evidence_dir/storage-volumes.txt"
+              return 0
+            fi
           fi
         fi
       fi

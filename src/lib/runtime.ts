@@ -161,7 +161,7 @@ export async function cancelModelPull(requestId: string): Promise<void> {
 export async function getModelCatalog(): Promise<ModelCatalog> {
   if (!runningInTauri) return MODEL_CATALOG
   const models = await invoke<unknown>('model_catalog')
-  return parseCatalog({ version: 1, minimumAppVersion: '0.3.0-rc.26', models })
+  return parseCatalog({ version: 1, minimumAppVersion: '0.3.0-rc.27', models })
 }
 
 export async function getDeviceCapabilities(): Promise<DeviceCapabilities> {
@@ -300,7 +300,7 @@ export async function deleteProviderCredential(reference: string): Promise<void>
 export async function getDiagnostics(): Promise<Record<string, string>> {
   if (runningInTauri) return invoke<Record<string, string>>('system_info')
   return {
-    application: 'Juniper 0.3.0-rc.26',
+    application: 'Juniper 0.3.0-rc.27',
     runtime: browserPreviewEnabled
       ? 'Browser preview (development only)'
       : 'Native runtime unavailable',
