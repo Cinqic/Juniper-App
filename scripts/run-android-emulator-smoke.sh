@@ -4,7 +4,7 @@ set -euo pipefail
 apk_path=${1:?APK path is required}
 package_name=${2:-com.cinqic.juniper}
 evidence_dir=${3:-release-artifacts/android-lifecycle}
-avd_name=${4:-juniper-api-35}
+avd_name=${4:-juniper-api-30}
 emulator_port=${ANDROID_EMULATOR_PORT:-5554}
 serial=${ANDROID_SERIAL:-emulator-${emulator_port}}
 sdk_root=${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK root is required}}
@@ -84,8 +84,8 @@ printf 'Creating clean Android emulator AVD: %s\n' "$avd_name"
 printf 'no\n' | "$avdmanager_bin" create avd \
   --force \
   --name "$avd_name" \
-  --package 'system-images;android-35;google_apis;x86_64' \
-  --device 'pixel_6' \
+  --package 'system-images;android-30;google_apis;x86' \
+  --device 'pixel_2' \
   > "$evidence_dir/avd-create.txt" 2>&1
 
 if ! "$emulator_bin" -list-avds | grep -Fxq "$avd_name"; then
