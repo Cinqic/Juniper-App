@@ -7,10 +7,31 @@ evidence_dir=${3:-release-artifacts/android-lifecycle}
 avd_name=${4:-juniper-api-35}
 emulator_port=${ANDROID_EMULATOR_PORT:-5554}
 serial=${ANDROID_SERIAL:-emulator-${emulator_port}}
+sdk_root=${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK root is required}}
 
-adb_bin=$(command -v adb)
-avdmanager_bin=$(command -v avdmanager)
-emulator_bin=$(command -v emulator)
+resolve_tool() {
+  local tool_name=$1
+  shift
+  local candidate
+  if candidate=$(command -v "$tool_name" 2>/dev/null); then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  for candidate in "$@"; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  printf 'Required Android tool was not found: %s\n' "$tool_name" >&2
+  return 1
+}
+
+adb_bin=$(resolve_tool adb "$sdk_root/platform-tools/adb")
+avdmanager_bin=$(resolve_tool avdmanager \
+  "$sdk_root/cmdline-tools/latest/bin/avdmanager" \
+  "$sdk_root/tools/bin/avdmanager")
+emulator_bin=$(resolve_tool emulator "$sdk_root/emulator/emulator")
 emulator_pid=''
 emulator_log="$evidence_dir/emulator.log"
 
