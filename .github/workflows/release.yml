@@ -212,7 +212,7 @@ jobs:
           java-version: '17'
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
       - name: Install Android SDK packages
-        run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.0.12077973' 'emulator' 'system-images;android-35;google_apis;x86_64'
+        run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.0.12077973' 'emulator' 'system-images;android-30;google_apis;x86'
       - name: Put Android build-tools on PATH
         run: echo "$ANDROID_HOME/build-tools/35.0.0" >> "$GITHUB_PATH"
       - run: pnpm install --frozen-lockfile
