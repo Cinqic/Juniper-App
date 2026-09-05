@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "minimumAppVersion": "0.3.0-rc.14",
+  "minimumAppVersion": "0.3.0-rc.15",
   "models": [
     {
       "id": "qwen3-0.6b-q8",
