@@ -2,18 +2,18 @@
 
 Juniper is a local-first AI desktop and Android app for people who want a thoughtful assistant, visible model controls, and a clear boundary around private data. It works with compatible text-generation models through supported runtimes; no model family is required and no model is bundled.
 
-**Version `0.3.0-rc.25` — standalone-runtime release candidate.** The release workflow builds and packages the Juniper-owned local runtime for desktop targets, then publishes install-smoked artifacts after the verification gates pass. See [Download](#download).
+**Version `0.3.0-rc.26` — standalone-runtime release candidate.** The release workflow builds and packages the Juniper-owned local runtime for desktop targets, then publishes install-smoked artifacts after the verification gates pass. See [Download](#download).
 
 ## Download
 
-Installers will be published on the [GitHub releases page](https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.25) after the release workflow completes. You do not need Git, a build toolchain, or a GitHub account to use a published desktop artifact.
+Installers will be published on the [GitHub releases page](https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.26) after the release workflow completes. You do not need Git, a build toolchain, or a GitHub account to use a published desktop artifact.
 
 | Platform          | File                                        | Notes                                                             |
 | ----------------- | ------------------------------------------- | ----------------------------------------------------------------- |
-| Windows 10/11 x64 | `Juniper-0.3.0-rc.25-windows-x86_64.msi`    | The bundled local runtime is Juniper-owned; SmartScreen may warn. |
-| Linux x86_64      | `Juniper-0.3.0-rc.25-linux-x86_64.AppImage` | `chmod +x`, then run. No installation required.                   |
-| Linux x86_64      | `Juniper-0.3.0-rc.25-linux-x86_64.deb`      | `sudo apt install ./Juniper-...deb`                               |
-| Android 7.0+      | `Juniper-0.3.0-rc.25-android-universal.apk` | Signed release APK; enable install from unknown sources.          |
+| Windows 10/11 x64 | `Juniper-0.3.0-rc.26-windows-x86_64.msi`    | The bundled local runtime is Juniper-owned; SmartScreen may warn. |
+| Linux x86_64      | `Juniper-0.3.0-rc.26-linux-x86_64.AppImage` | `chmod +x`, then run. No installation required.                   |
+| Linux x86_64      | `Juniper-0.3.0-rc.26-linux-x86_64.deb`      | `sudo apt install ./Juniper-...deb`                               |
+| Android 7.0+      | `Juniper-0.3.0-rc.26-android-universal.apk` | Signed release APK; enable install from unknown sources.          |
 
 Verify a download against `SHA256SUMS.txt` from the same release:
 
@@ -102,7 +102,7 @@ Suites whose capability gate the model does not meet are reported NOT-APPLICABLE
 ## Known limitations
 
 - The Windows MSI may be unsigned, so Windows SmartScreen can show an unrecognized-publisher warning.
-- `0.3.0-rc.25` is a prerelease. It is published for evaluation and is not yet promoted to a final `0.3.0`.
+- `0.3.0-rc.26` is a prerelease. It is published for evaluation and is not yet promoted to a final `0.3.0`.
 - Android loopback addresses refer to the phone itself. Reaching a computer on your network needs an explicit LAN endpoint.
 - Browser-preview attachments are development-only; the real attachment path is the desktop native picker.
 

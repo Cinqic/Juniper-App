@@ -55,6 +55,7 @@ capture_failure_evidence() {
   fi
   adb_timeout 10 shell getprop > "$evidence_dir/failure-getprop.txt" 2>&1 || true
   adb_timeout 10 shell cmd package list packages > "$evidence_dir/failure-package-list.txt" 2>&1 || true
+  adb_timeout 10 shell settings get global device_provisioned > "$evidence_dir/failure-settings-probe.txt" 2>&1 || true
   adb_timeout 10 logcat -d -t 500 > "$evidence_dir/failure-logcat.txt" 2>&1 || true
   adb_timeout 10 devices -l > "$evidence_dir/failure-adb-devices.txt" 2>&1 || true
 }
@@ -116,6 +117,7 @@ wait_for_android_ready() {
   local boot_completed
   local boot_animation
   local package_list
+  local settings_probe
   while ((SECONDS < deadline)); do
     if adb_timeout 5 get-state 2>/dev/null | grep -Fxq device; then
       boot_completed=$(adb_timeout 5 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r') || boot_completed=''
@@ -123,8 +125,12 @@ wait_for_android_ready() {
       if [[ "$boot_completed" == '1' || "$boot_animation" == 'stopped' ]]; then
         package_list=$(adb_timeout 10 shell cmd package list packages 2>&1) || package_list=''
         if grep -Eq '^package:' <<<"$package_list"; then
-          printf '%s\n' "$package_list" > "$evidence_dir/package-list.txt"
-          return 0
+          settings_probe=$(adb_timeout 10 shell settings get global device_provisioned 2>&1 | tr -d '\r') || settings_probe=''
+          if grep -Eq '^(null|[0-9]+)$' <<<"$settings_probe"; then
+            printf '%s\n' "$package_list" > "$evidence_dir/package-list.txt"
+            printf '%s\n' "$settings_probe" > "$evidence_dir/settings-probe.txt"
+            return 0
+          fi
         fi
       fi
     fi
@@ -134,7 +140,7 @@ wait_for_android_ready() {
 }
 
 if ! wait_for_android_ready; then
-  printf 'Android emulator did not become ready for package-manager commands before the deadline.\n' >&2
+  printf 'Android emulator did not become ready for package installation before the deadline.\n' >&2
   exit 1
 fi
 
