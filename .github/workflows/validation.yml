@@ -107,3 +107,8 @@ jobs:
           mapfile -d '' apks < <(find src-tauri/gen/android -type f -name '*debug*.apk' -print0)
           test "${#apks[@]}" -eq 1
           bash scripts/verify-android-apk.sh "${apks[0]}" android-apk-audit
+
+  android-inference:
+    name: Android native inference smoke (manual)
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/android-inference.yml
