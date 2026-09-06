@@ -72,6 +72,7 @@ jobs:
             "$RUNNER_TEMP/juniper-model/SmolLM2-135M-Instruct.Q4_K_M.gguf" | sha256sum -c -
       - name: Create and boot clean x86_64 emulator
         run: |
+          export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
           export ANDROID_AVD_HOME="$RUNNER_TEMP/android-avd"
           mkdir -p "$ANDROID_AVD_HOME"
           echo no | avdmanager create avd --force --name juniper-inference \
