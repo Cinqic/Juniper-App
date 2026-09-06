@@ -51,7 +51,11 @@ jobs:
           WRY_ANDROID_KOTLIN_FILES_OUT_DIR: ${{ github.workspace }}/src-tauri/gen/android/app/src/main/kotlin/com/cinqic/juniper
         run: |
           mkdir -p "$WRY_ANDROID_KOTLIN_FILES_OUT_DIR"
-          cargo check --locked --manifest-path src-tauri/Cargo.toml --target x86_64-linux-android
+          ndk_llvm="$ANDROID_HOME/ndk/29.0.13113456/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          env \
+            "CC_x86_64-linux-android=$ndk_llvm/x86_64-linux-android24-clang" \
+            "CXX_x86_64-linux-android=$ndk_llvm/x86_64-linux-android24-clang++" \
+            cargo check --locked --manifest-path src-tauri/Cargo.toml --target x86_64-linux-android
       - name: Build instrumentation APK and native libraries
         working-directory: src-tauri/gen/android
         run: >-
