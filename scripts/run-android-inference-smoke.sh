@@ -109,9 +109,22 @@ for install_attempt in 1 2 3; do
   done
 done
 adb_timeout 300 push "$model_path" "/data/local/tmp/$remote_name" >/dev/null
-adb_timeout 10 shell run-as "$target_package" mkdir -p files
-adb_timeout 10 shell run-as "$target_package" cp "/data/local/tmp/$remote_name" "files/$remote_name"
-adb_timeout 10 shell run-as "$target_package" chmod 600 "files/$remote_name"
+app_private_ready=""
+for app_private_attempt in {1..12}; do
+  app_private_output=""
+  if app_private_output=$(adb_timeout 30 shell run-as "$target_package" mkdir -p files 2>&1); then
+    app_private_ready=1
+    break
+  fi
+  printf '%s\n' "$app_private_output" >&2
+  sleep 5
+done
+if [[ -z "$app_private_ready" ]]; then
+  echo "Android app-private storage did not become accessible after install" >&2
+  exit 1
+fi
+adb_timeout 120 shell run-as "$target_package" cp "/data/local/tmp/$remote_name" "files/$remote_name"
+adb_timeout 30 shell run-as "$target_package" chmod 600 "files/$remote_name"
 
 model_size=$(stat -c '%s' "$model_path")
 echo "Running Android native inference smoke: sha256=$actual_sha256 bytes=$model_size serial=${serial:-default}"
