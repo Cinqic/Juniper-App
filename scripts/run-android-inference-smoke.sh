@@ -43,16 +43,24 @@ adb_timeout 60 wait-for-device
   exit 1
 }
 
-package_deadline=$((SECONDS + 4 * 60))
+package_deadline=$((SECONDS + 5 * 60))
 while (( SECONDS < package_deadline )); do
-  if timeout --foreground 20s "${adb[@]}" shell cmd package list packages 2>/dev/null \
-    | grep -Fxq 'package:android'; then
+  boot_completed=$(adb_timeout 10 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+  package_marker=$(timeout --foreground 20s "${adb[@]}" shell cmd package list packages 2>/dev/null \
+    | grep -Fx 'package:android' || true)
+  settings_value=$(adb_timeout 10 shell settings get global airplane_mode_on 2>/dev/null \
+    | tr -d '\r' || true)
+  # A package-list response can succeed while system_server is still installing
+  # system providers. Probe the settings provider as the final install gate.
+  if [[ "$boot_completed" == "1" && -n "$package_marker" && "$settings_value" =~ ^(0|1)$ ]]; then
     break
   fi
   sleep 2
 done
 if (( SECONDS >= package_deadline )); then
-  echo "Android package manager is not ready" >&2
+  echo "Android system providers are not ready" >&2
+  adb_timeout 10 shell getprop sys.boot_completed >&2 || true
+  adb_timeout 10 shell settings get global airplane_mode_on >&2 || true
   exit 1
 fi
 
