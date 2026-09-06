@@ -97,7 +97,7 @@ private class NativeCallbacks(
 internal object EngineOwner {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
     private val events = ConcurrentHashMap<String, ConcurrentLinkedQueue<NativeEvent>>()
-    private var nativeHandle: Long = 0
+    @Volatile private var nativeHandle: Long = 0
     private var appContext: Context? = null
     private var callbacksRegistered = false
     @Volatile private var runtimeAvailable: Boolean = false
@@ -106,6 +106,7 @@ internal object EngineOwner {
     @Volatile private var loadedBytes: Long? = null
     @Volatile private var loadedContextSize: Int? = null
     @Volatile private var activeRequest: String? = null
+    @Volatile private var lifecycleGeneration: Long = 0
     @Volatile private var failureCode: String? = null
     @Volatile private var failureMessage: String? = null
     private val abi: String? = Build.SUPPORTED_ABIS.firstOrNull { it == "arm64-v8a" || it == "x86_64" }
@@ -210,12 +211,15 @@ internal object EngineOwner {
             setFailure(code, message)
             return
         }
+        val generation = lifecycleGeneration
         scope.launch {
+            if (generation != lifecycleGeneration) return@launch
             state = "loading"
             failureCode = null
             failureMessage = null
             val contextSize = args.contextSize.coerceIn(512, 2048)
             val result = nativeLoad(nativeHandle, args.path, contextSize, args.threads.coerceIn(2, 4))
+            if (generation != lifecycleGeneration) return@launch
             if (result == 0) {
                 loadedPath = args.path
                 loadedBytes = File(args.path).length()
@@ -256,7 +260,20 @@ internal object EngineOwner {
         activeRequest = args.requestId
         events[args.requestId] = ConcurrentLinkedQueue()
         state = "busy"
+        val generation = lifecycleGeneration
         scope.launch {
+            if (generation != lifecycleGeneration) {
+                enqueue(
+                    NativeEvent(
+                        "done",
+                        args.requestId,
+                        code = "LOCAL_MODEL_NOT_READY",
+                        message = "The local model is no longer loaded.",
+                    ),
+                )
+                activeRequest = null
+                return@launch
+            }
             try {
                 nativeStartGenerate(
                     nativeHandle,
@@ -270,7 +287,7 @@ internal object EngineOwner {
                 enqueue(NativeEvent("done", args.requestId, code = "NATIVE_GENERATION_FAILED", message = "The native engine failed during generation."))
             } finally {
                 activeRequest = null
-                if (nativeHandle != 0L) state = "ready"
+                if (generation == lifecycleGeneration && nativeHandle != 0L) state = "ready"
             }
         }
     }
@@ -315,10 +332,13 @@ internal object EngineOwner {
 
     fun unload() {
         if (nativeHandle == 0L) return
+        val generation = lifecycleGeneration + 1
+        lifecycleGeneration = generation
         activeRequest?.let { nativeCancel(nativeHandle, it) }
         state = "unloading"
         scope.launch {
             nativeUnload(nativeHandle)
+            if (generation != lifecycleGeneration) return@launch
             loadedPath = null
             loadedBytes = null
             loadedContextSize = null
