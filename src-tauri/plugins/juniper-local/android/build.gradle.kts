@@ -3,6 +3,13 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val nativeAbis = (project.findProperty("juniperNativeAbis") as String?)
+    ?.split(",")
+    ?.map(String::trim)
+    ?.filter(String::isNotEmpty)
+    ?.takeIf { it.isNotEmpty() }
+    ?: listOf("arm64-v8a", "x86_64")
+
 android {
     namespace = "com.cinqic.juniper.local_runtime"
     compileSdk = 35
@@ -12,7 +19,7 @@ android {
         minSdk = 24
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += nativeAbis
         }
         consumerProguardFiles("consumer-rules.pro")
         externalNativeBuild {

@@ -62,7 +62,7 @@ jobs:
         working-directory: src-tauri/gen/android
         run: >-
           bash ./gradlew :juniper-local-runtime:assembleDebugAndroidTest
-          --no-daemon --stacktrace
+          -PjuniperNativeAbis=x86_64 --no-daemon --stacktrace
       - name: Download and verify the pinned test model
         run: |
           mkdir -p "$RUNNER_TEMP/juniper-model"
