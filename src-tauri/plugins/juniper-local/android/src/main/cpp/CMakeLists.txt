@@ -97,4 +97,4 @@ target_include_directories(juniper_llama_jni PRIVATE
     "${llama_cpp_SOURCE_DIR}/ggml/include"
     "${llama_cpp_SOURCE_DIR}/ggml/src")
 target_link_options(juniper_llama_jni PRIVATE -Wl,--gc-sections)
-target_link_libraries(juniper_llama_jni PRIVATE llama llama-common android log)
+target_link_libraries(juniper_llama_jni PRIVATE llama llama-common ggml-base android log)

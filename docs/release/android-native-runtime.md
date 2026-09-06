@@ -35,8 +35,10 @@ object.
 ## Runtime contract
 
 After the user downloads a model, Rust verifies its catalog SHA-256 and keeps
-it in app-private managed storage. The first chat loads that verified path into
-the process; subsequent prompts reuse the warm native context. Generation is
+it in app-private managed storage. The native bridge parses and validates GGUF
+version, tensor, architecture, and tokenizer metadata before it attempts the
+full model load. The first chat then loads that verified path into the process;
+subsequent prompts reuse the warm native context. Generation is
 serialized, streamed as `ChatStreamEvent` deltas, cancellable during prefill
 and decode, and unloaded on background lifecycle transitions. Rotation and
 reload therefore cannot leave a stale native request running.
@@ -52,9 +54,9 @@ low-memory callbacks cancel generation and unload native allocations.
 ## Qualification status
 
 CI covers clean native compilation, APK contents, ABI alignment, emulator
-install/lifecycle smoke, and the existing Rust/frontend validation suite. A
-physical ARM64 device still needs to be connected for the final independent
-qualification of: offline first prompt after download, warm second prompt,
-cancellation, rotation/background/reload, and low-memory recovery. Until that
-run is recorded, the release must not be labelled `READY FOR INDEPENDENT
-REVIEW`.
+install/lifecycle smoke, and the existing Rust/frontend validation suite. The
+real inference smoke and final qualification remain device gates: a physical
+ARM64 device still needs to be connected for the offline first prompt with a
+real streamed delta, warm second prompt, cancellation during prefill/decode,
+rotation/background/reload, and low-memory recovery. Until that run is
+recorded, the release must not be labelled `READY FOR INDEPENDENT REVIEW`.

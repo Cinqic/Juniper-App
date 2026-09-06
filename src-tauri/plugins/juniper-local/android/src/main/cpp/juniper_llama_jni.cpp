@@ -11,6 +11,7 @@
 #include "chat.h"
 #include "common.h"
 #include "ggml-backend.h"
+#include "gguf.h"
 #include "json.h"
 #include "sampling.h"
 #include "llama.h"
@@ -52,6 +53,33 @@ struct Engine {
         return static_cast<Engine *>(data)->cancelled.load();
     }
 
+    static bool validate_gguf_metadata(const std::string & path) {
+        gguf_init_params metadata_params{};
+        metadata_params.no_alloc = true;
+        metadata_params.ctx = nullptr;
+        gguf_context * metadata = gguf_init_from_file(path.c_str(), metadata_params);
+        if (metadata == nullptr) return false;
+
+        const int64_t architecture_key = gguf_find_key(metadata, "general.architecture");
+        const int64_t tokenizer_model_key = gguf_find_key(metadata, "tokenizer.ggml.model");
+        const int64_t tokenizer_tokens_key = gguf_find_key(metadata, "tokenizer.ggml.tokens");
+        const bool valid =
+            gguf_get_version(metadata) == GGUF_VERSION &&
+            gguf_get_n_tensors(metadata) > 0 &&
+            architecture_key >= 0 &&
+            gguf_get_kv_type(metadata, architecture_key) == GGUF_TYPE_STRING &&
+            gguf_get_val_str(metadata, architecture_key) != nullptr &&
+            gguf_get_val_str(metadata, architecture_key)[0] != '\0' &&
+            tokenizer_model_key >= 0 &&
+            gguf_get_kv_type(metadata, tokenizer_model_key) == GGUF_TYPE_STRING &&
+            gguf_get_val_str(metadata, tokenizer_model_key) != nullptr &&
+            tokenizer_tokens_key >= 0 &&
+            gguf_get_kv_type(metadata, tokenizer_tokens_key) == GGUF_TYPE_ARRAY &&
+            gguf_get_arr_n(metadata, tokenizer_tokens_key) > 0;
+        gguf_free(metadata);
+        return valid;
+    }
+
     int load(const std::string & path, uint32_t requested_context, int32_t threads) {
         std::lock_guard lock(mutex);
         unload_locked();
@@ -59,6 +87,7 @@ struct Engine {
         const auto status = std::filesystem::status(path, fs_error);
         if (fs_error || !std::filesystem::is_regular_file(status)) return 1;
         if (std::filesystem::file_size(path, fs_error) > kMaximumModelBytes) return 2;
+        if (!validate_gguf_metadata(path)) return 3;
 
         llama_model_params model_params = llama_model_default_params();
         model = llama_model_load_from_file(path.c_str(), model_params);

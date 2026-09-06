@@ -272,7 +272,12 @@ private object EngineOwner {
         if (nativeHandle != 0L && activeRequest == requestId) nativeCancel(nativeHandle, requestId)
     }
 
-    fun poll(requestId: String): NativeEvent? = events[requestId]?.poll()
+    fun poll(requestId: String): NativeEvent? {
+        val queue = events[requestId] ?: return null
+        val event = queue.poll()
+        if (event?.kind == "done") events.remove(requestId, queue)
+        return event
+    }
 
     fun status(): JSObject = JSObject().apply {
         val memory = memorySnapshot()
@@ -304,6 +309,7 @@ private object EngineOwner {
     fun unload() {
         if (nativeHandle == 0L) return
         activeRequest?.let { nativeCancel(nativeHandle, it) }
+        state = "unloading"
         scope.launch {
             nativeUnload(nativeHandle)
             loadedPath = null

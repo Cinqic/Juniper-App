@@ -28,6 +28,9 @@ does not promote emulator or static evidence to a device result.
   `e9d93825529e9300c0a9334255d25d3a8c496b4fde913ffd317052dc88510774`.
 - Frontend validation passed: 43 tests, formatting, lint, typecheck, schema,
   version, branding, Cargo fmt, and Clippy with `-D warnings`.
+- The native load path now parses GGUF metadata with the pinned `ggml-base`
+  parser before the full llama model load, rejecting unsupported version,
+  tensor, architecture, or tokenizer metadata as `LOCAL_GGUF_REJECTED`.
 
 The Tauri CLI's final Windows staging step could not create its Rust-library
 symlinks because Developer Mode / `SeCreateSymbolicLinkPrivilege` is disabled
@@ -40,11 +43,15 @@ The Linux CI job uses the normal symlink-capable Tauri path.
 Run on a physical ARM64 Android device with networking disabled after the
 verified model is present in app-private managed storage:
 
-1. First prompt: native load, real streamed tokens, and no network/localhost
+1. Android inference smoke: install the audited APK, stage the hash-verified
+   SmolLM2 135M Q4_K_M model, send a prompt, observe a valid streamed delta,
+   and verify exactly one terminal event; repeat with cancellation and
+   unload/reload.
+2. First prompt: native load, real streamed tokens, and no network/localhost
    dependency.
-2. Warm second prompt without a second model load.
-3. Cancellation during prefill and decode.
-4. Rotation, background/foreground, reload, and low-memory recovery without a
+3. Warm second prompt without a second model load.
+4. Cancellation during prefill and decode.
+5. Rotation, background/foreground, reload, and low-memory recovery without a
    stale request or leaked native engine.
 
 The local x86_64 emulator could not start because this host has no Android
