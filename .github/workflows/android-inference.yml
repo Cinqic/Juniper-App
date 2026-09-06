@@ -37,8 +37,8 @@ jobs:
             'ndk;29.0.13113456' 'cmake;3.31.6' 'emulator' \
             'system-images;android-30;google_apis;x86_64'
       - run: pnpm install --frozen-lockfile
-      - name: Initialize Android from a clean checkout
-        run: pnpm tauri android init --ci
+      - name: Initialize and build Tauri Android project
+        run: pnpm tauri android build --debug --apk --ci --target x86_64
       - name: Build instrumentation APK and native libraries
         working-directory: src-tauri/gen/android
         run: >-
