@@ -86,9 +86,12 @@ cleanup() {
 trap cleanup EXIT
 
 for install_attempt in 1 2 3; do
-  if adb_timeout 180 install -r "$test_apk" >/dev/null; then
+  install_output=""
+  if install_output=$(adb_timeout 300 install --no-streaming -r "$test_apk" 2>&1); then
+    printf '%s\n' "$install_output"
     break
   fi
+  printf '%s\n' "$install_output" >&2
   if (( install_attempt == 3 )); then
     echo "Android instrumentation APK install failed after ${install_attempt} attempts" >&2
     exit 1
@@ -96,7 +99,14 @@ for install_attempt in 1 2 3; do
   echo "Android instrumentation APK install attempt ${install_attempt} failed; reconnecting ADB" >&2
   adb_timeout 30 reconnect offline >/dev/null 2>&1 || true
   adb_timeout 30 reconnect device >/dev/null 2>&1 || true
-  sleep 10
+  for readiness_attempt in {1..12}; do
+    if [[ "$(adb_timeout 10 get-state 2>/dev/null || true)" == "device" ]] \
+      && timeout --foreground 20s "${adb[@]}" shell cmd package list packages 2>/dev/null \
+      | grep -Fxq 'package:android'; then
+      break
+    fi
+    sleep 5
+  done
 done
 adb_timeout 300 push "$model_path" "/data/local/tmp/$remote_name" >/dev/null
 adb_timeout 10 shell run-as "$target_package" cp "/data/local/tmp/$remote_name" "files/$remote_name"
