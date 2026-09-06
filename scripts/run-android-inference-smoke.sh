@@ -109,6 +109,7 @@ for install_attempt in 1 2 3; do
   done
 done
 adb_timeout 300 push "$model_path" "/data/local/tmp/$remote_name" >/dev/null
+adb_timeout 10 shell run-as "$target_package" mkdir -p files
 adb_timeout 10 shell run-as "$target_package" cp "/data/local/tmp/$remote_name" "files/$remote_name"
 adb_timeout 10 shell run-as "$target_package" chmod 600 "files/$remote_name"
 
