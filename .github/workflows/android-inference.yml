@@ -55,6 +55,8 @@ jobs:
           env \
             "CC_x86_64-linux-android=$ndk_llvm/x86_64-linux-android24-clang" \
             "CXX_x86_64-linux-android=$ndk_llvm/x86_64-linux-android24-clang++" \
+            "AR_x86_64-linux-android=$ndk_llvm/llvm-ar" \
+            "RANLIB_x86_64-linux-android=$ndk_llvm/llvm-ranlib" \
             cargo check --locked --manifest-path src-tauri/Cargo.toml --target x86_64-linux-android
       - name: Build instrumentation APK and native libraries
         working-directory: src-tauri/gen/android
