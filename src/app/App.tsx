@@ -567,6 +567,7 @@ function ConversationView({
 }) {
   const [draft, setDraft] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
+  const [generationPhase, setGenerationPhase] = useState('Juniper is thinking')
   const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null)
   const [lastContext, setLastContext] = useState<ContextSummary | null>(null)
   const controller = useRef<AbortController | null>(null)
@@ -635,6 +636,9 @@ function ConversationView({
     const requestAttachments = attachments
     setAttachments([])
     setIsGenerating(true)
+    setGenerationPhase(
+      activeProvider.kind === 'juniper-local' ? 'Loading verified model…' : 'Juniper is thinking',
+    )
     controller.current = new AbortController()
     updateConversation((chat) => ({
       ...chat,
@@ -672,6 +676,7 @@ function ConversationView({
           attachments: requestAttachments,
         },
         (streamEvent) => {
+          if (streamEvent.delta || streamEvent.reasoning) setGenerationPhase('Juniper is thinking')
           if (streamEvent.permissionRequest) {
             setPermissionRequest(streamEvent.permissionRequest)
           }
@@ -754,6 +759,7 @@ function ConversationView({
       }))
     } finally {
       setIsGenerating(false)
+      setGenerationPhase('Juniper is thinking')
       setPermissionRequest(null)
       controller.current = null
       requestId.current = null
@@ -958,7 +964,7 @@ function ConversationView({
         {isGenerating && (
           <div className="typing-line">
             <span className="typing-dot" />
-            <span>Juniper is thinking</span>
+            <span>{generationPhase}</span>
           </div>
         )}
       </div>

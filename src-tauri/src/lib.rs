@@ -1,9 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "android")]
+mod android_runtime;
 mod catalog;
 mod commands;
 mod device;
 mod domain;
+#[cfg(not(target_os = "android"))]
 mod local_runtime;
 mod managed_models;
 mod providers;
@@ -18,6 +21,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(juniper_local_runtime::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;

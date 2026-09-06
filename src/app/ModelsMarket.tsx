@@ -131,7 +131,9 @@ export function ModelsMarket({
         ),
       }
     })
-    setMessage(`${entry.displayName} is ready for chat.`)
+    setMessage(
+      `${entry.displayName} is downloaded and verified. The native engine loads when first used.`,
+    )
   }
 
   async function download(entry: CatalogModel) {
@@ -218,6 +220,10 @@ export function ModelsMarket({
           <strong>
             {device ? `${device.architecture} · ${device.logicalCores} cores` : 'Detecting…'}
           </strong>
+        </div>
+        <div>
+          <span>Native engine</span>
+          <strong>{nativeRuntimeLabel(device)}</strong>
         </div>
       </div>
       <div className="market-controls">
@@ -335,6 +341,11 @@ function ModelMarketCard({
             : 'The local file failed verification and will be replaced.'}
         </p>
       )}
+      {installed && (
+        <p className="market-status" role="status">
+          Downloaded and verified · native engine loads on first chat
+        </p>
+      )}
       {downloading && (
         <div className="market-progress" role="status">
           <div>
@@ -419,6 +430,23 @@ function memoryLabel(device: DeviceCapabilities | null): string {
   if (!device?.availableMemoryBytes && !device?.totalMemoryBytes) return 'Unknown'
   const available = device.availableMemoryBytes ?? device.totalMemoryBytes
   return `${formatBytes(available)} available`
+}
+
+function nativeRuntimeLabel(device: DeviceCapabilities | null): string {
+  if (!device) return 'Detecting…'
+  if (device.nativeRuntimeAvailable === false) return 'Unavailable for this ABI'
+  if (device.nativeLowMemory) return 'Waiting for more memory'
+  switch (device.nativeRuntimeState) {
+    case 'ready':
+      return 'Ready'
+    case 'loading':
+    case 'busy':
+      return 'Loading or generating'
+    case 'failed':
+      return 'Needs attention'
+    default:
+      return 'Loads on first chat'
+  }
 }
 
 function fitLabel(value: ModelRecommendation['fit']): string {

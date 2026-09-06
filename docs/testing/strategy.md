@@ -52,7 +52,12 @@ for reference. It is not evidence of a real-model result.
 Linux builds, `.deb`/`.AppImage` bundling, and a launch smoke are reproducible
 locally and in CI. Windows MSI bundling plus an install, launch, and uninstall
 smoke run on a Windows runner. A signed Android APK is built and put through an
-emulator install, launch, rotation, relaunch, and uninstall smoke.
+emulator install, launch, rotation, relaunch, and uninstall smoke. The package
+audit also requires the two supported native ABIs, rejects server-runtime
+libraries, and checks 16 KiB `PT_LOAD` alignment for every shared object.
+Release artifacts include the unstripped native symbol archive. The emulator
+cannot prove real offline token generation, so a physical ARM64 run remains a
+separate release qualification gate.
 
 Native unit tests are excluded from the Windows release job only: the Tauri mock
 runtime fails to load there, aborting the test binary at startup with

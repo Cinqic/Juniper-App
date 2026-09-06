@@ -205,9 +205,37 @@ pub fn model_catalog() -> Result<Vec<catalog::CatalogEntry>, String> {
 }
 
 #[tauri::command]
-pub fn device_capabilities(app: AppHandle) -> Result<device::DeviceCapabilities, String> {
+pub async fn device_capabilities(app: AppHandle) -> Result<device::DeviceCapabilities, String> {
     let directory = managed_models::models_directory(&app)?;
-    Ok(device::collect(&directory))
+    #[cfg(target_os = "android")]
+    let mut capabilities = device::collect(&directory);
+    #[cfg(not(target_os = "android"))]
+    let capabilities = device::collect(&directory);
+    #[cfg(target_os = "android")]
+    {
+        let native = crate::android_runtime::runtime_status(&app).await?;
+        capabilities.native_runtime_available = native.runtime_available;
+        capabilities.native_runtime_state = Some(native.state);
+        let native_abi = native.abi.clone();
+        capabilities.native_abi = native_abi.clone();
+        capabilities.native_total_memory_bytes = native.total_memory_bytes;
+        capabilities.native_available_memory_bytes = native.available_memory_bytes;
+        capabilities.native_low_memory = native.low_memory;
+        if let Some(value) = native.total_memory_bytes {
+            capabilities.total_memory_bytes = Some(value);
+        }
+        if let Some(value) = native.available_memory_bytes {
+            capabilities.available_memory_bytes = Some(value);
+        }
+        if let Some(value) = native.memory_pressure {
+            capabilities.memory_pressure = value;
+        }
+        if let Some(value) = native_abi {
+            capabilities.architecture = value.clone();
+            capabilities.cpu_architecture = value;
+        }
+    }
+    Ok(capabilities)
 }
 
 #[tauri::command]
@@ -596,10 +624,18 @@ pub async fn chat_stream(
     let cancellation = begin_cancellable_operation(state.inner(), &request.request_id)?;
     if request.provider.kind == "juniper-local" {
         let event_app = app.clone();
-        if let Err(error) =
+        #[cfg(target_os = "android")]
+        let result =
+            crate::android_runtime::stream_chat(app, request.clone(), cancellation, state.inner())
+                .await;
+        #[cfg(not(target_os = "android"))]
+        let result =
             crate::local_runtime::stream_chat(app, request.clone(), cancellation, state.inner())
-                .await
-        {
+                .await;
+        if let Err(error) = result {
+            #[cfg(target_os = "android")]
+            crate::android_runtime::emit_error(&event_app, &request.request_id, &error);
+            #[cfg(not(target_os = "android"))]
             crate::local_runtime::emit_error(&event_app, &request.request_id, &error);
             record_runtime_log(
                 state.inner(),

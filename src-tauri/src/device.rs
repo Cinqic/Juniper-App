@@ -18,6 +18,12 @@ pub struct DeviceCapabilities {
     pub model_directory: String,
     pub gpu: String,
     pub acceleration: String,
+    pub native_runtime_available: Option<bool>,
+    pub native_runtime_state: Option<String>,
+    pub native_abi: Option<String>,
+    pub native_total_memory_bytes: Option<u64>,
+    pub native_available_memory_bytes: Option<u64>,
+    pub native_low_memory: Option<bool>,
 }
 
 pub fn collect(model_directory: &Path) -> DeviceCapabilities {
@@ -49,6 +55,12 @@ pub fn collect(model_directory: &Path) -> DeviceCapabilities {
         model_directory: model_directory.to_string_lossy().into_owned(),
         gpu: "unknown".into(),
         acceleration: "unknown".into(),
+        native_runtime_available: None,
+        native_runtime_state: None,
+        native_abi: None,
+        native_total_memory_bytes: None,
+        native_available_memory_bytes: None,
+        native_low_memory: None,
     }
 }
 

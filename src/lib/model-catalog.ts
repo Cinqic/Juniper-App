@@ -59,6 +59,10 @@ export interface DeviceCapabilities {
   modelDirectory: string
   gpu: 'available' | 'not-detected' | 'unknown'
   acceleration: 'available' | 'not-detected' | 'unknown'
+  nativeRuntimeAvailable?: boolean
+  nativeRuntimeState?: 'unavailable' | 'loading' | 'ready' | 'busy' | 'failed'
+  nativeAbi?: string
+  nativeLowMemory?: boolean
 }
 
 export type ModelFit = 'excellent' | 'good' | 'possible' | 'not-recommended' | 'unknown'

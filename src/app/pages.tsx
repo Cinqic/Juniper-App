@@ -924,7 +924,9 @@ export function ModelsPage({
                     <span>
                       {model.compatibilityStatus === 'not-chat-compatible'
                         ? 'Not chat-compatible'
-                        : 'Chat status unknown or ready'}
+                        : model.catalogId
+                          ? 'Downloaded · native engine loads on first chat'
+                          : 'Chat status unknown or ready'}
                     </span>
                   </div>
                   {data.settings.developerMode && (
@@ -1075,6 +1077,7 @@ function modelStatusLabel(model: ModelProfile): string {
   if (model.status === 'not-found') return 'Unavailable'
   if (model.compatibilityStatus === 'not-chat-compatible') return 'Not chat-compatible'
   if (model.compatibilityStatus === 'unknown') return 'Compatibility unknown'
+  if (model.catalogId) return 'Downloaded · loads on first chat'
   return 'Ready'
 }
 

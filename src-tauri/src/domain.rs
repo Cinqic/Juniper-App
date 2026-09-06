@@ -66,7 +66,7 @@ pub struct ModelCapabilities {
     pub thinking: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,

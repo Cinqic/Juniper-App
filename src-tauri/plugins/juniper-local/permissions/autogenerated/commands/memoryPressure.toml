@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-memoryPressure"
+description = "Enables the memoryPressure command without any pre-configured scope."
+commands.allow = ["memoryPressure"]
+
+[[permission]]
+identifier = "deny-memoryPressure"
+description = "Denies the memoryPressure command without any pre-configured scope."
+commands.deny = ["memoryPressure"]

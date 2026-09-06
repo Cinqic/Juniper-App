@@ -84,7 +84,7 @@ printf 'Creating clean Android emulator AVD: %s\n' "$avd_name"
 printf 'no\n' | "$avdmanager_bin" create avd \
   --force \
   --name "$avd_name" \
-  --package 'system-images;android-30;google_apis;x86' \
+  --package 'system-images;android-30;google_apis;x86_64' \
   --device 'pixel_2' \
   > "$evidence_dir/avd-create.txt" 2>&1
 
