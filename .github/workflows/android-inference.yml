@@ -82,10 +82,23 @@ jobs:
             -gpu swiftshader_indirect > "$RUNNER_TEMP/emulator.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/emulator.pid"
           # Hosted runners without KVM can take several minutes to boot this
-          # software-emulated image; the evidence log measured ~6.6 minutes.
-          timeout --foreground 10m adb wait-for-device
-          timeout --foreground 12m bash -c \
-            'until [[ "$(adb shell getprop sys.boot_completed | tr -d "\r")" == "1" ]]; do sleep 2; done'
+          # software-emulated image. Poll each ADB operation independently so
+          # transient offline states do not abort the whole startup step.
+          boot_deadline=$((SECONDS + 12 * 60))
+          while (( SECONDS < boot_deadline )); do
+            if timeout --foreground 10s adb get-state 2>/dev/null | grep -Fxq device; then
+              boot_completed=$(timeout --foreground 10s adb shell getprop sys.boot_completed \
+                2>/dev/null | tr -d '\r' || true)
+              if [[ "$boot_completed" == "1" ]]; then
+                break
+              fi
+            fi
+            sleep 2
+          done
+          if (( SECONDS >= boot_deadline )); then
+            echo 'Android emulator did not become ready before the startup deadline.' >&2
+            exit 124
+          fi
           timeout --foreground 10s adb shell settings put global window_animation_scale 0
           timeout --foreground 10s adb shell settings put global transition_animation_scale 0
           timeout --foreground 10s adb shell settings put global animator_duration_scale 0
