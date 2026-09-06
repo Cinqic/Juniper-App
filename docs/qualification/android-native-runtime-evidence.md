@@ -23,9 +23,12 @@ does not promote emulator or static evidence to a device result.
 - Rust Android-target checks passed for `aarch64-linux-android` and
   `x86_64-linux-android`.
 - The end-to-end release APK assembled from those Rust libraries has SHA-256
-  `f1c3921081680a13a1e20b38a2d4f792a946d42b7bd5c7a40c4149ef046e4c6c`, and
+  `43444ce6a5a1eddd32081ca3a60f0e286d11ca1fb7e9a82b74fe06aa10ab20ff`, and
   the unstripped native symbol archive has SHA-256
-  `a75c31fbb14931d216274fd165dd3768461c232ab364da4e9d98888f715f3094`.
+  `e10b99b31636d989e73ca52107d8b49c40669079209cb95f83db4bbfa81593bd`.
+- The shared native contract harness covers parameter bounds, UTF-8 buffering,
+  cancellation state, and idempotent move-only resource cleanup; Linux CI runs
+  it with `scripts/run-native-contract-tests.sh`.
 - Frontend validation passed: 43 tests, formatting, lint, typecheck, schema,
   version, branding, Cargo fmt, and Clippy with `-D warnings`.
 - The native load path now parses GGUF metadata with the pinned `ggml-base`
