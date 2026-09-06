@@ -40,9 +40,9 @@ jobs:
       - name: Initialize Android from a clean checkout
         run: pnpm tauri android init --ci
       - name: Build instrumentation APK and native libraries
+        working-directory: src-tauri/gen/android
         run: >-
-          bash ./src-tauri/gen/android/gradlew
-          :juniper-local-runtime:assembleDebugAndroidTest
+          bash ./gradlew :juniper-local-runtime:assembleDebugAndroidTest
           --no-daemon --stacktrace
       - name: Download and verify the pinned test model
         run: |
