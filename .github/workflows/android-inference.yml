@@ -83,7 +83,7 @@ jobs:
           echo $! > "$RUNNER_TEMP/emulator.pid"
           # Hosted runners without KVM can take several minutes to boot this
           # software-emulated image; the evidence log measured ~6.6 minutes.
-          timeout --foreground 8m adb wait-for-device
+          timeout --foreground 10m adb wait-for-device
           timeout --foreground 12m bash -c \
             'until [[ "$(adb shell getprop sys.boot_completed | tr -d "\r")" == "1" ]]; do sleep 2; done'
           timeout --foreground 10s adb shell settings put global window_animation_scale 0
