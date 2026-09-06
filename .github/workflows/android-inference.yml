@@ -41,7 +41,7 @@ jobs:
         run: pnpm tauri android init --ci
       - name: Build instrumentation APK and native libraries
         run: >-
-          ./src-tauri/gen/android/gradlew
+          bash ./src-tauri/gen/android/gradlew
           :juniper-local-runtime:assembleDebugAndroidTest
           --no-daemon --stacktrace
       - name: Download and verify the pinned test model
@@ -61,12 +61,12 @@ jobs:
             -no-boot-anim -no-snapshot -wipe-data -no-accel \
             -gpu swiftshader_indirect > "$RUNNER_TEMP/emulator.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/emulator.pid"
-          adb wait-for-device
+          timeout --foreground 60s adb wait-for-device
           timeout --foreground 12m bash -c \
             'until [[ "$(adb shell getprop sys.boot_completed | tr -d "\r")" == "1" ]]; do sleep 2; done'
-          adb shell settings put global window_animation_scale 0
-          adb shell settings put global transition_animation_scale 0
-          adb shell settings put global animator_duration_scale 0
+          timeout --foreground 10s adb shell settings put global window_animation_scale 0
+          timeout --foreground 10s adb shell settings put global transition_animation_scale 0
+          timeout --foreground 10s adb shell settings put global animator_duration_scale 0
       - name: Run native inference instrumentation smoke
         env:
           JUNIPER_TEST_MODEL_SHA256: ${{ env.MODEL_SHA256 }}
@@ -78,8 +78,8 @@ jobs:
       - name: Capture emulator evidence
         if: always()
         run: |
-          adb logcat -d -t 2000 > "$RUNNER_TEMP/juniper-logcat.txt" 2>&1 || true
-          adb shell dumpsys meminfo com.cinqic.juniper.local_runtime.test \
+          timeout --foreground 10s adb logcat -d -t 2000 > "$RUNNER_TEMP/juniper-logcat.txt" 2>&1 || true
+          timeout --foreground 10s adb shell dumpsys meminfo com.cinqic.juniper.local_runtime.test \
             > "$RUNNER_TEMP/juniper-meminfo.txt" 2>&1 || true
       - name: Upload inference evidence
         if: always()
@@ -94,7 +94,7 @@ jobs:
       - name: Stop emulator
         if: always()
         run: |
-          adb emu kill >/dev/null 2>&1 || true
+          timeout --foreground 10s adb emu kill >/dev/null 2>&1 || true
           if [[ -f "$RUNNER_TEMP/emulator.pid" ]]; then
             kill "$(cat "$RUNNER_TEMP/emulator.pid")" 2>/dev/null || true
           fi

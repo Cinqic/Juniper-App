@@ -23,6 +23,11 @@ remote_path="/data/data/$target_package/files/$remote_name"
 adb_args=()
 if [[ -n "$serial" ]]; then adb_args+=( -s "$serial" ); fi
 adb=(adb "${adb_args[@]}")
+adb_timeout() {
+  local seconds=$1
+  shift
+  timeout --foreground "${seconds}s" "${adb[@]}" "$@"
+}
 
 [[ -f "$model_path" ]] || { echo "Model not found: $model_path" >&2; exit 1; }
 [[ -f "$test_apk" ]] || { echo "Test APK not found: $test_apk" >&2; exit 1; }
@@ -32,22 +37,22 @@ expected_sha256=$(printf '%s' "$expected_sha256" | tr '[:upper:]' '[:lower:]')
   echo "Model SHA-256 mismatch: expected $expected_sha256, got $actual_sha256" >&2
   exit 1
 }
-timeout --foreground 60s "${adb[@]}" wait-for-device
-[[ "$("${adb[@]}" get-state)" == "device" ]] || {
+adb_timeout 60 wait-for-device
+[[ "$(adb_timeout 10 get-state)" == "device" ]] || {
   echo "ADB device is not ready" >&2
   exit 1
 }
 
 cleanup() {
-  "${adb[@]}" shell run-as "$target_package" rm -f "files/$remote_name" 2>/dev/null || true
-  "${adb[@]}" shell rm -f "/data/local/tmp/$remote_name" 2>/dev/null || true
+  adb_timeout 10 shell run-as "$target_package" rm -f "files/$remote_name" 2>/dev/null || true
+  adb_timeout 10 shell rm -f "/data/local/tmp/$remote_name" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-"${adb[@]}" install -r "$test_apk" >/dev/null
-"${adb[@]}" push "$model_path" "/data/local/tmp/$remote_name" >/dev/null
-"${adb[@]}" shell run-as "$target_package" cp "/data/local/tmp/$remote_name" "files/$remote_name"
-"${adb[@]}" shell run-as "$target_package" chmod 600 "files/$remote_name"
+adb_timeout 120 install -r "$test_apk" >/dev/null
+adb_timeout 300 push "$model_path" "/data/local/tmp/$remote_name" >/dev/null
+adb_timeout 10 shell run-as "$target_package" cp "/data/local/tmp/$remote_name" "files/$remote_name"
+adb_timeout 10 shell run-as "$target_package" chmod 600 "files/$remote_name"
 
 model_size=$(stat -c '%s' "$model_path")
 echo "Running Android native inference smoke: sha256=$actual_sha256 bytes=$model_size serial=${serial:-default}"
