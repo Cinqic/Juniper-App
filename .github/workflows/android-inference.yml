@@ -46,7 +46,12 @@ jobs:
       - name: Generate Tauri Android Gradle wiring
         env:
           TAURI_ANDROID_PROJECT_PATH: ${{ github.workspace }}/src-tauri/gen/android
-        run: cargo check --locked --manifest-path src-tauri/Cargo.toml --target x86_64-linux-android
+          WRY_ANDROID_PACKAGE: com.cinqic.juniper
+          WRY_ANDROID_LIBRARY: juniper_lib
+          WRY_ANDROID_KOTLIN_FILES_OUT_DIR: ${{ github.workspace }}/src-tauri/gen/android/app/src/main/kotlin/com/cinqic/juniper
+        run: |
+          mkdir -p "$WRY_ANDROID_KOTLIN_FILES_OUT_DIR"
+          cargo check --locked --manifest-path src-tauri/Cargo.toml --target x86_64-linux-android
       - name: Build instrumentation APK and native libraries
         working-directory: src-tauri/gen/android
         run: >-
