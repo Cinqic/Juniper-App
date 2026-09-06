@@ -48,14 +48,24 @@ while (( SECONDS < package_deadline )); do
   boot_completed=$(adb_timeout 10 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
   package_marker=$(timeout --foreground 20s "${adb[@]}" shell cmd package list packages 2>/dev/null \
     | grep -Fx 'package:android' || true)
-  package_system_ready=$(timeout --foreground 20s "${adb[@]}" shell dumpsys package 2>/dev/null \
-    | grep -E -m1 'mSystemReady[=:[:space:]]+true|isSystemReady[=:[:space:]]+true' || true)
   settings_value=$(adb_timeout 10 shell settings get global airplane_mode_on 2>/dev/null \
     | tr -d '\r' || true)
+  package_install_probe=$(timeout --foreground 30s "${adb[@]}" shell cmd package \
+    install-create -S 1 --user 0 2>/dev/null | tr -d '\r' || true)
+  package_install_ready=""
+  if [[ "$package_install_probe" == *"Success: created install session"* ]]; then
+    package_install_ready=1
+    package_install_session=$(printf '%s' "$package_install_probe" | sed -nE 's/.*\[([0-9]+)\].*/\1/p')
+    if [[ -n "$package_install_session" ]]; then
+      adb_timeout 10 shell cmd package install-abandon "$package_install_session" \
+        >/dev/null 2>&1 || true
+    fi
+  fi
   # Package and settings queries can succeed while system_server is still
-  # completing PackageManager initialization. Probe its system-ready marker as
-  # the final install gate to avoid a transient freeStorage null dereference.
-  if [[ "$boot_completed" == "1" && -n "$package_marker" && -n "$package_system_ready" \
+  # completing PackageInstaller initialization. A create/abandon probe
+  # exercises the same freeStorage path as the APK install without retaining a
+  # session or changing the emulator state.
+  if [[ "$boot_completed" == "1" && -n "$package_marker" && -n "$package_install_ready" \
     && "$settings_value" =~ ^(0|1)$ ]]; then
     break
   fi
@@ -64,7 +74,7 @@ done
 if (( SECONDS >= package_deadline )); then
   echo "Android system providers are not ready" >&2
   adb_timeout 10 shell getprop sys.boot_completed >&2 || true
-  timeout --foreground 20s "${adb[@]}" shell dumpsys package >&2 || true
+  timeout --foreground 30s "${adb[@]}" shell cmd package install-create -S 1 --user 0 >&2 || true
   adb_timeout 10 shell settings get global airplane_mode_on >&2 || true
   exit 1
 fi
