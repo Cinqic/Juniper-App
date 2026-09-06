@@ -82,16 +82,12 @@ jobs:
             -gpu swiftshader_indirect > "$RUNNER_TEMP/emulator.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/emulator.pid"
           # Hosted runners without KVM can take several minutes to boot this
-          # software-emulated image. Poll each ADB operation independently so
-          # transient offline states do not abort the whole startup step.
-          boot_deadline=$((SECONDS + 12 * 60))
+          # software-emulated image. Wait for the emulator's own boot marker
+          # before probing ADB, whose transport can lag behind boot completion.
+          boot_deadline=$((SECONDS + 15 * 60))
           while (( SECONDS < boot_deadline )); do
-            if timeout --foreground 10s adb get-state 2>/dev/null | grep -Fxq device; then
-              boot_completed=$(timeout --foreground 10s adb shell getprop sys.boot_completed \
-                2>/dev/null | tr -d '\r' || true)
-              if [[ "$boot_completed" == "1" ]]; then
-                break
-              fi
+            if grep -Fq 'Boot completed' "$RUNNER_TEMP/emulator.log" 2>/dev/null; then
+              break
             fi
             sleep 2
           done
@@ -99,9 +95,20 @@ jobs:
             echo 'Android emulator did not become ready before the startup deadline.' >&2
             exit 124
           fi
-          timeout --foreground 10s adb shell settings put global window_animation_scale 0
-          timeout --foreground 10s adb shell settings put global transition_animation_scale 0
-          timeout --foreground 10s adb shell settings put global animator_duration_scale 0
+          adb_deadline=$((SECONDS + 3 * 60))
+          while (( SECONDS < adb_deadline )); do
+            if timeout --foreground 10s adb get-state 2>/dev/null | grep -Fxq device; then
+              break
+            fi
+            sleep 2
+          done
+          if (( SECONDS >= adb_deadline )); then
+            echo 'Android emulator booted but ADB did not expose a device.' >&2
+            exit 124
+          fi
+          timeout --foreground 30s adb shell settings put global window_animation_scale 0 || true
+          timeout --foreground 30s adb shell settings put global transition_animation_scale 0 || true
+          timeout --foreground 30s adb shell settings put global animator_duration_scale 0 || true
       - name: Run native inference instrumentation smoke
         env:
           JUNIPER_TEST_MODEL_SHA256: ${{ env.MODEL_SHA256 }}
