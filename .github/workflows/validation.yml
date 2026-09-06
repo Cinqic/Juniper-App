@@ -101,7 +101,7 @@ jobs:
       - name: Initialize Android from a clean checkout
         run: pnpm tauri android init --ci
       - name: Compile debug APK without signing material
-        run: pnpm tauri android build --debug --apk --ci
+        run: pnpm tauri android build --debug --apk --ci --target aarch64 x86_64
       - name: Require exactly one debug APK
         run: |
           mapfile -d '' apks < <(find src-tauri/gen/android -type f -name '*debug*.apk' -print0)

@@ -243,7 +243,7 @@ jobs:
           chmod 600 src-tauri/gen/android/keystore.properties
           node scripts/configure-android-signing.mjs
       - name: Build signed release APK from locked source
-        run: pnpm tauri android build --apk --ci -- --locked
+        run: pnpm tauri android build --apk --ci --target aarch64 x86_64 -- --locked
       - name: Collect and verify exactly one signed APK
         env:
           VERSION: ${{ needs.contract.outputs.version }}
