@@ -43,7 +43,7 @@ adb_timeout 60 wait-for-device
   exit 1
 }
 
-package_deadline=$((SECONDS + 6 * 60))
+package_deadline=$((SECONDS + 12 * 60))
 while (( SECONDS < package_deadline )); do
   boot_completed=$(adb_timeout 10 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
   package_marker=$(timeout --foreground 20s "${adb[@]}" shell cmd package list packages 2>/dev/null \

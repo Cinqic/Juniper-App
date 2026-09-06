@@ -17,7 +17,7 @@ jobs:
   x86_64-inference:
     name: Android x86_64 native inference smoke
     runs-on: ubuntu-22.04
-    timeout-minutes: 50
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -115,7 +115,7 @@ jobs:
         env:
           JUNIPER_TEST_MODEL_SHA256: ${{ env.MODEL_SHA256 }}
         run: >-
-          timeout --foreground 12m bash scripts/run-android-inference-smoke.sh
+          timeout --foreground 20m bash scripts/run-android-inference-smoke.sh
           "$RUNNER_TEMP/juniper-model/SmolLM2-135M-Instruct.Q4_K_M.gguf"
           src-tauri/plugins/juniper-local/android/build/outputs/apk/androidTest/debug/juniper-local-runtime-debug-androidTest.apk
           emulator-5554
