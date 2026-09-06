@@ -106,6 +106,8 @@ jobs:
             echo 'Android emulator booted but ADB did not expose a device.' >&2
             exit 124
           fi
+          timeout --foreground 30s adb shell input keyevent 82 || true
+          timeout --foreground 30s adb shell wm dismiss-keyguard || true
           timeout --foreground 30s adb shell settings put global window_animation_scale 0 || true
           timeout --foreground 30s adb shell settings put global transition_animation_scale 0 || true
           timeout --foreground 30s adb shell settings put global animator_duration_scale 0 || true

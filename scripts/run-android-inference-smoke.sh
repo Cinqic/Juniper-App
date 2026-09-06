@@ -43,13 +43,38 @@ adb_timeout 60 wait-for-device
   exit 1
 }
 
+package_deadline=$((SECONDS + 4 * 60))
+while (( SECONDS < package_deadline )); do
+  if timeout --foreground 20s "${adb[@]}" shell cmd package list packages 2>/dev/null \
+    | grep -Fxq 'package:android'; then
+    break
+  fi
+  sleep 2
+done
+if (( SECONDS >= package_deadline )); then
+  echo "Android package manager is not ready" >&2
+  exit 1
+fi
+
 cleanup() {
   adb_timeout 10 shell run-as "$target_package" rm -f "files/$remote_name" 2>/dev/null || true
   adb_timeout 10 shell rm -f "/data/local/tmp/$remote_name" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-adb_timeout 120 install -r "$test_apk" >/dev/null
+for install_attempt in 1 2 3; do
+  if adb_timeout 180 install -r "$test_apk" >/dev/null; then
+    break
+  fi
+  if (( install_attempt == 3 )); then
+    echo "Android instrumentation APK install failed after ${install_attempt} attempts" >&2
+    exit 1
+  fi
+  echo "Android instrumentation APK install attempt ${install_attempt} failed; reconnecting ADB" >&2
+  adb_timeout 30 reconnect offline >/dev/null 2>&1 || true
+  adb_timeout 30 reconnect device >/dev/null 2>&1 || true
+  sleep 10
+done
 adb_timeout 300 push "$model_path" "/data/local/tmp/$remote_name" >/dev/null
 adb_timeout 10 shell run-as "$target_package" cp "/data/local/tmp/$remote_name" "files/$remote_name"
 adb_timeout 10 shell run-as "$target_package" chmod 600 "files/$remote_name"
