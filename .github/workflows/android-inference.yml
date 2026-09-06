@@ -1,0 +1,99 @@
+name: android-inference
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '11.19.0'
+  MODEL_URL: https://huggingface.co/QuantFactory/SmolLM2-135M-Instruct-GGUF/resolve/476854d00ede130660aba430d15f9347ad2e7d0e/SmolLM2-135M-Instruct.Q4_K_M.gguf
+  MODEL_SHA256: 8030f04528538d47bda434f6f0bdf3952c40a58123e4d5e755332f23731a8684
+
+jobs:
+  x86_64-inference:
+    name: Android x86_64 native inference smoke
+    runs-on: ubuntu-22.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+      - name: Install Android build and emulator packages
+        run: |
+          sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' \
+            'ndk;29.0.13113456' 'cmake;3.31.6' 'emulator' \
+            'system-images;android-30;google_apis;x86_64'
+      - run: pnpm install --frozen-lockfile
+      - name: Initialize Android from a clean checkout
+        run: pnpm tauri android init --ci
+      - name: Build instrumentation APK and native libraries
+        run: >-
+          ./src-tauri/gen/android/gradlew
+          :juniper-local-runtime:assembleDebugAndroidTest
+          --no-daemon --stacktrace
+      - name: Download and verify the pinned test model
+        run: |
+          mkdir -p "$RUNNER_TEMP/juniper-model"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "$MODEL_URL" -o "$RUNNER_TEMP/juniper-model/SmolLM2-135M-Instruct.Q4_K_M.gguf"
+          printf '%s  %s\n' "$MODEL_SHA256" \
+            "$RUNNER_TEMP/juniper-model/SmolLM2-135M-Instruct.Q4_K_M.gguf" | sha256sum -c -
+      - name: Create and boot clean x86_64 emulator
+        run: |
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/android-avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name juniper-inference \
+            --package 'system-images;android-30;google_apis;x86_64' --device pixel_2
+          emulator -avd juniper-inference -port 5554 -no-window -no-audio \
+            -no-boot-anim -no-snapshot -wipe-data -no-accel \
+            -gpu swiftshader_indirect > "$RUNNER_TEMP/emulator.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/emulator.pid"
+          adb wait-for-device
+          timeout --foreground 12m bash -c \
+            'until [[ "$(adb shell getprop sys.boot_completed | tr -d "\r")" == "1" ]]; do sleep 2; done'
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+      - name: Run native inference instrumentation smoke
+        env:
+          JUNIPER_TEST_MODEL_SHA256: ${{ env.MODEL_SHA256 }}
+        run: >-
+          timeout --foreground 12m bash scripts/run-android-inference-smoke.sh
+          "$RUNNER_TEMP/juniper-model/SmolLM2-135M-Instruct.Q4_K_M.gguf"
+          src-tauri/plugins/juniper-local/android/build/outputs/apk/androidTest/debug/juniper-local-runtime-debug-androidTest.apk
+          emulator-5554
+      - name: Capture emulator evidence
+        if: always()
+        run: |
+          adb logcat -d -t 2000 > "$RUNNER_TEMP/juniper-logcat.txt" 2>&1 || true
+          adb shell dumpsys meminfo com.cinqic.juniper.local_runtime.test \
+            > "$RUNNER_TEMP/juniper-meminfo.txt" 2>&1 || true
+      - name: Upload inference evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-inference-evidence
+          path: |
+            ${{ runner.temp }}/emulator.log
+            ${{ runner.temp }}/juniper-logcat.txt
+            ${{ runner.temp }}/juniper-meminfo.txt
+          if-no-files-found: warn
+      - name: Stop emulator
+        if: always()
+        run: |
+          adb emu kill >/dev/null 2>&1 || true
+          if [[ -f "$RUNNER_TEMP/emulator.pid" ]]; then
+            kill "$(cat "$RUNNER_TEMP/emulator.pid")" 2>/dev/null || true
+          fi

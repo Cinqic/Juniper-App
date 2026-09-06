@@ -1,7 +1,6 @@
 #include <jni.h>
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <mutex>
@@ -13,6 +12,7 @@
 #include "ggml-backend.h"
 #include "gguf.h"
 #include "json.h"
+#include "juniper_llama_contract.h"
 #include "sampling.h"
 #include "llama.h"
 
@@ -21,13 +21,12 @@ namespace {
 constexpr uint32_t kDefaultContext = 2048;
 constexpr uint32_t kBatchSize = 256;
 constexpr uint64_t kMaximumModelBytes = 2ULL * 1024ULL * 1024ULL * 1024ULL;
-
 struct Engine {
     llama_model * model = nullptr;
     llama_context * context = nullptr;
     common_chat_templates_ptr templates;
     common_sampler * sampler = nullptr;
-    std::atomic_bool cancelled = false;
+    juniper_local::CancellationToken cancelled;
     std::mutex mutex;
 
     ~Engine() { unload_locked(); }
@@ -138,25 +137,6 @@ struct Engine {
         return 0;
     }
 
-    static size_t valid_utf8_prefix(const std::string & value) {
-        size_t index = 0;
-        while (index < value.size()) {
-            const unsigned char first = static_cast<unsigned char>(value[index]);
-            size_t width = 0;
-            if ((first & 0x80) == 0) width = 1;
-            else if ((first & 0xe0) == 0xc0) width = 2;
-            else if ((first & 0xf0) == 0xe0) width = 3;
-            else if ((first & 0xf8) == 0xf0) width = 4;
-            else return index;
-            if (index + width > value.size()) return index;
-            for (size_t offset = 1; offset < width; ++offset) {
-                if ((static_cast<unsigned char>(value[index + offset]) & 0xc0) != 0x80) return index;
-            }
-            index += width;
-        }
-        return index;
-    }
-
     static jstring java_string(JNIEnv * env, const std::string & value) {
         return env->NewStringUTF(value.c_str());
     }
@@ -229,6 +209,14 @@ struct Engine {
         };
 
         try {
+            if (messages_json.size() > juniper_local::kMaximumMessagesJsonBytes) {
+                finish("PROMPT_TOO_LARGE", "The chat messages exceed the native input limit.");
+                return 0;
+            }
+            if (!juniper_local::is_valid_generation_parameters(max_output, temperature, 2)) {
+                finish("INVALID_PARAMETERS", "The generation parameters are outside the native limits.");
+                return 0;
+            }
             common_params_sampling sampling;
             sampling.temp = std::clamp(temperature, 0.0f, 2.0f);
             sampling.top_p = 0.95f;
@@ -306,8 +294,13 @@ struct Engine {
                 }
                 ++output_tokens;
                 utf8_buffer += common_token_to_piece(context, token, false);
-                const size_t valid = valid_utf8_prefix(utf8_buffer);
+                const size_t valid = juniper_local::valid_utf8_prefix(utf8_buffer);
                 if (valid > 0) {
+                    if (cancelled.load()) {
+                        llama_batch_free(batch);
+                        finish("REQUEST_CANCELLED", "Generation cancelled.");
+                        return 0;
+                    }
                     if (!emit_delta(env, callbacks, request_id, utf8_buffer.substr(0, valid))) {
                         cancelled.store(true);
                         llama_batch_free(batch);
@@ -317,7 +310,13 @@ struct Engine {
                     utf8_buffer.erase(0, valid);
                 }
             }
-            if (!utf8_buffer.empty() && valid_utf8_prefix(utf8_buffer) == utf8_buffer.size()) {
+            if (!utf8_buffer.empty() &&
+                juniper_local::valid_utf8_prefix(utf8_buffer) == utf8_buffer.size()) {
+                if (cancelled.load()) {
+                    llama_batch_free(batch);
+                    finish("REQUEST_CANCELLED", "Generation cancelled.");
+                    return 0;
+                }
                 emit_delta(env, callbacks, request_id, utf8_buffer);
             }
             llama_batch_free(batch);

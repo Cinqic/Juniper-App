@@ -32,6 +32,30 @@ The audit requires exactly the two supported ABIs, the JNI bridge in each ABI,
 no server runtime library, and 16 KiB alignment for every packaged shared
 object.
 
+The host-side native contract checks cover parameter bounds, UTF-8 prefix
+buffering, cancellation state, and move-only resource cleanup:
+
+```bash
+bash scripts/run-native-contract-tests.sh
+```
+
+The native inference instrumentation smoke uses the pinned SmolLM2 135M
+Q4_K_M file without checking the model into the repository:
+
+```bash
+./gradlew :juniper-local-runtime:assembleDebugAndroidTest
+bash scripts/run-android-inference-smoke.sh \
+  path/to/SmolLM2-135M-Instruct.Q4_K_M.gguf \
+  src-tauri/plugins/juniper-local/android/build/outputs/apk/androidTest/debug/juniper-local-runtime-debug-androidTest.apk
+```
+
+The script verifies the catalog SHA-256, pushes the model into test-app-private
+storage, and runs the instrumentation test for metadata validation, real
+streamed text, terminal-event uniqueness, cancellation, unload, and reload.
+The manually dispatched `android-inference` workflow runs the same smoke on a
+clean x86_64 emulator and uploads logcat and memory evidence; it is separate
+from the pull-request build and lifecycle gates.
+
 ## Runtime contract
 
 After the user downloads a model, Rust verifies its catalog SHA-256 and keeps
@@ -55,7 +79,8 @@ low-memory callbacks cancel generation and unload native allocations.
 
 CI covers clean native compilation, APK contents, ABI alignment, emulator
 install/lifecycle smoke, and the existing Rust/frontend validation suite. The
-real inference smoke and final qualification remain device gates: a physical
+instrumentation smoke is available as a bounded device/manual gate; the real
+inference smoke and final qualification remain device gates: a physical
 ARM64 device still needs to be connected for the offline first prompt with a
 real streamed delta, warm second prompt, cancellation during prefill/decode,
 rotation/background/reload, and low-memory recovery. Until that run is

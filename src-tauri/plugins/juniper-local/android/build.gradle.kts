@@ -10,6 +10,7 @@ android {
 
     defaultConfig {
         minSdk = 24
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
@@ -45,4 +46,7 @@ android {
 dependencies {
     implementation(project(":tauri-android"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    androidTestImplementation("androidx.test.ext:junit:1.1.4")
+    androidTestImplementation("androidx.test:runner:1.4.0")
+    androidTestImplementation("junit:junit:4.13.2")
 }

@@ -48,7 +48,7 @@ class EventArgs {
     lateinit var requestId: String
 }
 
-private data class NativeEvent(
+internal data class NativeEvent(
     val kind: String,
     val requestId: String,
     val text: String? = null,
@@ -94,7 +94,7 @@ private class NativeCallbacks(
  * atomic native flag so it can interrupt both prompt evaluation and decoding.
  */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-private object EngineOwner {
+internal object EngineOwner {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
     private val events = ConcurrentHashMap<String, ConcurrentLinkedQueue<NativeEvent>>()
     private var nativeHandle: Long = 0
@@ -177,6 +177,13 @@ private object EngineOwner {
         val model = File(args.path)
         if (!model.isFile || !model.canRead()) {
             return "LOCAL_MODEL_NOT_READY" to "The verified managed model is not readable from app-private storage."
+        }
+        val dataRoot = appContext?.dataDir?.canonicalFile
+        val canonicalModel = runCatching { model.canonicalFile }.getOrNull()
+        if (dataRoot == null || canonicalModel == null ||
+            !canonicalModel.path.startsWith(dataRoot.path + File.separator)
+        ) {
+            return "LOCAL_MODEL_NOT_READY" to "The managed model must remain in app-private storage."
         }
         val memory = memorySnapshot() ?: return null
         val modelBytes = max(args.expectedModelBytes, model.length())
