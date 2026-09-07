@@ -18,6 +18,13 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class JuniperLocalRuntimeInferenceTest {
+    private companion object {
+        // The hosted x86_64 emulator runs without hardware acceleration. Keep
+        // this device smoke bounded while still exercising the runtime's
+        // minimum supported context and real streaming/cancellation paths.
+        const val smokeContextSize = 512
+    }
+
     private data class GenerationResult(
         val deltas: String,
         val terminal: NativeEvent,
@@ -37,20 +44,20 @@ class JuniperLocalRuntimeInferenceTest {
         try {
             val loadArgs = LoadModelArgs().apply {
                 path = model.absolutePath
-                contextSize = 2048
+                contextSize = smokeContextSize
                 threads = 2
                 expectedModelBytes = model.length()
             }
             EngineOwner.load(loadArgs)
             awaitState("ready")
 
-            val cold = generate("Say hello in one short sentence.", maxOutput = 64)
+            val cold = generate("Say hello in one short sentence.", maxOutput = 16)
             assertTrue("cold generation emitted no text", cold.deltas.isNotBlank())
             assertTrue("cold generation was not successful", cold.terminal.code.isNullOrEmpty())
 
             val warm = generate(
                 "Reply with exactly one short word: ready.",
-                maxOutput = 16,
+                maxOutput = 8,
             )
             assertTrue("warm generation emitted no text", warm.deltas.isNotBlank())
             assertTrue("warm generation was not successful", warm.terminal.code.isNullOrEmpty())
@@ -62,7 +69,7 @@ class JuniperLocalRuntimeInferenceTest {
             awaitState("unavailable")
             EngineOwner.load(loadArgs)
             awaitState("ready")
-            val reloaded = generate("Say reload.", maxOutput = 16)
+            val reloaded = generate("Say reload.", maxOutput = 8)
             assertTrue("reloaded generation emitted no text", reloaded.deltas.isNotBlank())
             assertTrue("reloaded generation was not successful", reloaded.terminal.code.isNullOrEmpty())
         } finally {
@@ -73,7 +80,7 @@ class JuniperLocalRuntimeInferenceTest {
     private fun cancelDuringPrefill() {
         val requestId = "prefill-" + UUID.randomUUID()
         val longPrompt = buildString {
-            repeat(700) { append(" prefill") }
+            repeat(120) { append(" prefill") }
         }
         EngineOwner.start(
             GenerateArgs().apply {
@@ -102,7 +109,7 @@ class JuniperLocalRuntimeInferenceTest {
             GenerateArgs().apply {
                 this.requestId = requestId
                 messagesJson = messages("Write a long but harmless list of short words.")
-                maxOutput = 512
+                maxOutput = 128
                 temperature = 0.3
             },
         )
