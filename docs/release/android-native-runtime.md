@@ -54,7 +54,12 @@ storage, and runs the instrumentation test for metadata validation, real
 streamed text, terminal-event uniqueness, cancellation, unload, and reload.
 The manually dispatched `android-inference` workflow runs the same smoke on a
 clean x86_64 emulator and uploads logcat and memory evidence; it is separate
-from the pull-request build and lifecycle gates.
+from the pull-request build and lifecycle gates. The latest hosted attempt
+([run 34106689907](https://github.com/Cinqic/Juniper-App/actions/runs/34106689907))
+passed compilation and model verification but stopped at the bounded boot
+deadline because the runner lacked `/dev/kvm` permission; the emulator did not
+reach instrumentation. This x86_64 lane is diagnostic only when hardware
+acceleration is unavailable.
 
 ## Runtime contract
 
@@ -79,9 +84,11 @@ low-memory callbacks cancel generation and unload native allocations.
 
 CI covers clean native compilation, APK contents, ABI alignment, emulator
 install/lifecycle smoke, and the existing Rust/frontend validation suite. The
-instrumentation smoke is available as a bounded device/manual gate; the real
-inference smoke and final qualification remain device gates: a physical
-ARM64 device still needs to be connected for the offline first prompt with a
-real streamed delta, warm second prompt, cancellation during prefill/decode,
-rotation/background/reload, and low-memory recovery. Until that run is
-recorded, the release must not be labelled `READY FOR INDEPENDENT REVIEW`.
+instrumentation smoke is available as a bounded device/manual gate; hosted
+x86_64 execution remains non-qualifying when hardware acceleration is absent.
+The real inference smoke and final qualification remain device gates: a
+physical ARM64 device still needs to be connected for the offline first prompt
+with a real streamed delta, warm second prompt, cancellation during
+prefill/decode, rotation/background/reload, and low-memory recovery. Until
+that run is recorded, the release must not be labelled `READY FOR INDEPENDENT
+REVIEW`.

@@ -34,9 +34,21 @@ does not promote emulator or static evidence to a device result.
 - The native load path now parses GGUF metadata with the pinned `ggml-base`
   parser before the full llama model load, rejecting unsupported version,
   tensor, architecture, or tokenizer metadata as `LOCAL_GGUF_REJECTED`.
-- The Android instrumentation inference smoke now exists as a reproducible
-  test command; it has not run here because no ADB device or hardware-
+- The Android instrumentation inference smoke exists as a reproducible test
+  command. It has not run locally because no ADB device or hardware-
   accelerated emulator is available.
+- A hosted manual x86_64 workflow at commit `c1452033284ab36b86dee1ae01309bcc54a25a31`
+  passed the clean Android compile, native/package audits, and pinned model
+  hash verification ([run 34106689907](https://github.com/Cinqic/Juniper-App/actions/runs/34106689907)).
+  Its emulator boot was intentionally bounded and failed before
+  instrumentation because the runner had no permission to use `/dev/kvm`; the
+  retained emulator log reports that x86_64 emulation requires hardware
+  acceleration. Therefore this run produced no inference result.
+- A preceding hosted x86_64 diagnostic run ([34100159543](https://github.com/Cinqic/Juniper-App/actions/runs/34100159543))
+  confirmed that the packaged CPU backend was loaded and registered before
+  model load (`registrations=1` and `cpu=present` in logcat), but software
+  emulation did not finish the bounded generation smoke. This is diagnostic
+  evidence for the backend load path, not a qualification pass.
 
 The Tauri CLI's final Windows staging step could not create its Rust-library
 symlinks because Developer Mode / `SeCreateSymbolicLinkPrivilege` is disabled
@@ -61,5 +73,7 @@ verified model is present in app-private managed storage:
    stale request or leaked native engine.
 
 The local x86_64 emulator could not start because this host has no Android
-Emulator Hypervisor Driver; x86_64 emulation requires hardware acceleration.
-That is an environment limitation, not evidence that the runtime passed.
+Emulator Hypervisor Driver. The hosted manual run likewise lacked `/dev/kvm`
+permission. x86_64 emulation therefore remains a bounded, non-qualifying
+diagnostic lane; neither result is evidence that the runtime passed on a
+supported ARM64 device.
