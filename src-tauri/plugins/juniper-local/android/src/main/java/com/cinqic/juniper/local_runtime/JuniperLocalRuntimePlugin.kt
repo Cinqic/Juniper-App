@@ -151,9 +151,31 @@ internal object EngineOwner {
     }
 
     private fun loadPackagedCpuBackend() {
-        when (abi) {
-            "arm64-v8a" -> System.loadLibrary("ggml-cpu-android_armv8.0_1")
-            "x86_64" -> System.loadLibrary("ggml-cpu-x64")
+        val candidates = when (abi) {
+            "arm64-v8a" -> listOf(
+                "ggml-cpu-android_armv9.2_2",
+                "ggml-cpu-android_armv9.2_1",
+                "ggml-cpu-android_armv9.0_1",
+                "ggml-cpu-android_armv8.6_1",
+                "ggml-cpu-android_armv8.2_2",
+                "ggml-cpu-android_armv8.2_1",
+                "ggml-cpu-android_armv8.0_1",
+            )
+            "x86_64" -> listOf("ggml-cpu-x64")
+            else -> emptyList()
+        }
+        var loaded = false
+        for (candidate in candidates) {
+            try {
+                System.loadLibrary(candidate)
+                loaded = true
+            } catch (_: UnsatisfiedLinkError) {
+                // The C++ loader will apply the same ordered list and report
+                // a clear runtime failure if no packaged backend is usable.
+            }
+        }
+        if (!loaded && candidates.isNotEmpty()) {
+            throw UnsatisfiedLinkError("No packaged CPU backend could be loaded")
         }
     }
 

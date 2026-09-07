@@ -52,6 +52,13 @@ describe('model catalog', () => {
     const recommendation = recommendModel(MODEL_CATALOG.models[3]!, device)
     expect(recommendation.storageSafe).toBe(true)
     expect(recommendation.reasons.length).toBeGreaterThan(1)
+    expect(
+      recommendModel(MODEL_CATALOG.models[3]!, {
+        ...device,
+        architecture: 'arm64-v8a',
+        cpuArchitecture: 'arm64-v8a',
+      }).storageSafe,
+    ).toBe(true)
     const lowStorage = { ...device, freeStorageBytes: 100 * 1024 ** 2 }
     const unsafe = recommendModel(MODEL_CATALOG.models[0]!, lowStorage)
     expect(unsafe.storageSafe).toBe(false)

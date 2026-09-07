@@ -180,6 +180,17 @@ function selectedVariant(model: CatalogModel): ModelVariant {
   return [...model.variants].sort((left, right) => left.sizeBytes - right.sizeBytes)[0]!
 }
 
+function normalizedArchitecture(architecture: string): string {
+  switch (architecture) {
+    case 'arm64-v8a':
+      return 'arm64'
+    case 'armeabi-v7a':
+      return 'armv7'
+    default:
+      return architecture
+  }
+}
+
 export function recommendModel(
   model: CatalogModel,
   device: DeviceCapabilities,
@@ -189,9 +200,11 @@ export function recommendModel(
   const reasons: string[] = []
   let score = 45
   let storageSafe = true
+  const catalogArchitecture = normalizedArchitecture(device.architecture)
 
   if (
     !model.supportedArchitectures.includes(device.architecture) &&
+    !model.supportedArchitectures.includes(catalogArchitecture) &&
     device.architecture !== 'unknown'
   ) {
     return {

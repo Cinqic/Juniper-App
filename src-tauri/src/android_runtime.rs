@@ -177,7 +177,7 @@ async fn wait_until_ready<R: Runtime>(
             LoadModelArgs {
                 path: model_path.clone(),
                 context_size: CONTEXT_SIZE,
-                threads: 2,
+                threads: 4,
                 expected_model_bytes: std::fs::metadata(&model_path)
                     .map_err(|_| "LOCAL_MODEL_NOT_READY: The managed model is unavailable.")?
                     .len(),

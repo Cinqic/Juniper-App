@@ -20,9 +20,8 @@
 namespace {
 
 void android_llama_log(enum ggml_log_level level, const char * text, void *) {
-    if (level >= GGML_LOG_LEVEL_ERROR && text != nullptr) {
-        __android_log_write(ANDROID_LOG_ERROR, "JuniperNative", text);
-    }
+    if (text == nullptr || ((text[0] == '.' || text[0] == '\n') && text[1] == '\0')) return;
+    if (level >= GGML_LOG_LEVEL_ERROR) __android_log_write(ANDROID_LOG_ERROR, "JuniperNative", text);
 }
 
 constexpr uint32_t kDefaultContext = 2048;
@@ -89,6 +88,7 @@ struct Engine {
     int load(const std::string & path, uint32_t requested_context, int32_t threads) {
         std::lock_guard lock(mutex);
         unload_locked();
+        const auto load_started = std::chrono::steady_clock::now();
         __android_log_print(
             ANDROID_LOG_INFO,
             "JuniperNative",
@@ -107,6 +107,12 @@ struct Engine {
             __android_log_write(ANDROID_LOG_ERROR, "JuniperNative", "native load failed inside llama_model_load_from_file");
             return 9;
         }
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            "JuniperNative",
+            "native model weights loaded: elapsed_ms=%lld",
+            static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - load_started).count()));
         if (!llama_model_has_decoder(model)) {
             unload_locked();
             return 4;
@@ -150,6 +156,14 @@ struct Engine {
             return 8;
         }
         cancelled.store(false);
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            "JuniperNative",
+            "native load ready: elapsed_ms=%lld context=%u threads=%d",
+            static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - load_started).count()),
+            context_size,
+            context_params.n_threads);
         return 0;
     }
 
@@ -221,6 +235,14 @@ struct Engine {
         auto finish = [&](const char * code, const char * message) {
             const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - started).count();
+            __android_log_print(
+                code == nullptr ? ANDROID_LOG_INFO : ANDROID_LOG_WARN,
+                "JuniperNative",
+                "native generation terminal: code=%s input_tokens=%d output_tokens=%d elapsed_ms=%lld",
+                code == nullptr ? "ok" : code,
+                input_tokens,
+                output_tokens,
+                static_cast<long long>(duration));
             emit_terminal(env, callbacks, request_id, code, message, input_tokens, output_tokens, duration);
         };
 
@@ -263,6 +285,13 @@ struct Engine {
                 return 0;
             }
 
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                "JuniperNative",
+                "native prompt prepared: input_tokens=%d output_limit=%d",
+                input_tokens,
+                output_limit);
+
             llama_memory_clear(llama_get_memory(context), true);
             common_sampler_reset(sampler);
             llama_batch batch = llama_batch_init(kBatchSize, 0, 1);
@@ -270,6 +299,7 @@ struct Engine {
                 finish("NATIVE_MEMORY_ERROR", "The native engine could not allocate a decode batch.");
                 return 0;
             }
+            const auto prefill_started = std::chrono::steady_clock::now();
             for (size_t offset = 0; offset < tokens.size(); offset += kBatchSize) {
                 if (cancelled.load()) {
                     llama_batch_free(batch);
@@ -288,6 +318,13 @@ struct Engine {
                     return 0;
                 }
             }
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                "JuniperNative",
+                "native prefill complete: input_tokens=%d elapsed_ms=%lld",
+                input_tokens,
+                static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - prefill_started).count()));
 
             const llama_vocab * vocab = llama_model_get_vocab(model);
             std::string utf8_buffer;
@@ -302,7 +339,17 @@ struct Engine {
                 if (llama_vocab_is_eog(vocab, token)) break;
                 common_batch_clear(batch);
                 common_batch_add(batch, token, static_cast<llama_pos>(tokens.size() + index), {0}, true);
+                const auto first_decode_started = std::chrono::steady_clock::now();
                 const int result = llama_decode(context, batch);
+                if (index == 0) {
+                    __android_log_print(
+                        ANDROID_LOG_INFO,
+                        "JuniperNative",
+                        "native first decode complete: result=%d elapsed_ms=%lld",
+                        result,
+                        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - first_decode_started).count()));
+                }
                 if (result != 0) {
                     llama_batch_free(batch);
                     finish(cancelled.load() ? "REQUEST_CANCELLED" : "DECODE_FAILED", cancelled.load() ? "Generation cancelled." : "The model failed during decoding.");
@@ -347,41 +394,58 @@ struct Engine {
 std::once_flag backend_once;
 
 void load_android_cpu_backend(const std::string & native_library_dir) {
-    if (ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU) != nullptr || native_library_dir.empty()) {
+    if (native_library_dir.empty()) {
         return;
     }
 
 #if defined(__aarch64__)
-    constexpr const char * cpu_backend_name = "libggml-cpu-android_armv8.0_1.so";
+    // Try the most capable packaged variant first. Each backend exposes a
+    // runtime score and ggml_backend_load rejects variants unsupported by the
+    // current CPU, leaving the baseline as a safe fallback.
+    constexpr const char * cpu_backend_names[] = {
+        "libggml-cpu-android_armv9.2_2.so",
+        "libggml-cpu-android_armv9.2_1.so",
+        "libggml-cpu-android_armv9.0_1.so",
+        "libggml-cpu-android_armv8.6_1.so",
+        "libggml-cpu-android_armv8.2_2.so",
+        "libggml-cpu-android_armv8.2_1.so",
+        "libggml-cpu-android_armv8.0_1.so",
+    };
 #elif defined(__x86_64__)
-    constexpr const char * cpu_backend_name = "libggml-cpu-x64.so";
+    constexpr const char * cpu_backend_names[] = { "libggml-cpu-x64.so" };
 #else
-    constexpr const char * cpu_backend_name = nullptr;
+    constexpr const char * cpu_backend_names[] = {};
 #endif
 
-    if (cpu_backend_name == nullptr) {
+    if (sizeof(cpu_backend_names) == 0) {
         __android_log_write(ANDROID_LOG_ERROR, "JuniperNative", "no packaged Android CPU backend name for this ABI");
         return;
     }
 
     // Android may keep native libraries inside the APK instead of exposing
-    // them as regular files under nativeLibraryDir. The Kotlin owner first
-    // loads this library by name through Android's linker namespace; loading
-    // the same soname here lets ggml resolve its exported registration entry
-    // point without requiring a filesystem path.
-    ggml_backend_reg_t registration = ggml_backend_load(cpu_backend_name);
-    std::string loaded_name = cpu_backend_name;
-    if (registration == nullptr && !native_library_dir.empty()) {
-        const std::string backend_file = native_library_dir + "/" + cpu_backend_name;
-        registration = ggml_backend_load(backend_file.c_str());
-        loaded_name = backend_file;
+    // them as regular files under nativeLibraryDir. Kotlin preloads the
+    // candidates by soname; loading the same soname here lets ggml resolve
+    // the exported registration entry point without a filesystem path.
+    for (const char * cpu_backend_name : cpu_backend_names) {
+        ggml_backend_reg_t registration = ggml_backend_load(cpu_backend_name);
+        if (registration == nullptr && !native_library_dir.empty()) {
+            const std::string backend_file = native_library_dir + "/" + cpu_backend_name;
+            registration = ggml_backend_load(backend_file.c_str());
+        }
+        if (registration != nullptr) {
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                "JuniperNative",
+                "native CPU backend selected: file=%s registrations=%zu",
+                cpu_backend_name,
+                ggml_backend_reg_count());
+            return;
+        }
     }
     __android_log_print(
-        registration == nullptr ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO,
+        ANDROID_LOG_ERROR,
         "JuniperNative",
-        "native direct CPU backend load: file=%s result=%s registrations=%zu",
-        loaded_name.c_str(),
-        registration == nullptr ? "failed" : "loaded",
+        "native CPU backend load failed: registrations=%zu",
         ggml_backend_reg_count());
 }
 
