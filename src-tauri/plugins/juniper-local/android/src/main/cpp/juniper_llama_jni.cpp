@@ -364,13 +364,23 @@ void load_android_cpu_backend(const std::string & native_library_dir) {
         return;
     }
 
-    const std::string backend_file = native_library_dir + "/" + cpu_backend_name;
-    const ggml_backend_reg_t registration = ggml_backend_load(backend_file.c_str());
+    // Android may keep native libraries inside the APK instead of exposing
+    // them as regular files under nativeLibraryDir. The Kotlin owner first
+    // loads this library by name through Android's linker namespace; loading
+    // the same soname here lets ggml resolve its exported registration entry
+    // point without requiring a filesystem path.
+    ggml_backend_reg_t registration = ggml_backend_load(cpu_backend_name);
+    std::string loaded_name = cpu_backend_name;
+    if (registration == nullptr && !native_library_dir.empty()) {
+        const std::string backend_file = native_library_dir + "/" + cpu_backend_name;
+        registration = ggml_backend_load(backend_file.c_str());
+        loaded_name = backend_file;
+    }
     __android_log_print(
         registration == nullptr ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO,
         "JuniperNative",
         "native direct CPU backend load: file=%s result=%s registrations=%zu",
-        backend_file.c_str(),
+        loaded_name.c_str(),
         registration == nullptr ? "failed" : "loaded",
         ggml_backend_reg_count());
 }

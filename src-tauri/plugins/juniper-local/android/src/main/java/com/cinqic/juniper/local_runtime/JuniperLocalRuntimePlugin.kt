@@ -128,6 +128,7 @@ internal object EngineOwner {
         if (nativeHandle != 0L) return
         nativeHandle = try {
             System.loadLibrary("juniper_llama_jni")
+            loadPackagedCpuBackend()
             nativeCreate(nativeLibraryDir)
         } catch (_: UnsatisfiedLinkError) {
             0
@@ -146,6 +147,13 @@ internal object EngineOwner {
                     "The Android native library could not be loaded."
                 },
             )
+        }
+    }
+
+    private fun loadPackagedCpuBackend() {
+        when (abi) {
+            "arm64-v8a" -> System.loadLibrary("ggml-cpu-android_armv8.0_1")
+            "x86_64" -> System.loadLibrary("ggml-cpu-x64")
         }
     }
 
