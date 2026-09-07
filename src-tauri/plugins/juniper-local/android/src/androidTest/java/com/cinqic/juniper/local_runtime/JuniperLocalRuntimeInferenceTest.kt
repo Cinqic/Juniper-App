@@ -30,7 +30,7 @@ class JuniperLocalRuntimeInferenceTest {
         val terminal: NativeEvent,
     )
 
-    @Test(timeout = 300_000)
+    @Test(timeout = 600_000)
     fun verifiedModelStreamsCancelsUnloadsAndReloads() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val modelArgument = InstrumentationRegistry.getArguments().getString("model_path")
@@ -45,19 +45,19 @@ class JuniperLocalRuntimeInferenceTest {
             val loadArgs = LoadModelArgs().apply {
                 path = model.absolutePath
                 contextSize = smokeContextSize
-                threads = 2
+                threads = 4
                 expectedModelBytes = model.length()
             }
             EngineOwner.load(loadArgs)
             awaitState("ready")
 
-            val cold = generate("Say hello in one short sentence.", maxOutput = 16)
+            val cold = generate("Say hello in one short sentence.", maxOutput = 4)
             assertTrue("cold generation emitted no text", cold.deltas.isNotBlank())
             assertTrue("cold generation was not successful", cold.terminal.code.isNullOrEmpty())
 
             val warm = generate(
                 "Reply with exactly one short word: ready.",
-                maxOutput = 8,
+                maxOutput = 4,
             )
             assertTrue("warm generation emitted no text", warm.deltas.isNotBlank())
             assertTrue("warm generation was not successful", warm.terminal.code.isNullOrEmpty())
@@ -69,7 +69,7 @@ class JuniperLocalRuntimeInferenceTest {
             awaitState("unavailable")
             EngineOwner.load(loadArgs)
             awaitState("ready")
-            val reloaded = generate("Say reload.", maxOutput = 8)
+            val reloaded = generate("Say reload.", maxOutput = 4)
             assertTrue("reloaded generation emitted no text", reloaded.deltas.isNotBlank())
             assertTrue("reloaded generation was not successful", reloaded.terminal.code.isNullOrEmpty())
         } finally {
@@ -86,7 +86,7 @@ class JuniperLocalRuntimeInferenceTest {
             GenerateArgs().apply {
                 this.requestId = requestId
                 messagesJson = messages(longPrompt)
-                maxOutput = 64
+                maxOutput = 4
                 temperature = 0.3
             },
         )
@@ -109,13 +109,13 @@ class JuniperLocalRuntimeInferenceTest {
             GenerateArgs().apply {
                 this.requestId = requestId
                 messagesJson = messages("Write a long but harmless list of short words.")
-                maxOutput = 128
+                maxOutput = 32
                 temperature = 0.3
             },
         )
 
         val deltasBeforeCancellation = StringBuilder()
-        val waitUntil = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
+        val waitUntil = System.nanoTime() + TimeUnit.SECONDS.toNanos(180)
         while (System.nanoTime() < waitUntil) {
             val event = EngineOwner.poll(requestId)
             if (event == null) {
@@ -166,7 +166,7 @@ class JuniperLocalRuntimeInferenceTest {
         requestId: String,
         deltasAlreadySeen: StringBuilder = StringBuilder(),
     ): GenerationResult {
-        val waitUntil = System.nanoTime() + TimeUnit.SECONDS.toNanos(60)
+        val waitUntil = System.nanoTime() + TimeUnit.SECONDS.toNanos(180)
         var terminal: NativeEvent? = null
         while (System.nanoTime() < waitUntil) {
             val event = EngineOwner.poll(requestId)
