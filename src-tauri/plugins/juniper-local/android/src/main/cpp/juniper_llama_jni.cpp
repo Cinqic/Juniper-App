@@ -88,6 +88,7 @@ struct Engine {
         if (!validate_gguf_metadata(path)) return 3;
 
         llama_model_params model_params = llama_model_default_params();
+        model_params.n_gpu_layers = 0;
         model = llama_model_load_from_file(path.c_str(), model_params);
         if (model == nullptr) return 9;
         if (!llama_model_has_decoder(model)) {
