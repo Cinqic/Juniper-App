@@ -77,8 +77,10 @@ jobs:
           mkdir -p "$ANDROID_AVD_HOME"
           echo no | avdmanager create avd --force --name juniper-inference \
             --package 'system-images;android-30;default;x86_64' --device pixel_2
+          # Use KVM when the hosted runner exposes it; retain a bounded
+          # software-emulation fallback for runners without virtualization.
           emulator -avd juniper-inference -port 5554 -no-window -no-audio \
-            -no-boot-anim -no-snapshot -wipe-data -no-accel \
+            -no-boot-anim -no-snapshot -wipe-data -accel auto \
             -gpu swiftshader_indirect > "$RUNNER_TEMP/emulator.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/emulator.pid"
           # Hosted runners without KVM can take several minutes to boot this
