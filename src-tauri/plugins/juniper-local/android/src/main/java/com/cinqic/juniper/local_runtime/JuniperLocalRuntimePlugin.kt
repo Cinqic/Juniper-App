@@ -233,6 +233,7 @@ internal object EngineOwner {
                         3, 4, 7 -> "LOCAL_GGUF_REJECTED"
                         5 -> "LOCAL_CONTEXT_UNSUPPORTED"
                         6, 8 -> "LOCAL_MEMORY_UNSAFE"
+                        9 -> "LOCAL_MODEL_LOAD_FAILED"
                         else -> "LOCAL_MODEL_LOAD_FAILED"
                     },
                     when (result) {
@@ -241,6 +242,7 @@ internal object EngineOwner {
                         3, 4, 7 -> "The managed file is not a compatible decoder GGUF model."
                         5 -> "The managed model does not support the required context size."
                         6, 8 -> "The native engine could not allocate safe model memory."
+                        9 -> "The native engine could not load the compatible managed model."
                         else -> "The managed GGUF could not be loaded by the native engine."
                     },
                 )

@@ -89,7 +89,7 @@ struct Engine {
 
         llama_model_params model_params = llama_model_default_params();
         model = llama_model_load_from_file(path.c_str(), model_params);
-        if (model == nullptr) return 3;
+        if (model == nullptr) return 9;
         if (!llama_model_has_decoder(model)) {
             unload_locked();
             return 4;
