@@ -346,6 +346,35 @@ struct Engine {
 
 std::once_flag backend_once;
 
+void load_android_cpu_backend(const std::string & native_library_dir) {
+    if (ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU) != nullptr || native_library_dir.empty()) {
+        return;
+    }
+
+#if defined(__aarch64__)
+    constexpr const char * cpu_backend_name = "libggml-cpu-android_armv8.0_1.so";
+#elif defined(__x86_64__)
+    constexpr const char * cpu_backend_name = "libggml-cpu-x64.so";
+#else
+    constexpr const char * cpu_backend_name = nullptr;
+#endif
+
+    if (cpu_backend_name == nullptr) {
+        __android_log_write(ANDROID_LOG_ERROR, "JuniperNative", "no packaged Android CPU backend name for this ABI");
+        return;
+    }
+
+    const std::string backend_file = native_library_dir + "/" + cpu_backend_name;
+    const ggml_backend_reg_t registration = ggml_backend_load(backend_file.c_str());
+    __android_log_print(
+        registration == nullptr ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO,
+        "JuniperNative",
+        "native direct CPU backend load: file=%s result=%s registrations=%zu",
+        backend_file.c_str(),
+        registration == nullptr ? "failed" : "loaded",
+        ggml_backend_reg_count());
+}
+
 } // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -360,6 +389,7 @@ Java_com_cinqic_juniper_local_1runtime_EngineOwner_nativeCreate(JNIEnv * env, jc
         // from Android's private native-library directory before init.
         // The directory is supplied by the app, never by model/user input.
         if (!backend_path.empty()) ggml_backend_load_all_from_path(backend_path.c_str());
+        load_android_cpu_backend(backend_path);
         llama_backend_init();
     });
     return reinterpret_cast<jlong>(new Engine());
