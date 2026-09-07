@@ -26,12 +26,13 @@ class JuniperLocalRuntimeInferenceTest {
     @Test(timeout = 300_000)
     fun verifiedModelStreamsCancelsUnloadsAndReloads() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val modelPath = InstrumentationRegistry.getArguments().getString("model_path")
+        val modelArgument = InstrumentationRegistry.getArguments().getString("model_path")
             ?: throw AssertionError("model_path instrumentation argument is required")
-        val model = File(modelPath)
-        assertTrue("model is not readable: " + modelPath, model.isFile && model.canRead())
-
         val context = instrumentation.targetContext
+        val argumentFile = File(modelArgument)
+        val model = if (argumentFile.isAbsolute) argumentFile else File(context.filesDir, argumentFile.path)
+        assertTrue("model is not readable: " + model.path, model.isFile && model.canRead())
+
         EngineOwner.initialize(context, context.applicationInfo.nativeLibraryDir)
         try {
             val loadArgs = LoadModelArgs().apply {

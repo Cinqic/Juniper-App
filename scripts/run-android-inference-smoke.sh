@@ -19,7 +19,6 @@ expected_sha256="${JUNIPER_TEST_MODEL_SHA256:-8030f04528538d47bda434f6f0bdf3952c
 target_package="${JUNIPER_TEST_TARGET_PACKAGE:-com.cinqic.juniper.local_runtime.test}"
 test_package="${JUNIPER_TEST_PACKAGE:-$target_package}"
 remote_name="juniper-inference-smoke.gguf"
-remote_path="/data/data/$target_package/files/$remote_name"
 adb_args=()
 if [[ -n "$serial" ]]; then adb_args+=( -s "$serial" ); fi
 adb=(adb "${adb_args[@]}")
@@ -134,7 +133,7 @@ cleanup_instrumentation() {
 }
 trap 'cleanup; cleanup_instrumentation' EXIT
 if ! timeout --foreground 8m "${adb[@]}" shell am instrument -w \
-  -e model_path "$remote_path" \
+  -e model_path "$remote_name" \
   "$test_package/androidx.test.runner.AndroidJUnitRunner" >"$instrumentation_output" 2>&1; then
   cat "$instrumentation_output"
   echo "Android native inference instrumentation command failed" >&2
