@@ -194,9 +194,11 @@ class JuniperLocalRuntimeInferenceTest {
             lastState = EngineOwner.status().optString("state", "unknown")
             if (lastState == expected) return
             if (lastState == "failed") {
+                val status = EngineOwner.status()
                 fail(
                     "native load failed: " +
-                        EngineOwner.status().optString("failureCode", "unknown"),
+                        status.optString("failureCode", "unknown") + ": " +
+                        status.optString("failureMessage", "unknown"),
                 )
             }
             Thread.sleep(50)

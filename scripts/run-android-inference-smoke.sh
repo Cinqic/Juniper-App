@@ -128,6 +128,21 @@ adb_timeout 30 shell run-as "$target_package" chmod 600 "files/$remote_name"
 
 model_size=$(stat -c '%s' "$model_path")
 echo "Running Android native inference smoke: sha256=$actual_sha256 bytes=$model_size serial=${serial:-default}"
-timeout --foreground 8m "${adb[@]}" shell am instrument -w \
+instrumentation_output="${TMPDIR:-/tmp}/juniper-instrumentation-${$}.log"
+cleanup_instrumentation() {
+  rm -f "$instrumentation_output"
+}
+trap 'cleanup; cleanup_instrumentation' EXIT
+if ! timeout --foreground 8m "${adb[@]}" shell am instrument -w \
   -e model_path "$remote_path" \
-  "$test_package/androidx.test.runner.AndroidJUnitRunner"
+  "$test_package/androidx.test.runner.AndroidJUnitRunner" >"$instrumentation_output" 2>&1; then
+  cat "$instrumentation_output"
+  echo "Android native inference instrumentation command failed" >&2
+  exit 1
+fi
+cat "$instrumentation_output"
+if grep -Fq 'FAILURES!!!' "$instrumentation_output" || \
+  grep -Fq 'INSTRUMENTATION_CODE: -1' "$instrumentation_output"; then
+  echo "Android native inference instrumentation reported test failures" >&2
+  exit 1
+fi

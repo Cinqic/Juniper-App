@@ -2,9 +2,9 @@
 
 #include <algorithm>
 #include <chrono>
-#include <filesystem>
 #include <mutex>
 #include <string>
+#include <sys/stat.h>
 #include <vector>
 
 #include "chat.h"
@@ -82,10 +82,9 @@ struct Engine {
     int load(const std::string & path, uint32_t requested_context, int32_t threads) {
         std::lock_guard lock(mutex);
         unload_locked();
-        std::error_code fs_error;
-        const auto status = std::filesystem::status(path, fs_error);
-        if (fs_error || !std::filesystem::is_regular_file(status)) return 1;
-        if (std::filesystem::file_size(path, fs_error) > kMaximumModelBytes) return 2;
+        struct stat model_stat {};
+        if (::stat(path.c_str(), &model_stat) != 0 || !S_ISREG(model_stat.st_mode)) return 1;
+        if (model_stat.st_size < 0 || static_cast<uint64_t>(model_stat.st_size) > kMaximumModelBytes) return 2;
         if (!validate_gguf_metadata(path)) return 3;
 
         llama_model_params model_params = llama_model_default_params();
