@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <android/log.h>
 
 #include <algorithm>
 #include <chrono>
@@ -17,6 +18,12 @@
 #include "llama.h"
 
 namespace {
+
+void android_llama_log(enum ggml_log_level level, const char * text, void *) {
+    if (level >= GGML_LOG_LEVEL_ERROR && text != nullptr) {
+        __android_log_write(ANDROID_LOG_ERROR, "JuniperNative", text);
+    }
+}
 
 constexpr uint32_t kDefaultContext = 2048;
 constexpr uint32_t kBatchSize = 256;
@@ -82,6 +89,12 @@ struct Engine {
     int load(const std::string & path, uint32_t requested_context, int32_t threads) {
         std::lock_guard lock(mutex);
         unload_locked();
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            "JuniperNative",
+            "native load begin: backends=%zu cpu=%s",
+            ggml_backend_dev_count(),
+            ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU) == nullptr ? "missing" : "present");
         struct stat model_stat {};
         if (::stat(path.c_str(), &model_stat) != 0 || !S_ISREG(model_stat.st_mode)) return 1;
         if (model_stat.st_size < 0 || static_cast<uint64_t>(model_stat.st_size) > kMaximumModelBytes) return 2;
@@ -90,7 +103,10 @@ struct Engine {
         llama_model_params model_params = llama_model_default_params();
         model_params.n_gpu_layers = 0;
         model = llama_model_load_from_file(path.c_str(), model_params);
-        if (model == nullptr) return 9;
+        if (model == nullptr) {
+            __android_log_write(ANDROID_LOG_ERROR, "JuniperNative", "native load failed inside llama_model_load_from_file");
+            return 9;
+        }
         if (!llama_model_has_decoder(model)) {
             unload_locked();
             return 4;
@@ -339,7 +355,7 @@ Java_com_cinqic_juniper_local_1runtime_EngineOwner_nativeCreate(JNIEnv * env, jc
     if (path != nullptr) env->ReleaseStringUTFChars(native_library_dir, path);
 
     std::call_once(backend_once, [&backend_path] {
-        llama_log_set([](enum ggml_log_level, const char *, void *) {}, nullptr);
+        llama_log_set(android_llama_log, nullptr);
         // With GGML_BACKEND_DL enabled, load the CPU variant shared objects
         // from Android's private native-library directory before init.
         // The directory is supplied by the app, never by model/user input.
