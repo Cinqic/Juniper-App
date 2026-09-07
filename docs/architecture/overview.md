@@ -35,5 +35,7 @@ connected. In the Tauri shell, provider requests happen behind Rust commands.
 
 Desktop can connect to external local providers, launch the Juniper-owned
 loopback runtime, and use the OS keychain. Mobile shares the UI/domain model and
-catalog management path, but this candidate does not claim a packaged native
-local inference process on Android.
+catalog management path and uses an in-process Kotlin/JNI llama.cpp bridge for
+the managed Android local provider. The Android bridge is implemented for
+`arm64-v8a` (with `x86_64` test packaging), but physical-device qualification
+remains a release gate.

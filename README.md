@@ -8,12 +8,12 @@ Juniper is a local-first AI desktop and Android app for people who want a though
 
 Installers will be published on the [GitHub releases page](https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.28) after the release workflow completes. You do not need Git, a build toolchain, or a GitHub account to use a published desktop artifact.
 
-| Platform          | File                                        | Notes                                                             |
-| ----------------- | ------------------------------------------- | ----------------------------------------------------------------- |
-| Windows 10/11 x64 | `Juniper-0.3.0-rc.28-windows-x86_64.msi`    | The bundled local runtime is Juniper-owned; SmartScreen may warn. |
-| Linux x86_64      | `Juniper-0.3.0-rc.28-linux-x86_64.AppImage` | `chmod +x`, then run. No installation required.                   |
-| Linux x86_64      | `Juniper-0.3.0-rc.28-linux-x86_64.deb`      | `sudo apt install ./Juniper-...deb`                               |
-| Android 7.0+      | `Juniper-0.3.0-rc.28-android-universal.apk` | Signed release APK; enable install from unknown sources.          |
+| Platform          | File                                        | Notes                                                                            |
+| ----------------- | ------------------------------------------- | -------------------------------------------------------------------------------- |
+| Windows 10/11 x64 | `Juniper-0.3.0-rc.28-windows-x86_64.msi`    | The bundled local runtime is Juniper-owned; SmartScreen may warn.                |
+| Linux x86_64      | `Juniper-0.3.0-rc.28-linux-x86_64.AppImage` | `chmod +x`, then run. No installation required.                                  |
+| Linux x86_64      | `Juniper-0.3.0-rc.28-linux-x86_64.deb`      | `sudo apt install ./Juniper-...deb`                                              |
+| Android 7.0+      | `Juniper-0.3.0-rc.28-android-universal.apk` | Signed release APK; native local inference is ARM64-device qualified separately. |
 
 Verify a download against `SHA256SUMS.txt` from the same release:
 
@@ -44,7 +44,7 @@ These are deliberate exclusions in this release, not oversights:
 - **Desktop runtime provenance.** The release workflow builds the pinned `llama.cpp` server from source and places it in the Tauri resource slot. A source checkout needs CMake and uses `scripts/build-llama-runtime.sh` before a local bundle can run the native provider.
 - **No MCP client.** The Settings entry is present and explicitly disabled.
 - **No secure credential storage on Android.** Juniper refuses to store a provider API key there rather than falling back to insecure storage. Use a provider that needs no key, or use the desktop app.
-- **Android local inference packaging is still pending in this candidate.** Android can inspect the catalog and manage app state, but this release does not claim a packaged native local inference process on Android yet.
+- **Android native local inference is implemented but not yet qualified for release.** The candidate packages an in-process llama.cpp bridge for the managed, SHA-256-verified GGUF path on `arm64-v8a` (with `x86_64` reserved for emulator tests). A physical ARM64 device run is still required before independent-review readiness can be claimed.
 - **No iOS or macOS build.**
 - **No telemetry, analytics, crash reporting, or account.**
 
@@ -103,6 +103,7 @@ Suites whose capability gate the model does not meet are reported NOT-APPLICABLE
 
 - The Windows MSI may be unsigned, so Windows SmartScreen can show an unrecognized-publisher warning.
 - `0.3.0-rc.28` is a prerelease. It is published for evaluation and is not yet promoted to a final `0.3.0`.
+- Android native local inference remains a qualification gate: use a supported ARM64 phone for real offline inference; x86_64 emulator evidence is diagnostic when hardware acceleration is unavailable.
 - Android loopback addresses refer to the phone itself. Reaching a computer on your network needs an explicit LAN endpoint.
 - Browser-preview attachments are development-only; the real attachment path is the desktop native picker.
 
