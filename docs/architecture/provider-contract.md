@@ -2,9 +2,11 @@
 
 Providers expose `listModels`, `healthCheck`, `inspectModel`, `pullModel`,
 `deleteModel`, `runningModels`, `capabilityProbe`, and `streamChat` semantics.
-v0.3 implements a Juniper-owned local `llama-server` path plus optional Ollama
-and generic OpenAI-compatible servers. llama.cpp-compatible endpoints are
-supported through the same contract, including a local `/v1` server path.
+v0.3 implements a Juniper-owned local `llama-server` path plus optional Ollama,
+generic OpenAI-compatible and llama.cpp-compatible servers. The Juniper Network
+provider kind is reserved but disabled in this candidate because Device Link
+does not yet have a persistent TLS identity or an end-to-end pairing and
+transport implementation. Private chats and implicit host context remain local.
 
 Capabilities are tri-state: `supported`, `unsupported`, or `unknown`.
 Unknown never enables a tool/thinking/generation control. Runtime metadata is

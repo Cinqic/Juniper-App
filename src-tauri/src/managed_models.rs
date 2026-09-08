@@ -1,4 +1,4 @@
-use crate::catalog::{self, CatalogEntry, CatalogVariant};
+use crate::catalog::{self, CatalogArtifact, CatalogEntry};
 use crate::commands::{AppState, Cancellation};
 use crate::device;
 use futures_util::StreamExt;
@@ -18,6 +18,8 @@ const MAX_DOWNLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 #[serde(rename_all = "camelCase")]
 pub struct ManagedModel {
     pub catalog_id: String,
+    pub artifact_id: String,
+    /// Compatibility field retained in the serialized API for pre-v2 clients.
     pub variant_id: String,
     pub file_name: String,
     pub path: String,
@@ -48,25 +50,30 @@ pub fn list<R: Runtime>(app: &AppHandle<R>) -> Result<Vec<ManagedModel>, String>
 }
 
 fn inspect_entry(directory: &Path, entry: &CatalogEntry) -> Result<Option<ManagedModel>, String> {
-    let variant = entry
-        .variants
+    let artifact = entry
+        .artifacts
         .first()
-        .ok_or_else(|| "The catalog entry has no downloadable variant.".to_owned())?;
-    let path = final_path(directory, variant)?;
-    let partial = partial_path(directory, variant)?;
+        .ok_or_else(|| "The catalog entry has no downloadable artifact.".to_owned())?;
+    let path = final_path(directory, artifact)?;
+    let partial = partial_path(directory, artifact)?;
     if is_symlink(&partial)? {
         fs::remove_file(&partial).map_err(|error| format!("MODEL_STORAGE_ERROR: {error}"))?;
     }
     if path.is_file() {
         let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
-        let verified = verify_file(&path, variant)?;
+        let verified = verify_file(&path, artifact)?;
         return Ok(Some(ManagedModel {
             catalog_id: entry.id.clone(),
-            variant_id: variant.id.clone(),
-            file_name: variant.file_name.clone(),
+            artifact_id: artifact.id.clone(),
+            variant_id: artifact.id.clone(),
+            file_name: artifact
+                .files
+                .first()
+                .map(|file| file.path.clone())
+                .unwrap_or_default(),
             path: path.to_string_lossy().into_owned(),
             size_bytes: metadata.len(),
-            sha256: variant.sha256.clone(),
+            sha256: artifact.sha256.clone().unwrap_or_default(),
             verified,
             state: if verified { "ready" } else { "corrupt" }.into(),
         }));
@@ -75,11 +82,16 @@ fn inspect_entry(directory: &Path, entry: &CatalogEntry) -> Result<Option<Manage
         let metadata = fs::metadata(&partial).map_err(|error| error.to_string())?;
         return Ok(Some(ManagedModel {
             catalog_id: entry.id.clone(),
-            variant_id: variant.id.clone(),
-            file_name: variant.file_name.clone(),
+            artifact_id: artifact.id.clone(),
+            variant_id: artifact.id.clone(),
+            file_name: artifact
+                .files
+                .first()
+                .map(|file| file.path.clone())
+                .unwrap_or_default(),
             path: partial.to_string_lossy().into_owned(),
             size_bytes: metadata.len(),
-            sha256: variant.sha256.clone(),
+            sha256: artifact.sha256.clone().unwrap_or_default(),
             verified: false,
             state: "partial".into(),
         }));
@@ -90,13 +102,13 @@ fn inspect_entry(directory: &Path, entry: &CatalogEntry) -> Result<Option<Manage
 pub fn remove<R: Runtime>(app: &AppHandle<R>, catalog_id: &str) -> Result<(), String> {
     let directory = models_directory(app)?;
     let entry = catalog::find(catalog_id)?;
-    let variant = entry
-        .variants
+    let artifact = entry
+        .artifacts
         .first()
-        .ok_or_else(|| "The catalog entry has no downloadable variant.".to_owned())?;
+        .ok_or_else(|| "The catalog entry has no downloadable artifact.".to_owned())?;
     for path in [
-        final_path(&directory, variant)?,
-        partial_path(&directory, variant)?,
+        final_path(&directory, artifact)?,
+        partial_path(&directory, artifact)?,
     ] {
         if path.exists() {
             fs::remove_file(path).map_err(|error| format!("MODEL_REMOVE_ERROR: {error}"))?;
@@ -111,12 +123,12 @@ pub fn path_for_catalog<R: Runtime>(
 ) -> Result<PathBuf, String> {
     let directory = models_directory(app)?;
     let entry = catalog::find(catalog_id)?;
-    let variant = entry
-        .variants
+    let artifact = entry
+        .artifacts
         .first()
-        .ok_or_else(|| "The catalog entry has no downloadable variant.".to_owned())?;
-    let path = final_path(&directory, variant)?;
-    if !path.is_file() || !verify_file(&path, variant)? {
+        .ok_or_else(|| "The catalog entry has no downloadable artifact.".to_owned())?;
+    let path = final_path(&directory, artifact)?;
+    if !path.is_file() || !verify_file(&path, artifact)? {
         return Err(
             "LOCAL_MODEL_NOT_READY: Download and verify this model before using it.".into(),
         );
@@ -132,23 +144,23 @@ pub async fn download<R: Runtime>(
     cancellation: Cancellation,
 ) -> Result<(), String> {
     let entry = catalog::find(catalog_id)?;
-    let variant = entry
-        .variants
+    let artifact = entry
+        .artifacts
         .first()
-        .ok_or_else(|| "The catalog entry has no downloadable variant.".to_owned())?;
-    if variant.size_bytes > MAX_DOWNLOAD_BYTES {
+        .ok_or_else(|| "The catalog entry has no downloadable artifact.".to_owned())?;
+    if artifact.size_bytes > MAX_DOWNLOAD_BYTES {
         return Err(
             "MODEL_TOO_LARGE: This model is larger than Juniper's safe download limit.".into(),
         );
     }
     let directory = models_directory(&app)?;
-    let final_file = final_path(&directory, variant)?;
-    let partial_file = partial_path(&directory, variant)?;
+    let final_file = final_path(&directory, artifact)?;
+    let partial_file = partial_path(&directory, artifact)?;
     if is_symlink(&partial_file)? {
         fs::remove_file(&partial_file).map_err(|error| format!("MODEL_STORAGE_ERROR: {error}"))?;
     }
     let capabilities = device::collect(&directory);
-    let required = variant
+    let required = artifact
         .size_bytes
         .saturating_add(STORAGE_HEADROOM_BYTES)
         .max(entry.minimum_storage_bytes);
@@ -161,13 +173,13 @@ pub async fn download<R: Runtime>(
             format_bytes(required)
         ));
     }
-    if final_file.is_file() && verify_file(&final_file, variant)? {
+    if final_file.is_file() && verify_file(&final_file, artifact)? {
         emit_progress(
             &app,
             request_id,
             "ready",
-            variant.size_bytes,
-            variant.size_bytes,
+            artifact.size_bytes,
+            artifact.size_bytes,
             None,
         );
         return Ok(());
@@ -185,11 +197,16 @@ pub async fn download<R: Runtime>(
         .metadata()
         .map(|metadata| metadata.len())
         .unwrap_or(0);
-    if offset > variant.size_bytes {
+    if offset > artifact.size_bytes {
         fs::remove_file(&partial_file).map_err(|error| error.to_string())?;
         offset = 0;
     }
-    let mut request = client.get(&variant.url);
+    let source_url = artifact
+        .source_url
+        .as_deref()
+        .or_else(|| artifact.files.first().and_then(|file| file.url.as_deref()))
+        .ok_or_else(|| "MODEL_DOWNLOAD_ERROR: This artifact has no source URL.".to_owned())?;
+    let mut request = client.get(source_url);
     if offset > 0 {
         request = request.header(
             RANGE,
@@ -233,7 +250,7 @@ pub async fn download<R: Runtime>(
         request_id,
         "downloading",
         offset,
-        variant.size_bytes,
+        artifact.size_bytes,
         None,
     );
     let mut completed = offset;
@@ -245,7 +262,7 @@ pub async fn download<R: Runtime>(
                 request_id,
                 "paused",
                 completed,
-                variant.size_bytes,
+                artifact.size_bytes,
                 Some((
                     "MODEL_DOWNLOAD_CANCELLED",
                     "Download paused; you can resume it later.",
@@ -258,7 +275,7 @@ pub async fn download<R: Runtime>(
         let chunk = chunk
             .map_err(|_| "MODEL_DOWNLOAD_ERROR: The connection was interrupted.".to_owned())?;
         completed = completed.saturating_add(chunk.len() as u64);
-        if completed > variant.size_bytes {
+        if completed > artifact.size_bytes {
             return Err(
                 "MODEL_DOWNLOAD_ERROR: The source returned more bytes than expected.".into(),
             );
@@ -271,26 +288,26 @@ pub async fn download<R: Runtime>(
             request_id,
             "downloading",
             completed,
-            variant.size_bytes,
+            artifact.size_bytes,
             None,
         );
     }
     file.flush()
         .map_err(|error| format!("MODEL_STORAGE_ERROR: {error}"))?;
-    if completed != variant.size_bytes {
+    if completed != artifact.size_bytes {
         return Err(
             "MODEL_DOWNLOAD_ERROR: The download ended before the expected file size.".into(),
         );
     }
     let actual = format!("{:x}", hasher.finalize());
-    if actual != variant.sha256 {
+    if artifact.sha256.as_deref() != Some(actual.as_str()) {
         let _ = fs::remove_file(&partial_file);
         emit_progress(
             &app,
             request_id,
             "failed",
             completed,
-            variant.size_bytes,
+            artifact.size_bytes,
             Some((
                 "MODEL_CHECKSUM_MISMATCH",
                 "The model failed integrity verification and was removed.",
@@ -308,7 +325,7 @@ pub async fn download<R: Runtime>(
         request_id,
         "ready",
         completed,
-        variant.size_bytes,
+        artifact.size_bytes,
         None,
     );
     crate::commands::record_runtime_log(
@@ -336,18 +353,18 @@ fn hash_existing(path: &Path, hasher: &mut Sha256) -> Result<(), String> {
     Ok(())
 }
 
-fn verify_file(path: &Path, variant: &CatalogVariant) -> Result<bool, String> {
+fn verify_file(path: &Path, artifact: &CatalogArtifact) -> Result<bool, String> {
     let link_metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
     if link_metadata.file_type().is_symlink() || !link_metadata.file_type().is_file() {
         return Ok(false);
     }
     let metadata = fs::metadata(path).map_err(|error| error.to_string())?;
-    if metadata.len() != variant.size_bytes {
+    if metadata.len() != artifact.size_bytes {
         return Ok(false);
     }
     let mut hasher = Sha256::new();
     hash_existing(path, &mut hasher)?;
-    Ok(format!("{:x}", hasher.finalize()) == variant.sha256)
+    Ok(artifact.sha256.as_deref() == Some(format!("{:x}", hasher.finalize()).as_str()))
 }
 
 fn is_symlink(path: &Path) -> Result<bool, String> {
@@ -358,12 +375,14 @@ fn is_symlink(path: &Path) -> Result<bool, String> {
     }
 }
 
-fn final_path(directory: &Path, variant: &CatalogVariant) -> Result<PathBuf, String> {
-    safe_path(directory, &format!("{}.gguf", variant.id))
+fn final_path(directory: &Path, artifact: &CatalogArtifact) -> Result<PathBuf, String> {
+    // Keep the pre-v2 filename stable so existing managed GGUF files survive
+    // the catalog migration without a destructive re-download.
+    safe_path(directory, &format!("{}.gguf", artifact.id))
 }
 
-fn partial_path(directory: &Path, variant: &CatalogVariant) -> Result<PathBuf, String> {
-    safe_path(directory, &format!("{}.gguf.part", variant.id))
+fn partial_path(directory: &Path, artifact: &CatalogArtifact) -> Result<PathBuf, String> {
+    safe_path(directory, &format!("{}.gguf.part", artifact.id))
 }
 
 fn safe_path(directory: &Path, name: &str) -> Result<PathBuf, String> {
@@ -415,15 +434,27 @@ mod tests {
     use super::*;
 
     #[cfg(unix)]
-    fn variant_for_test(size_bytes: u64, sha256: &str) -> CatalogVariant {
-        CatalogVariant {
+    fn artifact_for_test(size_bytes: u64, sha256: &str) -> CatalogArtifact {
+        CatalogArtifact {
             id: "test-model-q4".into(),
-            file_name: "test-model.gguf".into(),
-            quantization: "Q4_K_M".into(),
+            runtime_id: "llama.cpp".into(),
+            format: "GGUF".into(),
+            platforms: vec!["linux".into()],
+            architectures: vec!["x86_64".into()],
+            quantization: Some("Q4_K_M".into()),
             size_bytes,
-            sha256: sha256.into(),
-            url: "https://huggingface.co/test/model/resolve/main/test-model.gguf".into(),
+            sha256: Some(sha256.into()),
+            source_url: Some("https://huggingface.co/test/model".into()),
             source_revision: "main".into(),
+            files: vec![crate::catalog::CatalogArtifactFile {
+                path: "test-model.gguf".into(),
+                size_bytes,
+                sha256: sha256.into(),
+                url: Some("https://huggingface.co/test/model/resolve/main/test-model.gguf".into()),
+            }],
+            minimum_runtime_version: None,
+            maturity: "stable".into(),
+            qualification: "qualified".into(),
         }
     }
 
@@ -439,7 +470,7 @@ mod tests {
         std::os::unix::fs::symlink(&target, &link).expect("test symlink should be created");
         let digest = format!("{:x}", Sha256::digest(b"model"));
         assert!(
-            !verify_file(&link, &variant_for_test(5, &digest)).expect("verification should run")
+            !verify_file(&link, &artifact_for_test(5, &digest)).expect("verification should run")
         );
         fs::remove_file(&link).expect("test symlink should be removable");
         fs::remove_file(&target).expect("test target should be removable");

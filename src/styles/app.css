@@ -1496,6 +1496,27 @@ select {
   color: var(--faint);
   font-size: 10px;
 }
+.model-runtime-options {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 13px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.model-runtime-options strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+.runtime-option {
+  display: block;
+  padding-left: 8px;
+}
+.runtime-option.selectable {
+  color: var(--accent-dark);
+}
+.runtime-option.unavailable {
+  color: var(--faint);
+}
 .model-market-card .model-tags {
   display: flex;
   flex-wrap: wrap;
@@ -1853,6 +1874,9 @@ select {
 }
 .setting-row input[type='range'] {
   accent-color: var(--accent);
+}
+.inline-error {
+  color: var(--danger) !important;
 }
 .color-input {
   width: 39px !important;

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-loadModel"
+description = "Enables the loadModel command without any pre-configured scope."
+commands.allow = ["loadModel"]
+
+[[permission]]
+identifier = "deny-loadModel"
+description = "Denies the loadModel command without any pre-configured scope."
+commands.deny = ["loadModel"]

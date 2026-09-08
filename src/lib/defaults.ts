@@ -63,6 +63,17 @@ export function modelProfileFromDiscovery(
           : 'local',
     executionLocation,
     sourceReference: metadata.sourceReference ?? modelId,
+    artifactId: metadata.artifactId ?? metadata.managedVariantId,
+    runtimeId: metadata.runtimeId ?? (provider.kind === 'juniper-local' ? 'llama.cpp' : undefined),
+    runtimeBinding:
+      metadata.runtimeBinding ??
+      (provider.kind === 'juniper-local'
+        ? {
+            runtimeId: 'llama.cpp',
+            artifactId: metadata.artifactId ?? metadata.managedVariantId,
+            selection: 'explicit' as const,
+          }
+        : undefined),
     status: metadata.status ?? 'ready',
     compatibilityStatus: metadata.compatibilityStatus ?? 'unknown',
     capabilities: metadata.capabilities ?? {
@@ -248,5 +259,11 @@ export function initialAppData(): AppData {
     attachments: [],
     permissions: [],
     settings: defaultSettings,
+    deviceLink: {
+      enabled: false,
+      hosting: false,
+      deviceId: '',
+      peers: [],
+    },
   }
 }

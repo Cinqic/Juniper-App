@@ -6,14 +6,19 @@ runtime_dir="${JUNIPER_RUNTIME_DIR:-$repo_root/src-tauri/runtime}"
 build_root="${JUNIPER_LLAMA_BUILD_DIR:-$(mktemp -d)}"
 source_dir="$build_root/llama.cpp"
 build_dir="$source_dir/build"
-llama_commit="e107984bcffcfd701e82738092a2b000b6fda7a2"
+manifest="$repo_root/config/llama-cpp.json"
 
-for tool in git cmake; do
+for tool in git cmake node; do
   command -v "$tool" >/dev/null 2>&1 || {
     echo "Missing required build tool: $tool" >&2
     exit 1
   }
 done
+llama_commit="${JUNIPER_LLAMA_COMMIT:-$(node -e "const fs=require('fs'); process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1], 'utf8')).commit)" "$manifest")}"
+[[ "$llama_commit" =~ ^[a-f0-9]{40}$ ]] || {
+  echo "Invalid llama.cpp commit: $llama_commit" >&2
+  exit 1
+}
 
 cleanup() {
   if [[ -z "${JUNIPER_LLAMA_BUILD_DIR:-}" ]]; then

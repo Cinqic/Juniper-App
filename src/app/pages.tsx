@@ -532,6 +532,8 @@ export function ModelsPage({
             generationParameters: ['temperature'],
           }),
       },
+      deviceId: undefined,
+      deviceLinkFingerprint: undefined,
     }
     update((current) => ({
       ...current,
@@ -792,7 +794,7 @@ export function ModelsPage({
             <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
           </label>
           <label>
-            API key <small>Saved to OS keychain</small>
+            API key <small>Saved to the secure platform vault</small>
             <input
               type="password"
               value={apiKey}
@@ -924,7 +926,9 @@ export function ModelsPage({
                     <span>
                       {model.compatibilityStatus === 'not-chat-compatible'
                         ? 'Not chat-compatible'
-                        : 'Chat status unknown or ready'}
+                        : model.catalogId
+                          ? 'Downloaded · native engine loads on first chat'
+                          : 'Chat status unknown or ready'}
                     </span>
                   </div>
                   {data.settings.developerMode && (
@@ -1075,6 +1079,7 @@ function modelStatusLabel(model: ModelProfile): string {
   if (model.status === 'not-found') return 'Unavailable'
   if (model.compatibilityStatus === 'not-chat-compatible') return 'Not chat-compatible'
   if (model.compatibilityStatus === 'unknown') return 'Compatibility unknown'
+  if (model.catalogId) return 'Downloaded · loads on first chat'
   return 'Ready'
 }
 
@@ -1336,6 +1341,28 @@ export function SettingsPage({
                 </div>
               ))
             )}
+          </div>
+        </section>
+        <section className="settings-card full device-link-card">
+          <span className="eyebrow">Device Link</span>
+          <h2>Preview policy — transport is not enabled</h2>
+          <p>
+            This candidate includes non-networked protocol and authorization policy for future
+            Device Link work. It does not include a listener, discovery, usable pairing flow, peer
+            connection, remote control, or Juniper Network transport. Private chats and host context
+            remain on this device.
+          </p>
+          <div className="setting-row">
+            <div>
+              <strong>Device Link unavailable</strong>
+              <small>
+                Pairing and scope controls stay disabled until the transport identity design is
+                complete and verified.
+              </small>
+            </div>
+            <button className="secondary-button" disabled aria-label="Device Link unavailable">
+              Preview only
+            </button>
           </div>
         </section>
       </div>

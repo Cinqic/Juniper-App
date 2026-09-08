@@ -24,6 +24,7 @@
     "permissions": { "type": "array" },
     "models": { "type": "array" },
     "providers": { "type": "array" },
-    "settings": { "type": "object" }
+    "settings": { "type": "object" },
+    "deviceLink": { "type": "object" }
   }
 }

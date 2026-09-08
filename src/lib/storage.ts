@@ -83,6 +83,13 @@ export function normalizeAppData(value: unknown): AppData {
       },
     }
   })
+  const rawDeviceLink =
+    parsed.deviceLink && typeof parsed.deviceLink === 'object' ? parsed.deviceLink : {}
+  const deviceLink = {
+    ...defaults.deviceLink,
+    ...rawDeviceLink,
+    peers: Array.isArray(rawDeviceLink.peers) ? rawDeviceLink.peers : [],
+  }
   const attachments = (Array.isArray(parsed.attachments) ? parsed.attachments : []).flatMap(
     (attachment): AttachmentRecord[] => {
       if (!attachment || typeof attachment !== 'object') return []
@@ -143,6 +150,7 @@ export function normalizeAppData(value: unknown): AppData {
       ...parsedSettings,
       ...(savedAccent === '#6f8f72' ? { accent: JUNIPER_ACCENT } : {}),
     },
+    deviceLink,
   }
 }
 

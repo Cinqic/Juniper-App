@@ -46,6 +46,20 @@ fn provider_client() -> Result<Client, ProviderError> {
         })
 }
 
+fn provider_client_for(
+    provider_kind: &str,
+    _base_url: &str,
+    _device_link_fingerprint: Option<&str>,
+) -> Result<Client, ProviderError> {
+    if provider_kind == "juniper-network" {
+        return Err(ProviderError::new(
+            "DEVICE_LINK_TRANSPORT_UNAVAILABLE",
+            "Juniper Network is a preview policy only; no Device Link transport ships in this candidate.",
+        ));
+    }
+    provider_client()
+}
+
 fn validated_base_url(base_url: &str) -> Result<String, ProviderError> {
     let base_url = base_url.trim();
     if base_url.is_empty() || base_url.len() > 2048 || base_url.chars().any(char::is_control) {
@@ -81,6 +95,12 @@ fn openai_api_base(base_url: &str) -> Result<String, ProviderError> {
 }
 
 fn validate_chat_request(request: &ChatRequest) -> Result<(), ProviderError> {
+    if request.provider.kind == "juniper-network" {
+        return Err(ProviderError::new(
+            "DEVICE_LINK_TRANSPORT_UNAVAILABLE",
+            "Juniper Network is a preview policy only; no Device Link transport ships in this candidate.",
+        ));
+    }
     if !matches!(
         request.provider.kind.as_str(),
         "ollama" | "openai-compatible" | "llama-cpp"
@@ -404,9 +424,27 @@ fn add_credential(
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     if api_key_ref.is_some() {
-        return Err("Secure provider credentials on mobile are not available yet.".into());
+        return Err("Secure provider credentials require a native app context.".into());
     }
     Ok(call)
+}
+
+fn add_credential_with_app<R: Runtime>(
+    app: &AppHandle<R>,
+    call: reqwest::RequestBuilder,
+    api_key_ref: Option<&str>,
+) -> Result<reqwest::RequestBuilder, String> {
+    if api_key_ref.is_some_and(|reference| !valid_credential_reference(reference)) {
+        return Err("The provider credential reference is invalid.".into());
+    }
+    #[cfg(target_os = "android")]
+    if let Some(reference) = api_key_ref {
+        let secret = juniper_local_runtime::secure_get_credential(app, reference)?;
+        return Ok(call.bearer_auth(secret));
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
+    add_credential(call, api_key_ref)
 }
 
 #[derive(Debug)]
@@ -470,6 +508,7 @@ fn tool_payload(request: &ChatRequest) -> Vec<Value> {
         .tools
         .iter()
         .filter(|tool| tool.enabled)
+        .filter(|tool| request.provider.kind != "juniper-network" || tool.risk == "automatic-safe")
         .map(|tool| {
             json!({
                 "type": "function",
@@ -575,8 +614,12 @@ async fn stream_openai_compatible<R: Runtime>(
     let mut messages = request_messages(request)?;
     let mut session_grants = HashSet::new();
     let mut host_context = request.host_context.clone();
-    if request.private_chat {
+    if request.private_chat || request.provider.kind == "juniper-network" {
+        // Device Link carries only the explicitly submitted chat messages and
+        // attachments. Local memories, conversation history, and host-authored
+        // context are never implicitly synchronized to another device.
         host_context.conversations.clear();
+        host_context.memories.clear();
     }
     for round in 0..tools::MAX_TOOL_ROUNDS {
         let outcome = stream_one_openai_turn(
@@ -1169,7 +1212,7 @@ async fn stream_one_openai_turn<R: Runtime>(
         .post(endpoint)
         .header("user-agent", CLIENT_NAME)
         .json(&openai_body(request, messages, tools));
-    let call = add_credential(call, request.provider.api_key_ref.as_deref())
+    let call = add_credential_with_app(app, call, request.provider.api_key_ref.as_deref())
         .map_err(|message| ProviderError::new("CREDENTIAL_UNAVAILABLE", message))?;
     let response = execute_request(call, cancellation).await?;
     if !response.status().is_success() {
@@ -1394,7 +1437,7 @@ async fn stream_one_ollama_turn<R: Runtime>(
         .post(endpoint)
         .header("user-agent", CLIENT_NAME)
         .json(&ollama_body(request, messages, tools));
-    let call = add_credential(call, request.provider.api_key_ref.as_deref())
+    let call = add_credential_with_app(app, call, request.provider.api_key_ref.as_deref())
         .map_err(|message| ProviderError::new("CREDENTIAL_UNAVAILABLE", message))?;
     let response = execute_request(call, cancellation).await?;
     if !response.status().is_success() {
@@ -1532,10 +1575,20 @@ async fn stream_one_ollama_turn<R: Runtime>(
     Ok(TurnOutcome { tool_calls })
 }
 
+#[cfg(test)]
 pub async fn health_check(
     provider_kind: &str,
     base_url: &str,
     api_key_ref: Option<&str>,
+) -> Result<String, String> {
+    health_check_with_pin(provider_kind, base_url, api_key_ref, None).await
+}
+
+pub async fn health_check_with_pin(
+    provider_kind: &str,
+    base_url: &str,
+    api_key_ref: Option<&str>,
+    device_link_fingerprint: Option<&str>,
 ) -> Result<String, String> {
     if !matches!(provider_kind, "ollama" | "openai-compatible" | "llama-cpp") {
         return Err("Unsupported provider type.".into());
@@ -1552,7 +1605,9 @@ pub async fn health_check(
         )
     };
     let response = add_credential(
-        provider_client().map_err(|error| error.message)?.get(url),
+        provider_client_for(provider_kind, base_url, device_link_fingerprint)
+            .map_err(|error| error.message)?
+            .get(url),
         api_key_ref,
     )?
     .send()
@@ -1565,10 +1620,20 @@ pub async fn health_check(
     }
 }
 
+#[cfg(test)]
 pub async fn list_models(
     provider_kind: &str,
     base_url: &str,
     api_key_ref: Option<&str>,
+) -> Result<Vec<DiscoveredModel>, String> {
+    list_models_with_pin(provider_kind, base_url, api_key_ref, None).await
+}
+
+pub async fn list_models_with_pin(
+    provider_kind: &str,
+    base_url: &str,
+    api_key_ref: Option<&str>,
+    device_link_fingerprint: Option<&str>,
 ) -> Result<Vec<DiscoveredModel>, String> {
     if !matches!(provider_kind, "ollama" | "openai-compatible" | "llama-cpp") {
         return Err("Unsupported provider type.".into());
@@ -1585,7 +1650,9 @@ pub async fn list_models(
         )
     };
     let value: Value = add_credential(
-        provider_client().map_err(|error| error.message)?.get(url),
+        provider_client_for(provider_kind, base_url, device_link_fingerprint)
+            .map_err(|error| error.message)?
+            .get(url),
         api_key_ref,
     )?
     .send()
@@ -1635,11 +1702,22 @@ fn parse_model_list(provider_kind: &str, value: &Value) -> Result<Vec<Discovered
     Ok(models)
 }
 
+#[cfg(test)]
 pub async fn inspect_model(
     provider_kind: &str,
     base_url: &str,
     model_id: &str,
     api_key_ref: Option<&str>,
+) -> Result<ModelInspection, String> {
+    inspect_model_with_pin(provider_kind, base_url, model_id, api_key_ref, None).await
+}
+
+pub async fn inspect_model_with_pin(
+    provider_kind: &str,
+    base_url: &str,
+    model_id: &str,
+    api_key_ref: Option<&str>,
+    device_link_fingerprint: Option<&str>,
 ) -> Result<ModelInspection, String> {
     if !matches!(provider_kind, "ollama" | "openai-compatible" | "llama-cpp") {
         return Err("Unsupported provider type.".into());
@@ -1670,7 +1748,7 @@ pub async fn inspect_model(
         validated_base_url(base_url).map_err(|error| error.message)?
     );
     let value: Value = add_credential(
-        provider_client()
+        provider_client_for(provider_kind, base_url, device_link_fingerprint)
             .map_err(|error| error.message)?
             .post(url)
             .json(&json!({ "model": model_id, "verbose": true })),
@@ -2083,6 +2161,49 @@ mod tests {
         assert_eq!(openai["max_tokens"], 128);
         assert_eq!(openai["top_k"], Value::Null);
         assert_eq!(openai["reasoning_effort"], "none");
+    }
+
+    #[test]
+    fn juniper_network_is_rejected_while_transport_is_deferred() {
+        assert_eq!(
+            provider_client_for("juniper-network", "https://192.168.1.20:8443", None)
+                .unwrap_err()
+                .code,
+            "DEVICE_LINK_TRANSPORT_UNAVAILABLE"
+        );
+        let mut request = request();
+        request.provider.kind = "juniper-network".into();
+        request.provider.base_url = "https://192.168.1.20:8443/v1".into();
+        request.provider.transport_location = "local-network".into();
+        request.model.execution_location = "local-network".into();
+        assert_eq!(
+            validate_chat_request(&request).unwrap_err().code,
+            "DEVICE_LINK_TRANSPORT_UNAVAILABLE"
+        );
+
+        request.provider.device_id = Some("device-peer".into());
+        request.provider.device_link_fingerprint =
+            Some("SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into());
+        request.private_chat = true;
+        assert_eq!(
+            validate_chat_request(&request).unwrap_err().code,
+            "DEVICE_LINK_TRANSPORT_UNAVAILABLE"
+        );
+
+        request.private_chat = false;
+        assert_eq!(
+            validate_chat_request(&request).unwrap_err().code,
+            "DEVICE_LINK_TRANSPORT_UNAVAILABLE"
+        );
+
+        request.tools.push(crate::domain::ToolDefinition {
+            name: "memory.list".into(),
+            description: "List memories".into(),
+            risk: "sensitive".into(),
+            enabled: true,
+            schema: json!({"type": "object"}),
+        });
+        assert_eq!(tool_payload(&request).len(), 1);
     }
 
     #[test]

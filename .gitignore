@@ -6,6 +6,9 @@ dist/
 !.env.example
 src-tauri/target/
 src-tauri/gen/
+src-tauri/plugins/**/android/.cxx/
+src-tauri/plugins/**/android/build/
+src-tauri/plugins/**/android/.tauri/
 *.jks
 *.keystore
 *.log

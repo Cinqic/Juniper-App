@@ -3,9 +3,10 @@
 `config/models/catalog.json` is the single checked-in source for the initial
 model catalog. Each entry includes the model family, parameter count, use cases,
 chat template, context length, supported CPU architectures, license and
-attribution, a source revision, an HTTPS download URL, an exact byte size, and a
-SHA-256 digest. The initial catalog contains four instruction-tuned GGUF models
-under 1B parameters.
+attribution, and concrete runtime artifacts. Each artifact carries its
+runtime, format, source revision, HTTPS file manifest, exact byte size, SHA-256
+digest, maturity, and qualification. The initial catalog contains four
+instruction-tuned GGUF artifacts under 1B parameters.
 
 The frontend and Rust native layer both validate the catalog shape before using
 it. The frontend combines architecture, logical cores, available/total memory,
@@ -32,7 +33,7 @@ catalogue's expected byte count. The completed file is hashed, compared with
 the catalog digest, and atomically renamed into its final name only after the
 check passes. A mismatch is removed and surfaced as a structured error.
 
-The final and partial paths are derived from trusted variant IDs and reject
+The final and partial paths are derived from trusted artifact IDs and reject
 unsafe names. Symlinks are not accepted for verification or resume. Remove
 cleans both final and partial files for the selected trusted catalog entry.
 

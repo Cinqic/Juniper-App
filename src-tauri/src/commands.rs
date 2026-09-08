@@ -176,7 +176,7 @@ pub fn system_info() -> HashMap<String, String> {
     let mut result = HashMap::from([
         (
             String::from("application"),
-            String::from("Juniper 0.3.0-rc.28"),
+            String::from("Juniper 0.3.0-rc.31"),
         ),
         (String::from("os"), std::env::consts::OS.to_owned()),
         (
@@ -205,9 +205,67 @@ pub fn model_catalog() -> Result<Vec<catalog::CatalogEntry>, String> {
 }
 
 #[tauri::command]
-pub fn device_capabilities(app: AppHandle) -> Result<device::DeviceCapabilities, String> {
+pub async fn device_capabilities(app: AppHandle) -> Result<device::DeviceCapabilities, String> {
     let directory = managed_models::models_directory(&app)?;
-    Ok(device::collect(&directory))
+    #[cfg(target_os = "android")]
+    let mut capabilities = device::collect(&directory);
+    #[cfg(not(target_os = "android"))]
+    let mut capabilities = device::collect(&directory);
+    #[cfg(target_os = "android")]
+    {
+        let native = crate::android_runtime::runtime_status(&app).await?;
+        capabilities.native_runtime_available = native.runtime_available;
+        capabilities.native_runtime_state = Some(native.state);
+        let native_abi = native.abi.clone();
+        capabilities.native_abi = native_abi.clone();
+        capabilities.native_total_memory_bytes = native.total_memory_bytes;
+        capabilities.native_available_memory_bytes = native.available_memory_bytes;
+        capabilities.native_low_memory = native.low_memory;
+        if let Some(value) = native.total_memory_bytes {
+            capabilities.total_memory_bytes = Some(value);
+        }
+        if let Some(value) = native.available_memory_bytes {
+            capabilities.available_memory_bytes = Some(value);
+        }
+        if let Some(value) = native.memory_pressure {
+            capabilities.memory_pressure = value;
+        }
+        if let Some(value) = native_abi {
+            capabilities.architecture = value.clone();
+            capabilities.cpu_architecture = value;
+        }
+    }
+    let packaged_llama = {
+        #[cfg(target_os = "android")]
+        {
+            false
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            std::env::var_os("JUNIPER_LLAMA_SERVER")
+                .is_some_and(|path| std::path::Path::new(&path).is_file())
+                || app.path().resource_dir().ok().is_some_and(|directory| {
+                    ["llama-server", "llama-server.exe"].iter().any(|name| {
+                        directory.join("runtime").join(name).is_file()
+                            || directory.join("binaries").join(name).is_file()
+                    })
+                })
+        }
+    };
+    capabilities.runtimes = crate::runtime_registry::for_device(
+        std::env::consts::OS,
+        &capabilities.architecture,
+        packaged_llama,
+        capabilities.native_runtime_available.unwrap_or(false),
+    );
+    Ok(capabilities)
+}
+
+#[tauri::command]
+pub async fn runtime_registry(
+    app: AppHandle,
+) -> Result<Vec<crate::runtime_registry::RuntimeDescriptor>, String> {
+    Ok(device_capabilities(app).await?.runtimes)
 }
 
 #[tauri::command]
@@ -296,8 +354,15 @@ pub async fn health_check(
     kind: String,
     base_url: String,
     api_key_ref: Option<String>,
+    device_link_fingerprint: Option<String>,
 ) -> Result<String, String> {
-    let result = providers::health_check(&kind, &base_url, api_key_ref.as_deref()).await;
+    let result = providers::health_check_with_pin(
+        &kind,
+        &base_url,
+        api_key_ref.as_deref(),
+        device_link_fingerprint.as_deref(),
+    )
+    .await;
     record_runtime_log(
         state.inner(),
         if result.is_ok() {
@@ -318,8 +383,15 @@ pub async fn list_models(
     kind: String,
     base_url: String,
     api_key_ref: Option<String>,
+    device_link_fingerprint: Option<String>,
 ) -> Result<Vec<DiscoveredModel>, String> {
-    let result = providers::list_models(&kind, &base_url, api_key_ref.as_deref()).await;
+    let result = providers::list_models_with_pin(
+        &kind,
+        &base_url,
+        api_key_ref.as_deref(),
+        device_link_fingerprint.as_deref(),
+    )
+    .await;
     record_runtime_log(
         state.inner(),
         if result.is_ok() {
@@ -341,9 +413,16 @@ pub async fn inspect_model(
     base_url: String,
     model_id: String,
     api_key_ref: Option<String>,
+    device_link_fingerprint: Option<String>,
 ) -> Result<ModelInspection, String> {
-    let result =
-        providers::inspect_model(&kind, &base_url, &model_id, api_key_ref.as_deref()).await;
+    let result = providers::inspect_model_with_pin(
+        &kind,
+        &base_url,
+        &model_id,
+        api_key_ref.as_deref(),
+        device_link_fingerprint.as_deref(),
+    )
+    .await;
     record_runtime_log(
         state.inner(),
         if result.is_ok() {
@@ -596,10 +675,18 @@ pub async fn chat_stream(
     let cancellation = begin_cancellable_operation(state.inner(), &request.request_id)?;
     if request.provider.kind == "juniper-local" {
         let event_app = app.clone();
-        if let Err(error) =
+        #[cfg(target_os = "android")]
+        let result =
+            crate::android_runtime::stream_chat(app, request.clone(), cancellation, state.inner())
+                .await;
+        #[cfg(not(target_os = "android"))]
+        let result =
             crate::local_runtime::stream_chat(app, request.clone(), cancellation, state.inner())
-                .await
-        {
+                .await;
+        if let Err(error) = result {
+            #[cfg(target_os = "android")]
+            crate::android_runtime::emit_error(&event_app, &request.request_id, &error);
+            #[cfg(not(target_os = "android"))]
             crate::local_runtime::emit_error(&event_app, &request.request_id, &error);
             record_runtime_log(
                 state.inner(),
@@ -840,38 +927,58 @@ pub(crate) fn valid_credential_reference(reference: &str) -> bool {
 }
 
 #[tauri::command]
-pub fn secure_set_credential(reference: String, secret: String) -> Result<(), String> {
+pub fn secure_set_credential(
+    app: AppHandle,
+    reference: String,
+    secret: String,
+) -> Result<(), String> {
     if !valid_credential_reference(&reference) || secret.is_empty() || secret.len() > 8192 {
         return Err("Credential reference or value is outside the allowed limit.".into());
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        let _ = app;
         credential_entry(&reference)?
             .set_password(&secret)
             .map_err(|_| "Could not save the credential to the system keychain.".into())
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
-        let _ = secret;
-        Err("Secure provider credentials on mobile require a platform vault integration.".into())
+        #[cfg(target_os = "android")]
+        {
+            juniper_local_runtime::secure_set_credential(&app, &reference, &secret)
+        }
+        #[cfg(target_os = "ios")]
+        {
+            let _ = (app, secret);
+            Err("Secure provider credentials on iOS are not available in this build.".into())
+        }
     }
 }
 
 #[tauri::command]
-pub fn secure_delete_credential(reference: String) -> Result<(), String> {
+pub fn secure_delete_credential(app: AppHandle, reference: String) -> Result<(), String> {
     if !valid_credential_reference(&reference) {
         return Err("Credential reference is invalid.".into());
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        let _ = app;
         credential_entry(&reference)?
             .delete_credential()
             .map_err(|_| "Could not remove the credential from the system keychain.".into())
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
-        let _ = reference;
-        Ok(())
+        #[cfg(target_os = "android")]
+        {
+            juniper_local_runtime::secure_delete_credential(&app, &reference)
+        }
+        #[cfg(target_os = "ios")]
+        {
+            let _ = reference;
+            Ok(())
+        }
     }
 }
 

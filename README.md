@@ -2,18 +2,18 @@
 
 Juniper is a local-first AI desktop and Android app for people who want a thoughtful assistant, visible model controls, and a clear boundary around private data. It works with compatible text-generation models through supported runtimes; no model family is required and no model is bundled.
 
-**Version `0.3.0-rc.28` — standalone-runtime release candidate.** The release workflow builds and packages the Juniper-owned local runtime for desktop targets, then publishes install-smoked artifacts after the verification gates pass. See [Download](#download).
+**Version `0.3.0-rc.31` — release candidate.** The guarded release workflow builds and packages the Juniper-owned local runtime for desktop targets only after the validation and immutable-tag gates pass. See [Download](#download).
 
 ## Download
 
-Installers will be published on the [GitHub releases page](https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.28) after the release workflow completes. You do not need Git, a build toolchain, or a GitHub account to use a published desktop artifact.
+Installers are published on the [GitHub releases page](https://github.com/Cinqic/Juniper-App/releases) only after an authorized release workflow completes. You do not need Git, a build toolchain, or a GitHub account to use a published desktop artifact.
 
-| Platform          | File                                        | Notes                                                             |
-| ----------------- | ------------------------------------------- | ----------------------------------------------------------------- |
-| Windows 10/11 x64 | `Juniper-0.3.0-rc.28-windows-x86_64.msi`    | The bundled local runtime is Juniper-owned; SmartScreen may warn. |
-| Linux x86_64      | `Juniper-0.3.0-rc.28-linux-x86_64.AppImage` | `chmod +x`, then run. No installation required.                   |
-| Linux x86_64      | `Juniper-0.3.0-rc.28-linux-x86_64.deb`      | `sudo apt install ./Juniper-...deb`                               |
-| Android 7.0+      | `Juniper-0.3.0-rc.28-android-universal.apk` | Signed release APK; enable install from unknown sources.          |
+| Platform          | File                                        | Notes                                                                |
+| ----------------- | ------------------------------------------- | -------------------------------------------------------------------- |
+| Windows 10/11 x64 | `Juniper-0.3.0-rc.31-windows-x86_64.msi`    | Candidate artifact name; the bundled local runtime is Juniper-owned. |
+| Linux x86_64      | `Juniper-0.3.0-rc.31-linux-x86_64.AppImage` | Candidate artifact name; `chmod +x`, then run.                       |
+| Linux x86_64      | `Juniper-0.3.0-rc.31-linux-x86_64.deb`      | Candidate artifact name; `sudo apt install ./Juniper-...deb`.        |
+| Android 7.0+      | `Juniper-0.3.0-rc.31-android-universal.apk` | Candidate artifact name; Android llama.cpp remains Beta.             |
 
 Verify a download against `SHA256SUMS.txt` from the same release:
 
@@ -30,6 +30,9 @@ Juniper’s desktop bundle owns its loopback `llama-server` process, so ordinary
 - A chat workspace with onboarding, streaming, markdown, export, private chats, and mobile layouts.
 - Assistant profiles with personality controls, model selection, tool policy, memory policy, import, and export.
 - A first-class Juniper local provider with device detection, model recommendations, verified resumable downloads, atomic installation, pause/resume, and removal.
+- A generic runtime registry with explicit maturity and qualification state for llama.cpp, LiteRT-LM, ExecuTorch, MLC LLM, and ONNX Runtime GenAI. Optional runtimes are not presented as installed without a compatible artifact.
+- Artifact-centric model metadata: each model points to concrete runtime artifacts and file manifests, so a model is never treated as universally compatible.
+- A non-networked Device Link protocol/policy preview. Pairing, discovery, peer connections, remote control, and Juniper Network transport are disabled until a persistent TLS identity and end-to-end transport are implemented and qualified.
 - A curated catalog of four instruction-tuned GGUF models below 1B parameters, with source revision, license, size, and SHA-256 shown before download.
 - Optional Ollama, OpenAI-compatible, and llama.cpp-compatible provider connections for advanced users and existing setups.
 - A deterministic context builder that keeps the system prompt, curated memories, enabled tool definitions, and recent conversation within a context budget.
@@ -43,8 +46,8 @@ These are deliberate exclusions in this release, not oversights:
 - **No Ollama dependency.** Ollama remains an optional external provider and legacy import path; it is not probed or used as a fallback by the Juniper local provider.
 - **Desktop runtime provenance.** The release workflow builds the pinned `llama.cpp` server from source and places it in the Tauri resource slot. A source checkout needs CMake and uses `scripts/build-llama-runtime.sh` before a local bundle can run the native provider.
 - **No MCP client.** The Settings entry is present and explicitly disabled.
-- **No secure credential storage on Android.** Juniper refuses to store a provider API key there rather than falling back to insecure storage. Use a provider that needs no key, or use the desktop app.
-- **Android local inference packaging is still pending in this candidate.** Android can inspect the catalog and manage app state, but this release does not claim a packaged native local inference process on Android yet.
+- **Android provider secrets use Android Keystore.** Juniper refuses to fall back to plaintext or SQLite storage; the instrumentation test exercises encrypt, decrypt, and deletion on an Android target.
+- **Android native local inference is Beta.** The candidate packages an in-process llama.cpp bridge for the managed, SHA-256-verified GGUF path on `arm64-v8a` (with `x86_64` reserved for emulator tests). A physical ARM64 run is still needed to promote that runtime beyond Beta, but it is not a global desktop release gate.
 - **No iOS or macOS build.**
 - **No telemetry, analytics, crash reporting, or account.**
 
@@ -52,7 +55,8 @@ These are deliberate exclusions in this release, not oversights:
 
 - Telemetry is off and there is no analytics or crash-reporting code. No hardcoded external host appears anywhere in the sources; every outbound request is built from the provider base URL you configure.
 - Juniper labels every route as ON DEVICE, LOCAL NETWORK, REMOTE, or UNKNOWN, and never treats UNKNOWN as safe.
-- Desktop provider credentials are stored in the OS keychain and referenced only by an opaque identifier. Secrets are never written to the SQLite state and are stripped from exports.
+- Desktop provider credentials are stored in the OS keychain; Android provider credentials use Android Keystore. Both are referenced only by an opaque identifier. Secrets are never written to the SQLite state and are stripped from exports.
+- Device Link is a protocol/policy preview only in this candidate. No listener, usable pairing flow, discovery, peer connection, remote-control path, or Juniper Network provider is enabled.
 - Private chats are held in memory only; they are excluded from persistence and from user exports.
 - Attachments are opened through a scoped native picker with symlink rejection, an extension allowlist, and a 1 MiB cap enforced at both grant time and read time. Attachment content is labelled untrusted to the model.
 
@@ -102,7 +106,8 @@ Suites whose capability gate the model does not meet are reported NOT-APPLICABLE
 ## Known limitations
 
 - The Windows MSI may be unsigned, so Windows SmartScreen can show an unrecognized-publisher warning.
-- `0.3.0-rc.28` is a prerelease. It is published for evaluation and is not yet promoted to a final `0.3.0`.
+- `0.3.0-rc.31` is a prerelease candidate and is not promoted to final `0.3.0`.
+- Android native local inference is Beta: use a supported ARM64 phone for real offline inference; x86_64 emulator evidence is diagnostic when hardware acceleration is unavailable. The missing physical run limits maturity, not core desktop release gating.
 - Android loopback addresses refer to the phone itself. Reaching a computer on your network needs an explicit LAN endpoint.
 - Browser-preview attachments are development-only; the real attachment path is the desktop native picker.
 
@@ -112,4 +117,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Architecture and decisions are in [docs/
 
 ## License
 
-Juniper is released under the MIT License. See [LICENSE](LICENSE).
+Juniper is released under the Apache License, Version 2.0. See [LICENSE](LICENSE). Bundled third-party components retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

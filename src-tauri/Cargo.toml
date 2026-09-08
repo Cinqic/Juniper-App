@@ -1,10 +1,10 @@
 [package]
 name = "juniper"
-version = "0.3.0-rc.28"
+version = "0.3.0-rc.31"
 description = "Juniper local-first AI environment"
 authors = ["Cinqic"]
 edition = "2024"
-license = "MIT"
+license = "Apache-2.0"
 rust-version = "1.90"
 
 [lib]
@@ -15,7 +15,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.4.1", features = [] }
 
 [dependencies]
+base64 = "0.22.1"
 futures-util = "0.3.31"
+hmac = "0.12.1"
 reqwest = { version = "0.12.23", default-features = false, features = ["json", "rustls-tls", "stream"] }
 rusqlite = { version = "0.37.0", features = ["bundled"] }
 serde = { version = "1.0.219", features = ["derive"] }
@@ -24,6 +26,7 @@ sha2 = "0.10.9"
 sysinfo = "0.37.0"
 tauri = { version = "2.8.1", features = ["test"] }
 tauri-plugin-dialog = "2.3.2"
+juniper-local-runtime = { path = "plugins/juniper-local" }
 thiserror = "2.0.16"
 tokio = { version = "1.47.1", features = ["macros", "process", "rt-multi-thread", "sync", "time"] }
 uuid = { version = "1.18.1", features = ["serde", "v4"] }

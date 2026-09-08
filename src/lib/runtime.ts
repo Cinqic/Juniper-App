@@ -13,6 +13,7 @@ import type {
   PermissionDecision,
   ProviderProfile,
   RuntimeLogEntry,
+  RuntimeDescriptor,
 } from '../types'
 import {
   MODEL_CATALOG,
@@ -102,6 +103,7 @@ export async function checkProviderConnection(provider: ProviderProfile): Promis
     kind: provider.kind,
     baseUrl: provider.baseUrl,
     apiKeyRef: provider.apiKeyRef,
+    deviceLinkFingerprint: provider.deviceLinkFingerprint,
   })
 }
 
@@ -111,6 +113,7 @@ export async function listProviderModels(provider: ProviderProfile): Promise<Dis
     kind: provider.kind,
     baseUrl: provider.baseUrl,
     apiKeyRef: provider.apiKeyRef,
+    deviceLinkFingerprint: provider.deviceLinkFingerprint,
   })
 }
 
@@ -124,6 +127,7 @@ export async function inspectProviderModel(
     baseUrl: provider.baseUrl,
     modelId,
     apiKeyRef: provider.apiKeyRef,
+    deviceLinkFingerprint: provider.deviceLinkFingerprint,
   })
 }
 
@@ -161,7 +165,12 @@ export async function cancelModelPull(requestId: string): Promise<void> {
 export async function getModelCatalog(): Promise<ModelCatalog> {
   if (!runningInTauri) return MODEL_CATALOG
   const models = await invoke<unknown>('model_catalog')
-  return parseCatalog({ version: 1, minimumAppVersion: '0.3.0-rc.28', models })
+  return parseCatalog({ version: 2, minimumAppVersion: '0.3.0-rc.31', models })
+}
+
+export async function getRuntimeRegistry(): Promise<RuntimeDescriptor[]> {
+  if (!runningInTauri) return []
+  return invoke<RuntimeDescriptor[]>('runtime_registry')
 }
 
 export async function getDeviceCapabilities(): Promise<DeviceCapabilities> {
@@ -288,7 +297,7 @@ export async function saveNativeAppData(data: AppData): Promise<void> {
 }
 
 export async function saveProviderCredential(reference: string, secret: string): Promise<void> {
-  if (!runningInTauri) throw new Error('Secure credentials require the Tauri desktop runtime.')
+  if (!runningInTauri) throw new Error('Secure credentials require the native Juniper runtime.')
   await invoke('secure_set_credential', { reference, secret })
 }
 
@@ -300,7 +309,7 @@ export async function deleteProviderCredential(reference: string): Promise<void>
 export async function getDiagnostics(): Promise<Record<string, string>> {
   if (runningInTauri) return invoke<Record<string, string>>('system_info')
   return {
-    application: 'Juniper 0.3.0-rc.28',
+    application: 'Juniper 0.3.0-rc.31',
     runtime: browserPreviewEnabled
       ? 'Browser preview (development only)'
       : 'Native runtime unavailable',

@@ -12,7 +12,83 @@ export type Page =
   | 'privacy'
   | 'diagnostics'
 
-export type ProviderKind = 'juniper-local' | 'ollama' | 'openai-compatible' | 'llama-cpp'
+export type ProviderKind =
+  | 'juniper-local'
+  | 'juniper-network'
+  | 'ollama'
+  | 'openai-compatible'
+  | 'llama-cpp'
+
+export type RuntimeMaturity = 'stable' | 'beta' | 'experimental' | 'unavailable'
+export type RuntimeState = 'available' | 'unavailable' | 'needs-attention' | 'not-qualified'
+export type ArtifactQualification = 'qualified' | 'package-only' | 'not-qualified' | 'unknown'
+
+export interface RuntimeDescriptor {
+  id: string
+  name: string
+  maturity: RuntimeMaturity
+  state: RuntimeState
+  version: string
+  sourceRevision: string
+  platforms: string[]
+  architectures: string[]
+  artifactFormats: string[]
+  capabilities: string[]
+  accelerator: 'cpu' | 'gpu' | 'npu' | 'unknown'
+  installed: boolean
+  reason?: string
+  qualification: ArtifactQualification
+}
+
+export interface RuntimeBinding {
+  runtimeId: string
+  artifactId?: string
+  selection: 'explicit' | 'recommended' | 'auto'
+}
+
+export type DeviceLinkScope =
+  | 'inference'
+  | 'app-control'
+  | 'model-runtime-inspection'
+  | 'model-management'
+  | 'data-sync'
+
+export interface DeviceLinkPeer {
+  id: string
+  name: string
+  fingerprint: string
+  scopes: DeviceLinkScope[]
+  connected: boolean
+  lastSeenAt?: string
+  address?: string
+}
+
+export interface DeviceLinkState {
+  enabled: boolean
+  hosting: boolean
+  deviceId: string
+  peers: DeviceLinkPeer[]
+}
+
+export interface DeviceLinkStatus {
+  protocolVersion: number
+  deviceId: string
+  fingerprint: string
+  lanOnly: boolean
+  tlsRequired: boolean
+  peers: DeviceLinkPeer[]
+}
+
+export interface DeviceLinkPairingOffer {
+  protocolVersion: number
+  sessionId: string
+  hostDeviceId: string
+  hostFingerprint: string
+  token: string
+  authString: string
+  expiresAt: number
+  qrPayload: string
+}
 
 export interface ProviderCapabilities {
   chat: SupportLevel
@@ -40,6 +116,8 @@ export interface ProviderProfile {
   enabled: boolean
   status: 'connected' | 'offline' | 'unknown'
   capabilities: ProviderCapabilities
+  deviceId?: string
+  deviceLinkFingerprint?: string
 }
 
 export interface ModelProfile {
@@ -69,6 +147,10 @@ export interface ModelProfile {
   description: string
   catalogId?: string
   managedVariantId?: string
+  artifactId?: string
+  runtimeId?: string
+  runtimeMaturity?: RuntimeMaturity
+  runtimeBinding?: RuntimeBinding
 }
 
 export interface GenerationOverrides {
@@ -241,6 +323,7 @@ export interface AppData {
   attachments: AttachmentRecord[]
   permissions: PermissionGrant[]
   settings: AppSettings
+  deviceLink: DeviceLinkState
 }
 
 export interface ChatRequest {
@@ -308,7 +391,8 @@ export interface RuntimeLogEntry {
 
 export interface ManagedModel {
   catalogId: string
-  variantId: string
+  variantId?: string
+  artifactId?: string
   fileName: string
   path: string
   sizeBytes: number

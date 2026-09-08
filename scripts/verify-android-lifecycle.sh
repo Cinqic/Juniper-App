@@ -34,7 +34,13 @@ foreground_activity_ready() {
   grep -E 'mResumedActivity|ResumedActivity' <<<"$activities" | grep -F "$component" >/dev/null || return 1
 
   windows=$(adb_timeout 5 shell dumpsys window windows 2>/dev/null) || return 1
-  grep -E 'mCurrentFocus|mFocusedApp' <<<"$windows" | grep -F "$package_name" >/dev/null
+  if grep -E 'mCurrentFocus|mFocusedApp' <<<"$windows" | grep -F "$package_name" >/dev/null; then
+    return 0
+  fi
+
+  # API 30's window service omits the focus summary even though the activity
+  # service reports the same focused app alongside the resumed activity.
+  grep -E 'mCurrentFocus|mFocusedApp' <<<"$activities" | grep -F "$package_name" >/dev/null
 }
 
 wait_for_device() {
@@ -51,7 +57,11 @@ wait_for_device() {
 wait_for_foreground_activity() {
   local label=$1
   local attempt
-  for attempt in $(seq 1 20); do
+  # A clean universal APK can spend several seconds initializing WebView and
+  # drawing its first frame on a software-GPU emulator. Keep this bounded,
+  # but allow that cold-start work to finish before declaring a lifecycle
+  # failure.
+  for attempt in $(seq 1 45); do
     if foreground_activity_ready; then
       capture_evidence "$label"
       return 0

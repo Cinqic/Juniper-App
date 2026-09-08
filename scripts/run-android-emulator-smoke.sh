@@ -10,6 +10,7 @@ serial=${ANDROID_SERIAL:-emulator-${emulator_port}}
 sdk_root=${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK root is required}}
 android_config_home=${ANDROID_SDK_HOME:-${HOME}/.android}
 avd_home=${ANDROID_AVD_HOME:-${android_config_home}/avd}
+system_image=${ANDROID_SYSTEM_IMAGE:-system-images;android-30;default;x86_64}
 
 export ANDROID_SDK_HOME="$android_config_home"
 export ANDROID_AVD_HOME="$avd_home"
@@ -84,7 +85,7 @@ printf 'Creating clean Android emulator AVD: %s\n' "$avd_name"
 printf 'no\n' | "$avdmanager_bin" create avd \
   --force \
   --name "$avd_name" \
-  --package 'system-images;android-30;google_apis;x86' \
+  --package "$system_image" \
   --device 'pixel_2' \
   > "$evidence_dir/avd-create.txt" 2>&1
 
@@ -95,13 +96,22 @@ if ! "$emulator_bin" -list-avds | grep -Fxq "$avd_name"; then
 fi
 
 printf 'Starting emulator on %s (%s)\n' "$serial" "$emulator_bin"
-"$emulator_bin" -accel-check > "$evidence_dir/accel-check.txt" 2>&1 || true
+if ! "$emulator_bin" -accel-check > "$evidence_dir/accel-check.txt" 2>&1; then
+  cat "$evidence_dir/accel-check.txt" >&2
+  printf 'Android emulator acceleration preflight failed; refusing software emulation.\n' >&2
+  exit 125
+fi
+if ! grep -Fq 'installed and usable' "$evidence_dir/accel-check.txt"; then
+  cat "$evidence_dir/accel-check.txt" >&2
+  printf 'Android emulator acceleration is unavailable; refusing non-qualifying software emulation.\n' >&2
+  exit 125
+fi
 ANDROID_SERIAL="$serial" "$emulator_bin" \
   -avd "$avd_name" \
   -port "$emulator_port" \
-  -no-accel \
+  -accel on \
   -no-window \
-  -gpu swiftshader_indirect \
+  -gpu software \
   -no-snapshot \
   -wipe-data \
   -noaudio \
@@ -153,4 +163,21 @@ fi
 export ANDROID_SERIAL="$serial"
 printf 'Android emulator package manager is ready.\n'
 adb_timeout 10 devices -l | tee "$evidence_dir/adb-devices.txt"
+if [[ -n "${JUNIPER_CREDENTIAL_TEST_APK:-}" ]]; then
+  [[ -f "$JUNIPER_CREDENTIAL_TEST_APK" ]] || {
+    printf 'Credential instrumentation APK not found: %s\n' "$JUNIPER_CREDENTIAL_TEST_APK" >&2
+    exit 1
+  }
+  adb_timeout 300 install --no-streaming -r "$JUNIPER_CREDENTIAL_TEST_APK"
+  if ! adb_timeout 300 shell am instrument -w \
+    -e class com.cinqic.juniper.local_runtime.CredentialVaultInstrumentedTest \
+    com.cinqic.juniper.local_runtime.test/androidx.test.runner.AndroidJUnitRunner \
+    > "$evidence_dir/credential-instrumentation.txt" 2>&1; then
+    cat "$evidence_dir/credential-instrumentation.txt" >&2
+    exit 1
+  fi
+  cat "$evidence_dir/credential-instrumentation.txt"
+  grep -Fq 'OK (1 test)' "$evidence_dir/credential-instrumentation.txt"
+  adb_timeout 60 uninstall com.cinqic.juniper.local_runtime.test
+fi
 timeout --foreground 12m bash scripts/verify-android-lifecycle.sh "$apk_path" "$package_name" "$evidence_dir"

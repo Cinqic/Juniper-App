@@ -1,21 +1,31 @@
-format: juniper-release-manifest-v1
-version: 0.3.0-rc.28
-status: PENDING PRERELEASE - HOSTED VALIDATION REQUIRED
+format: juniper-release-contract-v2
+version: 0.3.0-rc.31
+status: release-candidate
 release:
-  tag: v0.3.0-rc.28
-  commit: PENDING-MERGE
-  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.28
+  tag: v0.3.0-rc.31
+  commit: resolved-from-tag
+  url: derived-at-release
   prerelease: true
+  overwrite_existing_release: forbidden
 canonical_repository: https://github.com/Cinqic/Juniper-App
 canonical_branch: main
-license: MIT
+project_license: Apache-2.0
+third_party_licenses: preserved-in-THIRD_PARTY_NOTICES.md
 telemetry: off
 model_architecture: model-agnostic
-supported_runtime_classes:
+supported_provider_classes:
   - juniper-local
   - ollama
   - llama-cpp
   - openai-compatible
+deferred_provider_classes:
+  - juniper-network
+runtime_registry:
+  source: src/lib/runtime-registry.ts and src-tauri/src/runtime_registry.rs
+  llama_cpp_source_revision: e107984bcffcfd701e82738092a2b000b6fda7a2
+  android_llama_cpp: beta-package-and-emulator-evidence-only
+  desktop_llama_cpp: stable
+  optional_backends: upstream-metadata-only-no-Juniper-adapters-or-artifacts
 model_catalog:
   source: config/models/catalog.json
   entries: 4
@@ -26,18 +36,56 @@ standalone_runtime:
   source_revision: e107984bcffcfd701e82738092a2b000b6fda7a2
   packaging: tauri-resource-built-by-scripts/build-llama-runtime.sh
   ownership: Juniper-starts-and-stops-loopback-process
-published_artifacts: []
-validated_in_this_environment:
-  frontend: tested-with-bundled-node-22-and-pnpm-11
-  frontend_tests: 43
-  native: cargo-check-and-clippy-deny-warnings
-  native_tests: WINDOWS-STATUS_ENTRYPOINT_NOT_FOUND-before-tests-hosted-Linux-gate-required
-  local_runtime_bundle: PASS-WINDOWS-MSI-BUILD-ANDROID-EMULATOR-BLOCKED-NO-HYPERVISOR
-  ollama: PASS-smollm-135m-local-api
-  website: PASS-SITE-VERIFIER
+device_link:
+  status: preview-policy-only-transport-disabled
+  protocol_version: 1
+  listener: disabled
+  discovery: disabled
+  pairing_ui: disabled
+  juniper_network_provider: disabled
+  private_chat: never-synced
+  promotion_requirements:
+    - persistent-secure-TLS-keypair-and-certificate
+    - pairing-exchanges-the-exact-certificate-or-SPKI-pin-used-by-transport
+    - resolved-address-private-network-enforcement
+    - native-authorization-and-end-to-end-transport-tests
+expected_published_artifacts:
+  - Juniper-0.3.0-rc.31-linux-x86_64.deb
+  - Juniper-0.3.0-rc.31-linux-x86_64.AppImage
+  - Juniper-0.3.0-rc.31-windows-x86_64.msi
+  - Juniper-0.3.0-rc.31-android-universal.apk
+  - Juniper-0.3.0-rc.31-android-native-symbols.zip
+  - SHA256SUMS.txt
+  - SIGNING-android.txt
+  - SIGNING-windows.txt
+  - PACKAGE-android.txt
+  - PACKAGE-linux.txt
+  - PACKAGE-windows.txt
+  - RELEASE-PROVENANCE.json
+  - LICENSE
+  - THIRD_PARTY_NOTICES.md
+generated_release_evidence:
+  source: release-workflow
+  filename: RELEASE-PROVENANCE.json
+  resolves:
+    - exact-tag-commit
+    - workflow-run-id-and-url
+    - release-url
+    - artifact-names-and-sha256
+    - signing-and-qualification-status
 accepted_limitations:
-  - Android-model-management-is-supported-but-native-local-inference-runtime-is-not-yet-packaged
+  - Android-native-llama.cpp-remains-beta-without-physical-ARM64-execution-evidence
+  - optional-runtime-adapters-and-artifacts-are-not-bundled
+  - Windows-MSI-may-be-unsigned-and-signing-evidence-is-published
   - no-ios-or-macos-build
-  - external-provider-credentials-use-the-desktop-os-keychain-only
-  - no-telemetry-analytics-crash-reporting-or-account
-blockers_for_final_release: []
+  - no-MCP-client
+  - Device-Link-and-Juniper-Network-transport-are-disabled
+release_gates:
+  - exact-tag-version-and-commit-contract
+  - project-license-consistency
+  - deterministic-version-consistency
+  - frontend-native-schema-and-supply-chain-validation
+  - clean-Android-build-instrumentation-and-package-audit
+  - Linux-Windows-Android-install-launch-smokes
+  - downloaded-artifact-hash-and-signing-verification
+  - immutable-GitHub-prerelease-publication

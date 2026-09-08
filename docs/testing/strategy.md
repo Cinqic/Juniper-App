@@ -17,7 +17,9 @@ matching, capability gating of generation controls, provider JSON/SSE/pull
 parsing, fake HTTP discovery/inspection/chat/tool/error servers, unknown-model
 behavior, timeout and cancellation, scoped attachment and GGUF grants,
 read-time attachment revalidation, bounded runtime logs, restart-safe
-attachment persistence, and SQLite migrations across schema v1 to v3.
+attachment persistence, SQLite migrations across schema v1 to v4, runtime
+registry maturity, artifact manifests, and Device Link pairing/framing/scope
+policy.
 
 Two native tests are `#[ignore]`d because they require a live Ollama service
 and an owner-selected installed model. They are not counted as passes when
@@ -52,7 +54,16 @@ for reference. It is not evidence of a real-model result.
 Linux builds, `.deb`/`.AppImage` bundling, and a launch smoke are reproducible
 locally and in CI. Windows MSI bundling plus an install, launch, and uninstall
 smoke run on a Windows runner. A signed Android APK is built and put through an
-emulator install, launch, rotation, relaunch, and uninstall smoke.
+emulator credential-vault instrumentation run plus install, launch, rotation,
+relaunch, and uninstall smoke. The credential test proves plaintext absence,
+Android Keystore key ownership, per-reference AAD binding, deletion, and failed
+post-deletion retrieval. The package audit also requires the two supported
+native ABIs, rejects server-runtime libraries, and checks 16 KiB `PT_LOAD`
+alignment for every shared object.
+Release artifacts include the unstripped native symbol archive. The emulator
+cannot prove real offline token generation, so a physical ARM64 run remains a
+separate llama.cpp Beta-promotion follow-up. The validation and release
+workflows do not make that physical run a global desktop release gate.
 
 Native unit tests are excluded from the Windows release job only: the Tauri mock
 runtime fails to load there, aborting the test binary at startup with

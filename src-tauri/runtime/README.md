@@ -9,6 +9,6 @@ checks out the pinned `llama.cpp` source revision, builds a CPU-safe server, and
 writes only the resulting executable here. `JUNIPER_LLAMA_SERVER` remains
 available as a developer override for local testing.
 
-The source project is licensed under MIT. Model weights are separate user-owned
+The source project is licensed under Apache-2.0. Model weights are separate user-owned
 files and are downloaded only from the HTTPS URLs and SHA-256 pins in
 `config/models/catalog.json`.
