@@ -1,6 +1,6 @@
 # ADR 0018: Artifact-centric model catalog
 
-Status: Accepted for the rc30 release candidate
+Status: Accepted for the rc31 release candidate
 
 ## Decision
 

@@ -2,7 +2,7 @@
 
 Juniper is a local-first AI desktop and Android app for people who want a thoughtful assistant, visible model controls, and a clear boundary around private data. It works with compatible text-generation models through supported runtimes; no model family is required and no model is bundled.
 
-**Version `0.3.0-rc.30` — release candidate.** The guarded release workflow builds and packages the Juniper-owned local runtime for desktop targets only after the validation and immutable-tag gates pass. See [Download](#download).
+**Version `0.3.0-rc.31` — release candidate.** The guarded release workflow builds and packages the Juniper-owned local runtime for desktop targets only after the validation and immutable-tag gates pass. See [Download](#download).
 
 ## Download
 
@@ -10,10 +10,10 @@ Installers are published on the [GitHub releases page](https://github.com/Cinqic
 
 | Platform          | File                                        | Notes                                                                |
 | ----------------- | ------------------------------------------- | -------------------------------------------------------------------- |
-| Windows 10/11 x64 | `Juniper-0.3.0-rc.30-windows-x86_64.msi`    | Candidate artifact name; the bundled local runtime is Juniper-owned. |
-| Linux x86_64      | `Juniper-0.3.0-rc.30-linux-x86_64.AppImage` | Candidate artifact name; `chmod +x`, then run.                       |
-| Linux x86_64      | `Juniper-0.3.0-rc.30-linux-x86_64.deb`      | Candidate artifact name; `sudo apt install ./Juniper-...deb`.        |
-| Android 7.0+      | `Juniper-0.3.0-rc.30-android-universal.apk` | Candidate artifact name; Android llama.cpp remains Beta.             |
+| Windows 10/11 x64 | `Juniper-0.3.0-rc.31-windows-x86_64.msi`    | Candidate artifact name; the bundled local runtime is Juniper-owned. |
+| Linux x86_64      | `Juniper-0.3.0-rc.31-linux-x86_64.AppImage` | Candidate artifact name; `chmod +x`, then run.                       |
+| Linux x86_64      | `Juniper-0.3.0-rc.31-linux-x86_64.deb`      | Candidate artifact name; `sudo apt install ./Juniper-...deb`.        |
+| Android 7.0+      | `Juniper-0.3.0-rc.31-android-universal.apk` | Candidate artifact name; Android llama.cpp remains Beta.             |
 
 Verify a download against `SHA256SUMS.txt` from the same release:
 
@@ -106,7 +106,7 @@ Suites whose capability gate the model does not meet are reported NOT-APPLICABLE
 ## Known limitations
 
 - The Windows MSI may be unsigned, so Windows SmartScreen can show an unrecognized-publisher warning.
-- `0.3.0-rc.30` is a prerelease candidate and is not promoted to final `0.3.0`.
+- `0.3.0-rc.31` is a prerelease candidate and is not promoted to final `0.3.0`.
 - Android native local inference is Beta: use a supported ARM64 phone for real offline inference; x86_64 emulator evidence is diagnostic when hardware acceleration is unavailable. The missing physical run limits maturity, not core desktop release gating.
 - Android loopback addresses refer to the phone itself. Reaching a computer on your network needs an explicit LAN endpoint.
 - Browser-preview attachments are development-only; the real attachment path is the desktop native picker.

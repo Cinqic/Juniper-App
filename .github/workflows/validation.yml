@@ -115,6 +115,12 @@ jobs:
         run: >-
           bash ./gradlew :juniper-local-runtime:assembleDebugAndroidTest
           -PjuniperNativeAbis=x86_64 --no-daemon --stacktrace
+      - name: Grant the ephemeral runner access to KVM
+        run: |
+          test -c /dev/kvm
+          sudo chmod 0666 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
       - name: Run credential instrumentation and lifecycle smoke
         env:
           JUNIPER_CREDENTIAL_TEST_APK: ${{ github.workspace }}/src-tauri/plugins/juniper-local/android/build/outputs/apk/androidTest/debug/juniper-local-runtime-debug-androidTest.apk

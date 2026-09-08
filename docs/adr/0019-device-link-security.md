@@ -1,6 +1,6 @@
 # ADR 0019: Device Link security boundary
 
-Status: Policy preview retained for rc30; transport and pairing are deferred
+Status: Policy preview retained for rc31; transport and pairing are deferred
 
 ## Decision
 

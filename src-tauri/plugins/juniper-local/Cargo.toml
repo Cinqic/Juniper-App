@@ -1,6 +1,6 @@
 [package]
 name = "juniper-local-runtime"
-version = "0.3.0-rc.30"
+version = "0.3.0-rc.31"
 description = "Juniper's in-process mobile llama.cpp runtime bridge"
 authors = ["Cinqic"]
 edition = "2024"

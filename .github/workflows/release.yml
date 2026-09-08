@@ -252,6 +252,12 @@ jobs:
         run: >-
           bash ./gradlew :juniper-local-runtime:assembleDebugAndroidTest
           -PjuniperNativeAbis=x86_64 --no-daemon --stacktrace
+      - name: Grant the ephemeral runner access to KVM
+        run: |
+          test -c /dev/kvm
+          sudo chmod 0666 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
       - name: Collect and verify exactly one signed APK
         env:
           VERSION: ${{ needs.contract.outputs.version }}

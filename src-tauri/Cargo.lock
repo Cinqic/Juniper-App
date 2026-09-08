@@ -2132,7 +2132,7 @@ dependencies = [
 
 [[package]]
 name = "juniper"
-version = "0.3.0-rc.30"
+version = "0.3.0-rc.31"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -2156,7 +2156,7 @@ dependencies = [
 
 [[package]]
 name = "juniper-local-runtime"
-version = "0.3.0-rc.30"
+version = "0.3.0-rc.31"
 dependencies = [
  "serde",
  "serde_json",
