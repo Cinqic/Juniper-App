@@ -35,6 +35,11 @@ int main() {
     assert(juniper_local::valid_utf8_prefix(valid) == valid.size());
     assert(juniper_local::valid_utf8_prefix("hello \xF0\x9F") == 6);
     assert(juniper_local::valid_utf8_prefix("hello \xC2x") == 6);
+    assert(juniper_local::valid_utf8_prefix("\xC0\x80") == 0);
+    const std::u16string unicode16 = u"é 世界 😀";
+    assert(juniper_local::utf8_to_utf16(juniper_local::utf16_to_utf8(unicode16)) == unicode16);
+    assert(juniper_local::utf8_to_utf16("\xF0\x9F\x98\x80") == u"😀");
+    assert(juniper_local::utf8_to_utf16("\xFF") == u"\uFFFD");
 
     CancellationToken cancellation;
     assert(!cancellation.load());

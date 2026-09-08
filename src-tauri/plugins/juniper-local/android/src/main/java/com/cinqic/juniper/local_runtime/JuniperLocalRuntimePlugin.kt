@@ -66,6 +66,10 @@ private class NativeCallbacks(
         owner.enqueue(NativeEvent("delta", requestId, text = text))
     }
 
+    fun onPhase(requestId: String, phase: String) {
+        owner.onNativePhase(requestId, phase)
+    }
+
     fun onTerminal(
         requestId: String,
         code: String?,
@@ -106,6 +110,7 @@ internal object EngineOwner {
     @Volatile private var loadedBytes: Long? = null
     @Volatile private var loadedContextSize: Int? = null
     @Volatile private var activeRequest: String? = null
+    @Volatile private var cancelOnPhase: Pair<String, String>? = null
     @Volatile private var lifecycleGeneration: Long = 0
     @Volatile private var failureCode: String? = null
     @Volatile private var failureMessage: String? = null
@@ -307,7 +312,7 @@ internal object EngineOwner {
                 return@launch
             }
             try {
-                nativeStartGenerate(
+                val result = nativeStartGenerate(
                     nativeHandle,
                     args.requestId,
                     args.messagesJson,
@@ -315,9 +320,20 @@ internal object EngineOwner {
                     args.temperature.toFloat().coerceIn(0.0f, 2.0f),
                     NativeCallbacks(this@EngineOwner),
                 )
+                if (result != 0) {
+                    enqueue(
+                        NativeEvent(
+                            "done",
+                            args.requestId,
+                            code = "NATIVE_GENERATION_FAILED",
+                            message = "The native engine could not start generation.",
+                        ),
+                    )
+                }
             } catch (_: Throwable) {
                 enqueue(NativeEvent("done", args.requestId, code = "NATIVE_GENERATION_FAILED", message = "The native engine failed during generation."))
             } finally {
+                if (cancelOnPhase?.first == args.requestId) cancelOnPhase = null
                 activeRequest = null
                 if (generation == lifecycleGeneration && nativeHandle != 0L) state = "ready"
             }
@@ -326,6 +342,19 @@ internal object EngineOwner {
 
     fun cancel(requestId: String) {
         if (nativeHandle != 0L && activeRequest == requestId) nativeCancel(nativeHandle, requestId)
+    }
+
+    // Instrumentation uses this to cancel at a native phase boundary without
+    // introducing a timing sleep into the prefill-cancellation qualification.
+    fun cancelOnNativePhase(requestId: String, phase: String) {
+        cancelOnPhase = requestId to phase
+    }
+
+    internal fun onNativePhase(requestId: String, phase: String) {
+        if (cancelOnPhase == (requestId to phase)) {
+            cancelOnPhase = null
+            cancel(requestId)
+        }
     }
 
     fun poll(requestId: String): NativeEvent? {

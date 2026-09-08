@@ -19,15 +19,13 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class JuniperLocalRuntimeInferenceTest {
     private companion object {
-        // The hosted x86_64 emulator runs without hardware acceleration. Keep
-        // this device smoke bounded while still exercising the runtime's
-        // minimum supported context and real streaming/cancellation paths.
-        const val smokeContextSize = 512
+        const val defaultContextSize = 2048
     }
 
     private data class GenerationResult(
         val deltas: String,
         val terminal: NativeEvent,
+        val deltaCount: Int,
     )
 
     @Test(timeout = 600_000)
@@ -36,6 +34,9 @@ class JuniperLocalRuntimeInferenceTest {
         val modelArgument = InstrumentationRegistry.getArguments().getString("model_path")
             ?: throw AssertionError("model_path instrumentation argument is required")
         val context = instrumentation.targetContext
+        val contextSize = InstrumentationRegistry.getArguments().getString("context_size")
+            ?.toIntOrNull() ?: defaultContextSize
+        assertTrue("context_size must be between 512 and 2048", contextSize in 512..2048)
         val argumentFile = File(modelArgument)
         val model = if (argumentFile.isAbsolute) argumentFile else File(context.filesDir, argumentFile.path)
         assertTrue("model is not readable: " + model.path, model.isFile && model.canRead())
@@ -44,13 +45,14 @@ class JuniperLocalRuntimeInferenceTest {
         try {
             val loadArgs = LoadModelArgs().apply {
                 path = model.absolutePath
-                contextSize = smokeContextSize
+                this.contextSize = contextSize
                 threads = 4
                 expectedModelBytes = model.length()
             }
             EngineOwner.load(loadArgs)
             awaitState("ready")
 
+            cancelImmediately()
             val cold = generate("Say hello in one short sentence.", maxOutput = 4)
             assertTrue("cold generation emitted no text", cold.deltas.isNotBlank())
             assertTrue("cold generation was not successful", cold.terminal.code.isNullOrEmpty())
@@ -61,6 +63,27 @@ class JuniperLocalRuntimeInferenceTest {
             )
             assertTrue("warm generation emitted no text", warm.deltas.isNotBlank())
             assertTrue("warm generation was not successful", warm.terminal.code.isNullOrEmpty())
+
+            val unicode = generate(
+                "Handle this text without changing it: é, 世界, 😀, e\u0301, line\n tab\t and \\\"quotes\\\".",
+                maxOutput = 8,
+            )
+            assertTrue("Unicode generation was not successful", unicode.terminal.code.isNullOrEmpty())
+
+            val conversation = generateMessages(conversationMessages(20), maxOutput = 8)
+            assertTrue("multi-turn generation was not successful", conversation.terminal.code.isNullOrEmpty())
+
+            val long = generate(
+                "Write a long harmless list of short words separated by spaces.",
+                maxOutput = 128,
+            )
+            assertTrue("long generation emitted no text", long.deltas.isNotBlank())
+            assertTrue("long generation did not stream enough callbacks", long.deltaCount >= 16)
+
+            val oversized = generate("oversized " + "context ".repeat(4_000), maxOutput = 4)
+            assertEquals("oversized input was not rejected structurally", "CONTEXT_TOO_LARGE", oversized.terminal.code)
+            val afterContextError = generate("Recover after the context rejection.", maxOutput = 4)
+            assertTrue("engine did not recover after context rejection", afterContextError.terminal.code.isNullOrEmpty())
 
             cancelDuringPrefill()
             cancelDuringDecode()
@@ -77,11 +100,29 @@ class JuniperLocalRuntimeInferenceTest {
         }
     }
 
+    private fun cancelImmediately() {
+        val requestId = "immediate-" + UUID.randomUUID()
+        EngineOwner.start(
+            GenerateArgs().apply {
+                this.requestId = requestId
+                messagesJson = messages("Cancel before native execution begins.")
+                maxOutput = 32
+                temperature = 0.3
+            },
+        )
+        EngineOwner.cancel(requestId)
+        val result = awaitTerminal(requestId)
+        assertEquals("immediate cancellation was lost", "REQUEST_CANCELLED", result.terminal.code)
+        assertTrue("immediate cancellation emitted unbounded text", result.deltas.isEmpty())
+        awaitState("ready")
+    }
+
     private fun cancelDuringPrefill() {
         val requestId = "prefill-" + UUID.randomUUID()
         val longPrompt = buildString {
-            repeat(120) { append(" prefill") }
+            repeat(700) { append(" prefill") }
         }
+        EngineOwner.cancelOnNativePhase(requestId, "prefill_batch")
         EngineOwner.start(
             GenerateArgs().apply {
                 this.requestId = requestId
@@ -90,9 +131,7 @@ class JuniperLocalRuntimeInferenceTest {
                 temperature = 0.3
             },
         )
-        Thread.sleep(100)
         val cancellationStarted = System.nanoTime()
-        EngineOwner.cancel(requestId)
         val result = awaitTerminal(requestId)
         val latencyMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - cancellationStarted)
         assertEquals("prefill cancellation did not terminate", "REQUEST_CANCELLED", result.terminal.code)
@@ -150,11 +189,15 @@ class JuniperLocalRuntimeInferenceTest {
     }
 
     private fun generate(prompt: String, maxOutput: Int): GenerationResult {
+        return generateMessages(messages(prompt), maxOutput)
+    }
+
+    private fun generateMessages(messagesJson: String, maxOutput: Int): GenerationResult {
         val requestId = "generate-" + UUID.randomUUID()
         EngineOwner.start(
             GenerateArgs().apply {
                 this.requestId = requestId
-                messagesJson = messages(prompt)
+                this.messagesJson = messagesJson
                 this.maxOutput = maxOutput
                 temperature = 0.3
             },
@@ -168,6 +211,7 @@ class JuniperLocalRuntimeInferenceTest {
     ): GenerationResult {
         val waitUntil = System.nanoTime() + TimeUnit.SECONDS.toNanos(180)
         var terminal: NativeEvent? = null
+        var deltaCount = 0
         while (System.nanoTime() < waitUntil) {
             val event = EngineOwner.poll(requestId)
             if (event == null) {
@@ -178,6 +222,7 @@ class JuniperLocalRuntimeInferenceTest {
                 "delta" -> {
                     assertNull("delta arrived after terminal", terminal)
                     deltasAlreadySeen.append(event.text.orEmpty())
+                    deltaCount += 1
                 }
                 "done" -> {
                     assertNull("duplicate terminal event", terminal)
@@ -189,10 +234,10 @@ class JuniperLocalRuntimeInferenceTest {
                 val completed = terminal
                 Thread.sleep(100)
                 assertNull("event remained after terminal", EngineOwner.poll(requestId))
-                return GenerationResult(deltasAlreadySeen.toString(), completed)
+                return GenerationResult(deltasAlreadySeen.toString(), completed, deltaCount)
             }
         }
-        throw AssertionError("generation did not terminate within 60 seconds")
+        throw AssertionError("generation did not terminate within 180 seconds")
     }
 
     private fun awaitState(expected: String) {
@@ -216,6 +261,21 @@ class JuniperLocalRuntimeInferenceTest {
 
     private fun messages(content: String): String =
         "[{\"role\":\"user\",\"content\":" + jsonString(content) + "}]"
+
+    private fun conversationMessages(turns: Int): String =
+        buildString {
+            append('[')
+            repeat(turns) { index ->
+                if (index > 0) append(',')
+                val role = if (index % 2 == 0) "user" else "assistant"
+                append("{\"role\":\"")
+                append(role)
+                append("\",\"content\":")
+                append(jsonString("turn $index: keep this short and deterministic"))
+                append('}')
+            }
+            append(']')
+        }
 
     private fun jsonString(value: String): String =
         buildString {

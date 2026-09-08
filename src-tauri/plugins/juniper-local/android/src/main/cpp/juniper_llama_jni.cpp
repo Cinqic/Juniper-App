@@ -2,6 +2,7 @@
 #include <android/log.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <mutex>
 #include <string>
@@ -34,6 +35,9 @@ struct Engine {
     common_sampler * sampler = nullptr;
     juniper_local::CancellationToken cancelled;
     std::mutex mutex;
+    std::mutex request_mutex;
+    std::string active_request_id;
+    std::string pending_cancel_request_id;
 
     ~Engine() { unload_locked(); }
 
@@ -56,6 +60,35 @@ struct Engine {
 
     static bool abort_callback(void * data) {
         return static_cast<Engine *>(data)->cancelled.load();
+    }
+
+    void begin_request(const std::string & request_id) {
+        std::lock_guard lock(request_mutex);
+        active_request_id = request_id;
+        cancelled.store(pending_cancel_request_id == request_id);
+        if (pending_cancel_request_id == request_id) pending_cancel_request_id.clear();
+    }
+
+    void end_request(const std::string & request_id) {
+        std::lock_guard lock(request_mutex);
+        if (active_request_id == request_id) active_request_id.clear();
+        if (pending_cancel_request_id == request_id) pending_cancel_request_id.clear();
+        cancelled.store(false);
+    }
+
+    void request_cancel(const std::string & request_id) {
+        std::lock_guard lock(request_mutex);
+        if (request_id.empty()) {
+            if (!active_request_id.empty()) cancelled.store(true);
+            return;
+        }
+        if (active_request_id == request_id) {
+            cancelled.store(true);
+        } else {
+            // Kotlin can accept a request before its coroutine enters JNI.
+            // Preserve that cancellation for the matching native request.
+            pending_cancel_request_id = request_id;
+        }
     }
 
     static bool validate_gguf_metadata(const std::string & path) {
@@ -167,24 +200,91 @@ struct Engine {
         return 0;
     }
 
+    static bool java_to_utf8(JNIEnv * env, jstring value, std::string & output) {
+        if (value == nullptr) {
+            output.clear();
+            return true;
+        }
+        const jsize length = env->GetStringLength(value);
+        const jchar * chars = env->GetStringChars(value, nullptr);
+        if (chars == nullptr) {
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            return false;
+        }
+        std::u16string utf16;
+        utf16.reserve(static_cast<std::size_t>(length));
+        for (jsize index = 0; index < length; ++index) {
+            utf16.push_back(static_cast<char16_t>(chars[index]));
+        }
+        env->ReleaseStringChars(value, chars);
+        output = juniper_local::utf16_to_utf8(utf16);
+        return true;
+    }
+
     static jstring java_string(JNIEnv * env, const std::string & value) {
-        return env->NewStringUTF(value.c_str());
+        const std::u16string utf16 = juniper_local::utf8_to_utf16(value);
+        return env->NewString(
+            reinterpret_cast<const jchar *>(utf16.data()), static_cast<jsize>(utf16.size()));
     }
 
     static bool emit_delta(JNIEnv * env, jobject callbacks, const std::string & request_id, const std::string & text) {
         jclass cls = env->GetObjectClass(callbacks);
-        jmethodID method = env->GetMethodID(cls, "onDelta", "(Ljava/lang/String;Ljava/lang/String;)V");
-        if (method == nullptr) return false;
-        jstring request = java_string(env, request_id);
-        jstring delta = java_string(env, text);
-        env->CallVoidMethod(callbacks, method, request, delta);
-        env->DeleteLocalRef(request);
-        env->DeleteLocalRef(delta);
-        if (env->ExceptionCheck()) {
-            env->ExceptionClear();
+        if (cls == nullptr || env->ExceptionCheck()) {
+            if (env->ExceptionCheck()) env->ExceptionClear();
             return false;
         }
-        return true;
+        jmethodID method = env->GetMethodID(cls, "onDelta", "(Ljava/lang/String;Ljava/lang/String;)V");
+        if (method == nullptr || env->ExceptionCheck()) {
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            env->DeleteLocalRef(cls);
+            return false;
+        }
+        jstring request = java_string(env, request_id);
+        jstring delta = java_string(env, text);
+        if (request == nullptr || delta == nullptr || env->ExceptionCheck()) {
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            if (request != nullptr) env->DeleteLocalRef(request);
+            if (delta != nullptr) env->DeleteLocalRef(delta);
+            env->DeleteLocalRef(cls);
+            return false;
+        }
+        env->CallVoidMethod(callbacks, method, request, delta);
+        const bool callback_failed = env->ExceptionCheck();
+        if (callback_failed) env->ExceptionClear();
+        env->DeleteLocalRef(request);
+        env->DeleteLocalRef(delta);
+        env->DeleteLocalRef(cls);
+        return !callback_failed;
+    }
+
+    static bool emit_phase(JNIEnv * env, jobject callbacks, const std::string & request_id, const char * phase) {
+        jclass cls = env->GetObjectClass(callbacks);
+        if (cls == nullptr || env->ExceptionCheck()) {
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            return false;
+        }
+        jmethodID method = env->GetMethodID(cls, "onPhase", "(Ljava/lang/String;Ljava/lang/String;)V");
+        if (method == nullptr || env->ExceptionCheck()) {
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            env->DeleteLocalRef(cls);
+            return false;
+        }
+        jstring request = java_string(env, request_id);
+        jstring phase_string = java_string(env, phase == nullptr ? "" : phase);
+        if (request == nullptr || phase_string == nullptr || env->ExceptionCheck()) {
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            if (request != nullptr) env->DeleteLocalRef(request);
+            if (phase_string != nullptr) env->DeleteLocalRef(phase_string);
+            env->DeleteLocalRef(cls);
+            return false;
+        }
+        env->CallVoidMethod(callbacks, method, request, phase_string);
+        const bool callback_failed = env->ExceptionCheck();
+        if (callback_failed) env->ExceptionClear();
+        env->DeleteLocalRef(request);
+        env->DeleteLocalRef(phase_string);
+        env->DeleteLocalRef(cls);
+        return !callback_failed;
     }
 
     static bool emit_terminal(
@@ -197,23 +297,38 @@ struct Engine {
         int output_tokens,
         int64_t duration_ms) {
         jclass cls = env->GetObjectClass(callbacks);
+        if (cls == nullptr || env->ExceptionCheck()) {
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            return false;
+        }
         jmethodID method = env->GetMethodID(
             cls,
             "onTerminal",
             "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IIJ)V");
-        if (method == nullptr) return false;
+        if (method == nullptr || env->ExceptionCheck()) {
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            env->DeleteLocalRef(cls);
+            return false;
+        }
         jstring request = java_string(env, request_id);
         jstring code_string = java_string(env, code == nullptr ? "" : code);
         jstring message_string = java_string(env, message == nullptr ? "" : message);
+        if (request == nullptr || code_string == nullptr || message_string == nullptr || env->ExceptionCheck()) {
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            if (request != nullptr) env->DeleteLocalRef(request);
+            if (code_string != nullptr) env->DeleteLocalRef(code_string);
+            if (message_string != nullptr) env->DeleteLocalRef(message_string);
+            env->DeleteLocalRef(cls);
+            return false;
+        }
         env->CallVoidMethod(callbacks, method, request, code_string, message_string, input_tokens, output_tokens, duration_ms);
+        const bool callback_failed = env->ExceptionCheck();
+        if (callback_failed) env->ExceptionClear();
         env->DeleteLocalRef(request);
         env->DeleteLocalRef(code_string);
         env->DeleteLocalRef(message_string);
-        if (env->ExceptionCheck()) {
-            env->ExceptionClear();
-            return false;
-        }
-        return true;
+        env->DeleteLocalRef(cls);
+        return !callback_failed;
     }
 
     int generate(
@@ -245,6 +360,17 @@ struct Engine {
                 static_cast<long long>(duration));
             emit_terminal(env, callbacks, request_id, code, message, input_tokens, output_tokens, duration);
         };
+
+        begin_request(request_id);
+        struct RequestScope {
+            Engine * engine;
+            const std::string & request_id;
+            ~RequestScope() { engine->end_request(request_id); }
+        } request_scope{this, request_id};
+        if (cancelled.load()) {
+            finish("REQUEST_CANCELLED", "Generation cancelled.");
+            return 0;
+        }
 
         try {
             if (messages_json.size() > juniper_local::kMaximumMessagesJsonBytes) {
@@ -300,6 +426,11 @@ struct Engine {
                 return 0;
             }
             const auto prefill_started = std::chrono::steady_clock::now();
+            if (!emit_phase(env, callbacks, request_id, "prefill_started")) {
+                llama_batch_free(batch);
+                finish("NATIVE_CALLBACK_FAILED", "The application stopped receiving native output.");
+                return 0;
+            }
             for (size_t offset = 0; offset < tokens.size(); offset += kBatchSize) {
                 if (cancelled.load()) {
                     llama_batch_free(batch);
@@ -311,12 +442,22 @@ struct Engine {
                 for (size_t index = offset; index < end; ++index) {
                     common_batch_add(batch, tokens[index], static_cast<llama_pos>(index), {0}, index + 1 == tokens.size());
                 }
+                if (!emit_phase(env, callbacks, request_id, "prefill_batch")) {
+                    llama_batch_free(batch);
+                    finish("NATIVE_CALLBACK_FAILED", "The application stopped receiving native output.");
+                    return 0;
+                }
                 const int result = llama_decode(context, batch);
                 if (result != 0) {
                     llama_batch_free(batch);
                     finish(cancelled.load() ? "REQUEST_CANCELLED" : "PREFILL_FAILED", cancelled.load() ? "Generation cancelled." : "The model could not evaluate the prompt.");
                     return 0;
                 }
+            }
+            if (!emit_phase(env, callbacks, request_id, "prefill_complete")) {
+                llama_batch_free(batch);
+                finish("NATIVE_CALLBACK_FAILED", "The application stopped receiving native output.");
+                return 0;
             }
             __android_log_print(
                 ANDROID_LOG_INFO,
@@ -392,10 +533,11 @@ struct Engine {
 };
 
 std::once_flag backend_once;
+std::atomic_bool backend_ready = false;
 
-void load_android_cpu_backend(const std::string & native_library_dir) {
+bool load_android_cpu_backend(const std::string & native_library_dir) {
     if (native_library_dir.empty()) {
-        return;
+        return false;
     }
 
 #if defined(__aarch64__)
@@ -419,7 +561,7 @@ void load_android_cpu_backend(const std::string & native_library_dir) {
 
     if (sizeof(cpu_backend_names) == 0) {
         __android_log_write(ANDROID_LOG_ERROR, "JuniperNative", "no packaged Android CPU backend name for this ABI");
-        return;
+        return false;
     }
 
     // Android may keep native libraries inside the APK instead of exposing
@@ -439,7 +581,7 @@ void load_android_cpu_backend(const std::string & native_library_dir) {
                 "native CPU backend selected: file=%s registrations=%zu",
                 cpu_backend_name,
                 ggml_backend_reg_count());
-            return;
+            return true;
         }
     }
     __android_log_print(
@@ -447,15 +589,15 @@ void load_android_cpu_backend(const std::string & native_library_dir) {
         "JuniperNative",
         "native CPU backend load failed: registrations=%zu",
         ggml_backend_reg_count());
+    return false;
 }
 
 } // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_cinqic_juniper_local_1runtime_EngineOwner_nativeCreate(JNIEnv * env, jclass, jstring native_library_dir) {
-    const char * path = native_library_dir == nullptr ? nullptr : env->GetStringUTFChars(native_library_dir, nullptr);
-    std::string backend_path = path == nullptr ? "" : path;
-    if (path != nullptr) env->ReleaseStringUTFChars(native_library_dir, path);
+    std::string backend_path;
+    if (!Engine::java_to_utf8(env, native_library_dir, backend_path)) return 0;
 
     std::call_once(backend_once, [&backend_path] {
         llama_log_set(android_llama_log, nullptr);
@@ -465,7 +607,14 @@ Java_com_cinqic_juniper_local_1runtime_EngineOwner_nativeCreate(JNIEnv * env, jc
         if (!backend_path.empty()) ggml_backend_load_all_from_path(backend_path.c_str());
         load_android_cpu_backend(backend_path);
         llama_backend_init();
+        backend_ready.store(ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU) != nullptr);
+        __android_log_print(
+            backend_ready.load() ? ANDROID_LOG_INFO : ANDROID_LOG_ERROR,
+            "JuniperNative",
+            "native CPU backend readiness: %s",
+            backend_ready.load() ? "ready" : "missing");
     });
+    if (!backend_ready.load()) return 0;
     return reinterpret_cast<jlong>(new Engine());
 }
 
@@ -474,9 +623,9 @@ Java_com_cinqic_juniper_local_1runtime_EngineOwner_nativeLoad(
     JNIEnv * env, jclass, jlong handle, jstring path, jint context_size, jint threads) {
     auto * engine = reinterpret_cast<Engine *>(handle);
     if (engine == nullptr) return 9;
-    const char * path_chars = env->GetStringUTFChars(path, nullptr);
-    const int result = engine->load(path_chars == nullptr ? "" : path_chars, static_cast<uint32_t>(context_size), threads);
-    if (path_chars != nullptr) env->ReleaseStringUTFChars(path, path_chars);
+    std::string path_value;
+    if (!Engine::java_to_utf8(env, path, path_value)) return 1;
+    const int result = engine->load(path_value, static_cast<uint32_t>(context_size), threads);
     return result;
 }
 
@@ -485,31 +634,30 @@ Java_com_cinqic_juniper_local_1runtime_EngineOwner_nativeStartGenerate(
     JNIEnv * env, jclass, jlong handle, jstring request_id, jstring messages_json, jint max_output, jfloat temperature, jobject callbacks) {
     auto * engine = reinterpret_cast<Engine *>(handle);
     if (engine == nullptr) return 9;
-    const char * request_chars = env->GetStringUTFChars(request_id, nullptr);
-    const char * messages_chars = env->GetStringUTFChars(messages_json, nullptr);
+    std::string request_value;
+    std::string messages_value;
+    if (!Engine::java_to_utf8(env, request_id, request_value) ||
+        !Engine::java_to_utf8(env, messages_json, messages_value)) return 9;
     const int result = engine->generate(
-        env,
-        callbacks,
-        request_chars == nullptr ? "" : request_chars,
-        messages_chars == nullptr ? "" : messages_chars,
-        max_output,
-        temperature);
-    if (request_chars != nullptr) env->ReleaseStringUTFChars(request_id, request_chars);
-    if (messages_chars != nullptr) env->ReleaseStringUTFChars(messages_json, messages_chars);
+        env, callbacks, request_value, messages_value, max_output, temperature);
     return result;
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_cinqic_juniper_local_1runtime_EngineOwner_nativeCancel(JNIEnv *, jclass, jlong handle, jstring) {
+Java_com_cinqic_juniper_local_1runtime_EngineOwner_nativeCancel(JNIEnv * env, jclass, jlong handle, jstring request_id) {
     auto * engine = reinterpret_cast<Engine *>(handle);
-    if (engine != nullptr) engine->cancelled.store(true);
+    if (engine != nullptr) {
+        std::string request_value;
+        if (!Engine::java_to_utf8(env, request_id, request_value)) request_value.clear();
+        engine->request_cancel(request_value);
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_cinqic_juniper_local_1runtime_EngineOwner_nativeUnload(JNIEnv *, jclass, jlong handle) {
     auto * engine = reinterpret_cast<Engine *>(handle);
     if (engine != nullptr) {
-        engine->cancelled.store(true);
+        engine->request_cancel("");
         std::lock_guard lock(engine->mutex);
         engine->unload_locked();
     }
