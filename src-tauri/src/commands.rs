@@ -1,3 +1,4 @@
+use crate::device_link;
 use crate::domain::{
     Attachment, ChatRequest, DiscoveredModel, GgufSelection, ModelInspection, RuntimeLogEntry,
 };
@@ -24,12 +25,21 @@ pub struct AppState {
     pub gguf_files: Mutex<HashMap<String, PathBuf>>,
     pub permission_waiters: Mutex<HashMap<String, oneshot::Sender<String>>>,
     pub runtime_logs: Mutex<VecDeque<RuntimeLogEntry>>,
+    pub device_link_sessions: Mutex<HashMap<String, device_link::PairingSession>>,
 }
 
 pub const MAX_RUNTIME_LOGS: usize = 200;
 const MAX_ATTACHMENT_BYTES: u64 = 1024 * 1024;
 const MAX_GGUF_BYTES: u64 = 2 * 1024 * 1024 * 1024 * 1024;
 const MAX_APP_DATA_BYTES: usize = 64 * 1024 * 1024;
+
+fn database_path<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("juniper.db"))
+}
 
 /// Text types Juniper will read as an attachment. The picker filter and the
 /// grant check must agree, so both read this one list.
@@ -176,7 +186,7 @@ pub fn system_info() -> HashMap<String, String> {
     let mut result = HashMap::from([
         (
             String::from("application"),
-            String::from("Juniper 0.3.0-rc.28"),
+            String::from("Juniper 0.3.0-rc.29"),
         ),
         (String::from("os"), std::env::consts::OS.to_owned()),
         (
@@ -210,7 +220,7 @@ pub async fn device_capabilities(app: AppHandle) -> Result<device::DeviceCapabil
     #[cfg(target_os = "android")]
     let mut capabilities = device::collect(&directory);
     #[cfg(not(target_os = "android"))]
-    let capabilities = device::collect(&directory);
+    let mut capabilities = device::collect(&directory);
     #[cfg(target_os = "android")]
     {
         let native = crate::android_runtime::runtime_status(&app).await?;
@@ -235,7 +245,162 @@ pub async fn device_capabilities(app: AppHandle) -> Result<device::DeviceCapabil
             capabilities.cpu_architecture = value;
         }
     }
+    let packaged_llama = {
+        #[cfg(target_os = "android")]
+        {
+            false
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            std::env::var_os("JUNIPER_LLAMA_SERVER")
+                .is_some_and(|path| std::path::Path::new(&path).is_file())
+                || app.path().resource_dir().ok().is_some_and(|directory| {
+                    ["llama-server", "llama-server.exe"].iter().any(|name| {
+                        directory.join("runtime").join(name).is_file()
+                            || directory.join("binaries").join(name).is_file()
+                    })
+                })
+        }
+    };
+    capabilities.runtimes = crate::runtime_registry::for_device(
+        std::env::consts::OS,
+        &capabilities.architecture,
+        packaged_llama,
+        capabilities.native_runtime_available.unwrap_or(false),
+    );
     Ok(capabilities)
+}
+
+#[tauri::command]
+pub async fn runtime_registry(
+    app: AppHandle,
+) -> Result<Vec<crate::runtime_registry::RuntimeDescriptor>, String> {
+    Ok(device_capabilities(app).await?.runtimes)
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceLinkStatus {
+    pub protocol_version: u16,
+    pub device_id: String,
+    pub fingerprint: String,
+    pub lan_only: bool,
+    pub tls_required: bool,
+    pub peers: Vec<device_link::DeviceLinkPeer>,
+}
+
+fn ensure_device_link_identity<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+) -> Result<(String, String), String> {
+    let path = database_path(app)?;
+    if let Some(identity) = crate::storage::load_device_link_identity(&path)
+        .map_err(|error| format!("DATABASE_ERROR: {error}"))?
+    {
+        return Ok(identity);
+    }
+    let device_id = format!("device-{}", Uuid::new_v4());
+    let fingerprint = device_link::fingerprint_for_device(&device_id);
+    crate::storage::save_device_link_identity(&path, &device_id, &fingerprint)
+        .map_err(|error| format!("DATABASE_ERROR: {error}"))?;
+    Ok((device_id, fingerprint))
+}
+
+#[tauri::command]
+pub fn device_link_status(app: AppHandle) -> Result<DeviceLinkStatus, String> {
+    let (device_id, fingerprint) = ensure_device_link_identity(&app)?;
+    let peers = crate::storage::load_device_link_peers(&database_path(&app)?)
+        .map_err(|error| format!("DATABASE_ERROR: {error}"))?;
+    Ok(DeviceLinkStatus {
+        protocol_version: device_link::PROTOCOL_VERSION,
+        device_id,
+        fingerprint,
+        lan_only: true,
+        tls_required: true,
+        peers,
+    })
+}
+
+#[tauri::command]
+pub fn device_link_start_pairing(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<device_link::PairingOffer, String> {
+    let (device_id, fingerprint) = ensure_device_link_identity(&app)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "System clock is before the Unix epoch.")?
+        .as_secs();
+    let (session, offer) = device_link::PairingSession::start(&device_id, &fingerprint, now);
+    state
+        .device_link_sessions
+        .lock()
+        .map_err(|_| "Device Link pairing state unavailable.")?
+        .insert(session.session_id.clone(), session);
+    Ok(offer)
+}
+
+#[tauri::command]
+pub fn device_link_complete_pairing(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    proof: device_link::PairingProof,
+) -> Result<device_link::DeviceLinkPeer, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "System clock is before the Unix epoch.")?
+        .as_secs();
+    let mut sessions = state
+        .device_link_sessions
+        .lock()
+        .map_err(|_| "Device Link pairing state unavailable.")?;
+    let session = sessions
+        .get_mut(&proof.session_id)
+        .ok_or_else(|| "DEVICE_LINK_PAIRING_INVALID: Pairing session is unavailable.".to_owned())?;
+    let peer = session.complete(&proof, now)?;
+    crate::storage::upsert_device_link_peer(&database_path(&app)?, &peer)
+        .map_err(|error| format!("DATABASE_ERROR: {error}"))?;
+    sessions.remove(&proof.session_id);
+    Ok(peer)
+}
+
+#[tauri::command]
+pub fn device_link_revoke_peer(app: AppHandle, peer_id: String) -> Result<(), String> {
+    if peer_id.is_empty() || peer_id.len() > 128 || peer_id.chars().any(char::is_control) {
+        return Err("DEVICE_LINK_PEER_INVALID: Peer id is invalid.".into());
+    }
+    let removed = crate::storage::delete_device_link_peer(&database_path(&app)?, &peer_id)
+        .map_err(|error| format!("DATABASE_ERROR: {error}"))?;
+    if removed {
+        Ok(())
+    } else {
+        Err("DEVICE_LINK_PEER_NOT_FOUND: Peer is not paired with this device.".into())
+    }
+}
+
+#[tauri::command]
+pub fn device_link_update_peer_scopes(
+    app: AppHandle,
+    peer_id: String,
+    scopes: Vec<device_link::Scope>,
+) -> Result<device_link::DeviceLinkPeer, String> {
+    let peers = crate::storage::load_device_link_peers(&database_path(&app)?)
+        .map_err(|error| format!("DATABASE_ERROR: {error}"))?;
+    let mut peer = peers
+        .into_iter()
+        .find(|peer| peer.id == peer_id)
+        .ok_or_else(|| {
+            "DEVICE_LINK_PEER_NOT_FOUND: Peer is not paired with this device.".to_owned()
+        })?;
+    let mut next_scopes = Vec::new();
+    for scope in scopes {
+        if !next_scopes.contains(&scope) {
+            next_scopes.push(scope);
+        }
+    }
+    peer.scopes = next_scopes;
+    crate::storage::upsert_device_link_peer(&database_path(&app)?, &peer)
+        .map_err(|error| format!("DATABASE_ERROR: {error}"))?;
+    Ok(peer)
 }
 
 #[tauri::command]
@@ -324,8 +489,15 @@ pub async fn health_check(
     kind: String,
     base_url: String,
     api_key_ref: Option<String>,
+    device_link_fingerprint: Option<String>,
 ) -> Result<String, String> {
-    let result = providers::health_check(&kind, &base_url, api_key_ref.as_deref()).await;
+    let result = providers::health_check_with_pin(
+        &kind,
+        &base_url,
+        api_key_ref.as_deref(),
+        device_link_fingerprint.as_deref(),
+    )
+    .await;
     record_runtime_log(
         state.inner(),
         if result.is_ok() {
@@ -346,8 +518,15 @@ pub async fn list_models(
     kind: String,
     base_url: String,
     api_key_ref: Option<String>,
+    device_link_fingerprint: Option<String>,
 ) -> Result<Vec<DiscoveredModel>, String> {
-    let result = providers::list_models(&kind, &base_url, api_key_ref.as_deref()).await;
+    let result = providers::list_models_with_pin(
+        &kind,
+        &base_url,
+        api_key_ref.as_deref(),
+        device_link_fingerprint.as_deref(),
+    )
+    .await;
     record_runtime_log(
         state.inner(),
         if result.is_ok() {
@@ -369,9 +548,16 @@ pub async fn inspect_model(
     base_url: String,
     model_id: String,
     api_key_ref: Option<String>,
+    device_link_fingerprint: Option<String>,
 ) -> Result<ModelInspection, String> {
-    let result =
-        providers::inspect_model(&kind, &base_url, &model_id, api_key_ref.as_deref()).await;
+    let result = providers::inspect_model_with_pin(
+        &kind,
+        &base_url,
+        &model_id,
+        api_key_ref.as_deref(),
+        device_link_fingerprint.as_deref(),
+    )
+    .await;
     record_runtime_log(
         state.inner(),
         if result.is_ok() {
@@ -876,38 +1062,58 @@ pub(crate) fn valid_credential_reference(reference: &str) -> bool {
 }
 
 #[tauri::command]
-pub fn secure_set_credential(reference: String, secret: String) -> Result<(), String> {
+pub fn secure_set_credential(
+    app: AppHandle,
+    reference: String,
+    secret: String,
+) -> Result<(), String> {
     if !valid_credential_reference(&reference) || secret.is_empty() || secret.len() > 8192 {
         return Err("Credential reference or value is outside the allowed limit.".into());
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        let _ = app;
         credential_entry(&reference)?
             .set_password(&secret)
             .map_err(|_| "Could not save the credential to the system keychain.".into())
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
-        let _ = secret;
-        Err("Secure provider credentials on mobile require a platform vault integration.".into())
+        #[cfg(target_os = "android")]
+        {
+            juniper_local_runtime::secure_set_credential(&app, &reference, &secret)
+        }
+        #[cfg(target_os = "ios")]
+        {
+            let _ = (app, secret);
+            Err("Secure provider credentials on iOS are not available in this build.".into())
+        }
     }
 }
 
 #[tauri::command]
-pub fn secure_delete_credential(reference: String) -> Result<(), String> {
+pub fn secure_delete_credential(app: AppHandle, reference: String) -> Result<(), String> {
     if !valid_credential_reference(&reference) {
         return Err("Credential reference is invalid.".into());
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        let _ = app;
         credential_entry(&reference)?
             .delete_credential()
             .map_err(|_| "Could not remove the credential from the system keychain.".into())
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
-        let _ = reference;
-        Ok(())
+        #[cfg(target_os = "android")]
+        {
+            juniper_local_runtime::secure_delete_credential(&app, &reference)
+        }
+        #[cfg(target_os = "ios")]
+        {
+            let _ = reference;
+            Ok(())
+        }
     }
 }
 

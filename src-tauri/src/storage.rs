@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 const INITIAL_SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -116,8 +116,29 @@ CREATE TABLE IF NOT EXISTS permissions (
 );
 "#;
 
+const MIGRATION_V4: &str = r#"
+CREATE TABLE IF NOT EXISTS device_link_identity (
+    id TEXT PRIMARY KEY CHECK(id = 'singleton'),
+    device_id TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS device_link_peers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    scopes_json TEXT NOT NULL,
+    address TEXT,
+    connected INTEGER NOT NULL DEFAULT 0,
+    last_seen_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"#;
+
 fn migrate(connection: &Connection) -> Result<()> {
-    debug_assert_eq!(SCHEMA_VERSION, 3);
+    debug_assert_eq!(SCHEMA_VERSION, 4);
     connection.pragma_update(None, "foreign_keys", "ON")?;
     let transaction = connection.unchecked_transaction()?;
     transaction.execute_batch(INITIAL_SCHEMA)?;
@@ -150,6 +171,13 @@ fn migrate(connection: &Connection) -> Result<()> {
         transaction.execute_batch(MIGRATION_V3)?;
         transaction.execute(
             "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(3, datetime('now'))",
+            [],
+        )?;
+    }
+    if version < 4 {
+        transaction.execute_batch(MIGRATION_V4)?;
+        transaction.execute(
+            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(4, datetime('now'))",
             [],
         )?;
     }
@@ -189,6 +217,21 @@ pub fn load_app_data(path: &Path) -> Result<Option<Value>> {
             "attachments".into(),
             Value::Array(load_attachment_metadata(&connection)?),
         );
+        let peers = load_device_link_peers_from_connection(&connection)?;
+        let device_link = object
+            .entry("deviceLink")
+            .or_insert_with(|| json!({"enabled": false, "hosting": false, "deviceId": ""}));
+        if let Some(device_link) = device_link.as_object_mut() {
+            device_link.insert(
+                "peers".into(),
+                Value::Array(
+                    peers
+                        .into_iter()
+                        .map(|peer| serde_json::to_value(peer).unwrap_or(Value::Null))
+                        .collect(),
+                ),
+            );
+        }
     }
     Ok(Some(payload))
 }
@@ -420,6 +463,39 @@ pub fn save_app_data_with_paths(
             ],
         )?;
     }
+    for peer in persisted
+        .get("deviceLink")
+        .and_then(|value| value.get("peers"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(id) = peer["id"].as_str() else {
+            continue;
+        };
+        let Some(name) = peer["name"].as_str() else {
+            continue;
+        };
+        let Some(fingerprint) = peer["fingerprint"].as_str() else {
+            continue;
+        };
+        let scopes = peer["scopes"].clone();
+        if id.is_empty() || name.is_empty() || fingerprint.is_empty() || !scopes.is_array() {
+            continue;
+        }
+        transaction.execute(
+            "INSERT INTO device_link_peers(id, name, fingerprint, scopes_json, address, connected, last_seen_at, created_at, updated_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'), datetime('now')) ON CONFLICT(id) DO UPDATE SET name=excluded.name, fingerprint=excluded.fingerprint, scopes_json=excluded.scopes_json, address=excluded.address, connected=excluded.connected, last_seen_at=excluded.last_seen_at, updated_at=excluded.updated_at",
+            params![
+                id,
+                name,
+                fingerprint,
+                scopes.to_string(),
+                peer["address"].as_str(),
+                peer["connected"].as_bool().unwrap_or(false),
+                peer["lastSeenAt"].as_str(),
+            ],
+        )?;
+    }
     transaction.commit()
 }
 
@@ -438,6 +514,81 @@ fn load_attachment_metadata(connection: &Connection) -> Result<Vec<Value>> {
             }))
         })?
         .collect()
+}
+
+fn load_device_link_peers_from_connection(
+    connection: &Connection,
+) -> Result<Vec<crate::device_link::DeviceLinkPeer>> {
+    let mut statement = connection.prepare(
+        "SELECT id, name, fingerprint, scopes_json, address, connected, last_seen_at FROM device_link_peers ORDER BY created_at, id",
+    )?;
+    statement
+        .query_map([], |row| {
+            let scopes_json: String = row.get(3)?;
+            let scopes = serde_json::from_str(&scopes_json).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(3, Type::Text, Box::new(error))
+            })?;
+            Ok(crate::device_link::DeviceLinkPeer {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                fingerprint: row.get(2)?,
+                scopes,
+                connected: row.get::<_, i64>(5)? != 0,
+                last_seen_at: row.get(6)?,
+                address: row.get(4)?,
+            })
+        })?
+        .collect()
+}
+
+pub fn load_device_link_peers(path: &Path) -> Result<Vec<crate::device_link::DeviceLinkPeer>> {
+    let connection = connection(path)?;
+    load_device_link_peers_from_connection(&connection)
+}
+
+pub fn upsert_device_link_peer(
+    path: &Path,
+    peer: &crate::device_link::DeviceLinkPeer,
+) -> Result<()> {
+    let connection = connection(path)?;
+    connection.execute(
+        "INSERT INTO device_link_peers(id, name, fingerprint, scopes_json, address, connected, last_seen_at, created_at, updated_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'), datetime('now')) ON CONFLICT(id) DO UPDATE SET name=excluded.name, fingerprint=excluded.fingerprint, scopes_json=excluded.scopes_json, address=excluded.address, connected=excluded.connected, last_seen_at=excluded.last_seen_at, updated_at=excluded.updated_at",
+        params![
+            peer.id,
+            peer.name,
+            peer.fingerprint,
+            serde_json::to_string(&peer.scopes).unwrap_or_else(|_| "[]".into()),
+            peer.address,
+            peer.connected,
+            peer.last_seen_at,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn delete_device_link_peer(path: &Path, id: &str) -> Result<bool> {
+    let connection = connection(path)?;
+    Ok(connection.execute("DELETE FROM device_link_peers WHERE id = ?1", params![id])? > 0)
+}
+
+pub fn load_device_link_identity(path: &Path) -> Result<Option<(String, String)>> {
+    let connection = connection(path)?;
+    connection
+        .query_row(
+            "SELECT device_id, fingerprint FROM device_link_identity WHERE id = 'singleton'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+}
+
+pub fn save_device_link_identity(path: &Path, device_id: &str, fingerprint: &str) -> Result<()> {
+    let connection = connection(path)?;
+    connection.execute(
+        "INSERT INTO device_link_identity(id, device_id, fingerprint, created_at, updated_at) VALUES('singleton', ?1, ?2, datetime('now'), datetime('now')) ON CONFLICT(id) DO UPDATE SET device_id=excluded.device_id, fingerprint=excluded.fingerprint, updated_at=excluded.updated_at",
+        params![device_id, fingerprint],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -478,7 +629,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_preserves_a_v1_database_and_adds_v2_and_v3_state() -> Result<()> {
+    fn migration_preserves_a_v1_database_and_adds_v2_v3_and_v4_state() -> Result<()> {
         let connection = Connection::open_in_memory()?;
         connection.execute_batch(
             r#"
@@ -555,6 +706,59 @@ mod tests {
                 )
                 .is_ok()
         );
+        assert!(
+            connection
+                .query_row::<String, _, _>(
+                    "SELECT sql FROM sqlite_master WHERE name = 'device_link_identity'",
+                    [],
+                    |row| row.get(0)
+                )
+                .is_ok()
+        );
+        assert!(
+            connection
+                .query_row::<String, _, _>(
+                    "SELECT sql FROM sqlite_master WHERE name = 'device_link_peers'",
+                    [],
+                    |row| row.get(0)
+                )
+                .is_ok()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn device_link_identity_and_peer_metadata_round_trip_without_secrets() -> Result<()> {
+        let path = std::env::temp_dir().join(format!(
+            "juniper-device-link-test-{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        initialize(&path)?;
+        save_device_link_identity(&path, "device-host", "SHA256:host")?;
+        let peer = crate::device_link::DeviceLinkPeer {
+            id: "device-peer".into(),
+            name: "Phone".into(),
+            fingerprint: "SHA256:peer".into(),
+            scopes: vec![crate::device_link::Scope::Inference],
+            connected: false,
+            last_seen_at: None,
+            address: Some("https://device.local:8443".into()),
+        };
+        upsert_device_link_peer(&path, &peer)?;
+        assert_eq!(
+            load_device_link_identity(&path)?,
+            Some(("device-host".into(), "SHA256:host".into()))
+        );
+        assert_eq!(load_device_link_peers(&path)?, vec![peer]);
+        let connection = connection(&path)?;
+        let payload: String = connection.query_row(
+            "SELECT scopes_json FROM device_link_peers WHERE id = 'device-peer'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert!(!payload.contains("secret"));
+        drop(connection);
+        std::fs::remove_file(path).ok();
         Ok(())
     }
 

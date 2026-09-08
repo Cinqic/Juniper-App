@@ -2,8 +2,8 @@
 
 ## Verdict
 
-**VERIFIED ON KVM-ACCELERATED X86_64 ANDROID EMULATORS — PHYSICAL ARM64
-QUALIFICATION PENDING.**
+**BETA — VERIFIED ON KVM-ACCELERATED X86_64 ANDROID EMULATORS; PHYSICAL ARM64
+PROMOTION PENDING.**
 
 The native Android implementation, package gates, lifecycle smoke, offline
 inference, API 24 compatibility lane, and official 16 KB-page lane pass on
@@ -11,9 +11,11 @@ FLOWBOX. Emulator evidence is not promoted to a physical ARM64 result.
 
 ## Reproduced evidence
 
-- PR #31 was checked out at baseline commit
+- The earlier PR #31 qualification run used baseline commit
   `8fbdfecaacc7852f44cac7ebf57dfcee0ad04e22` on branch
-  `codex/astra-independent-android-review`.
+  `codex/astra-independent-android-review`. Those emulator and package
+  results are retained as historical evidence for the rc29 review candidate;
+  they do not replace a fresh physical ARM64 run.
 - `config/llama-cpp.json` pins llama.cpp to
   `e107984bcffcfd701e82738092a2b000b6fda7a2`, NDK `29.0.13113456`, CMake
   `3.31.6`, and exactly `arm64-v8a` plus `x86_64`.
@@ -22,10 +24,10 @@ FLOWBOX. Emulator evidence is not promoted to a physical ARM64 result.
   `emulator -accel-check` reports `KVM ... installed and usable`.
 - The qualification model is SmolLM2 135M Q4_K_M, SHA-256
   `8030f04528538d47bda434f6f0bdf3952c40a58123e4d5e755332f23731a8684`.
-- Rust Android-target checks and the native contract harness pass. The
-  frontend/Rust validation suite passes with 43 Vitest tests, formatting,
-  lint, typecheck, schema/version/branding checks, Cargo fmt, Clippy, and
-  Cargo tests.
+- Rust Android-target checks and the native contract harness passed in that
+  earlier run. Its frontend/Rust validation suite passed with 43 Vitest tests,
+  formatting, lint, typecheck, schema/version/branding checks, Cargo fmt,
+  Clippy, and Cargo tests.
 - The universal debug APK was built with the pinned toolchain and audited:
   SHA-256 `c5beb5b8ababd0b7b6056503cadf2113a6a1d106ea2f190212bac833682d5886`;
   both required ABIs; 33 native libraries; no server runtime; every native
@@ -79,9 +81,9 @@ restored to normal connectivity after the test.
 
 ## Remaining qualification gate
 
-A physical ARM64 Android device is still required before claiming complete
-cross-platform release qualification. On that device, repeat the offline
-first prompt, warm prompt, prefill/decode cancellation, rotation and
-background/foreground lifecycle, unload/reload, low-memory recovery, and
-managed-storage model verification. No merge, tag, or release was performed
-as part of this qualification work.
+A physical ARM64 Android device is still required before promoting this
+runtime beyond Beta. On that device, repeat the offline first prompt, warm
+prompt, prefill/decode cancellation, rotation and background/foreground
+lifecycle, unload/reload, low-memory recovery, and managed-storage model
+verification. This follow-up does not block the core desktop release contract.
+No merge, tag, or release was performed as part of this qualification work.

@@ -18,6 +18,7 @@ import {
   type ModelCatalog,
   type ModelRecommendation,
 } from '../lib/model-catalog'
+import { runtimeOptionsForModel } from '../lib/model-catalog'
 
 type MarketTab = 'recommended' | 'all' | 'installed'
 
@@ -90,16 +91,18 @@ export function ModelsMarket({
     const provider = data.providers.find((item) => item.kind === 'juniper-local') ?? defaultProvider
     return modelProfileFromDiscovery(provider, entry.id, {
       catalogId: entry.id,
-      managedVariantId: entry.variants[0]?.id,
+      managedVariantId: entry.artifacts[0]?.id,
+      artifactId: entry.artifacts[0]?.id,
+      runtimeId: entry.artifacts[0]?.runtimeId,
       displayName: entry.displayName,
       description: entry.description,
       sourceReference: entry.sourceRepository,
       family: entry.family,
       architecture: entry.architecture,
       parameterSize: `${Math.round(entry.parameterCount / 1_000_000)}M`,
-      fileSizeBytes: entry.variants[0]?.sizeBytes,
-      quantization: entry.variants[0]?.quantization,
-      format: entry.format,
+      fileSizeBytes: entry.artifacts[0]?.sizeBytes,
+      quantization: entry.artifacts[0]?.quantization,
+      format: entry.artifacts[0]?.format,
       license: entry.license,
       template: entry.chatTemplate,
       contextLength: entry.contextLength,
@@ -132,7 +135,7 @@ export function ModelsMarket({
       }
     })
     setMessage(
-      `${entry.displayName} is downloaded and verified. The native engine loads when first used.`,
+      `${entry.displayName} is downloaded and verified. The selected local runtime loads when first used.`,
     )
   }
 
@@ -268,6 +271,7 @@ export function ModelsMarket({
             onCancel={() => controller.current?.abort()}
             onUse={() => selectModel(recommendation.model)}
             onRemove={() => void remove(recommendation.model)}
+            runtimeOptions={runtimeOptionsForModel(recommendation.model, device?.runtimes)}
           />
         ))}
       </div>
@@ -293,6 +297,7 @@ function ModelMarketCard({
   onCancel,
   onUse,
   onRemove,
+  runtimeOptions,
 }: {
   recommendation: ModelRecommendation
   installed: boolean
@@ -303,8 +308,9 @@ function ModelMarketCard({
   onCancel: () => void
   onUse: () => void
   onRemove: () => void
+  runtimeOptions: ReturnType<typeof runtimeOptionsForModel>
 }) {
-  const { model, variant } = recommendation
+  const { model, artifact } = recommendation
   const percent = progress?.total ? Math.round((progress.completed / progress.total) * 100) : 0
   return (
     <article className="model-market-card">
@@ -320,8 +326,24 @@ function ModelMarketCard({
       </div>
       <div className="market-card-meta">
         <span>{Math.round(model.parameterCount / 1_000_000)}M parameters</span>
-        <span>{formatBytes(variant.sizeBytes)}</span>
-        <span>{variant.quantization}</span>
+        <span>{formatBytes(artifact.sizeBytes)}</span>
+        <span>{artifact.quantization ?? artifact.format}</span>
+      </div>
+      <div className="model-runtime-options" aria-label={`${model.displayName} runtime options`}>
+        <strong>Run with</strong>
+        {runtimeOptions.length === 0 ? (
+          <span className="runtime-option unavailable">Native runtime data unavailable</span>
+        ) : (
+          runtimeOptions.map(({ runtime, artifact: runtimeArtifact, selectable }) => (
+            <span
+              className={`runtime-option ${selectable ? 'selectable' : 'unavailable'}`}
+              key={runtime.id}
+            >
+              {runtime.name} · {runtime.maturity}
+              {!runtimeArtifact ? ' · no compatible artifact' : selectable ? '' : ' · unavailable'}
+            </span>
+          ))
+        )}
       </div>
       <div className="model-tags">
         {model.useCases.map((useCase) => (
@@ -343,7 +365,7 @@ function ModelMarketCard({
       )}
       {installed && (
         <p className="market-status" role="status">
-          Downloaded and verified · native engine loads on first chat
+          Downloaded and verified · selected local runtime loads on first chat
         </p>
       )}
       {downloading && (
@@ -382,7 +404,7 @@ function ModelMarketCard({
               disabled={!recommendation.storageSafe}
             >
               {recommendation.storageSafe
-                ? `Download · ${formatBytes(variant.sizeBytes)}`
+                ? `Download · ${formatBytes(artifact.sizeBytes)}`
                 : 'Not enough storage'}
             </button>
             {managedState && (
@@ -414,11 +436,13 @@ function ModelMarketCard({
           </div>
           <div>
             <dt>SHA-256</dt>
-            <dd className="hash-value">{variant.sha256}</dd>
+            <dd className="hash-value">
+              {artifact.sha256 ?? artifact.files.map((file) => file.sha256).join(', ')}
+            </dd>
           </div>
           <div>
             <dt>File</dt>
-            <dd>{variant.fileName}</dd>
+            <dd>{artifact.files.map((file) => file.path).join(', ')}</dd>
           </div>
         </dl>
       </details>

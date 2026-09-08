@@ -1,7 +1,7 @@
 # ADR-0016: Standalone local runtime boundary
 
-Status: accepted for the 0.3 release candidate; Android physical qualification
-pending
+Status: accepted for the rc29 review candidate; Android llama.cpp remains Beta
+pending physical qualification
 
 ## Decision
 
@@ -36,10 +36,11 @@ a short-lived server per generation, which favors isolation and simple cleanup
 over warm-server latency. Android keeps one application-scoped native engine
 warm across turns and unloads it deterministically when required.
 
-Android's native path is implemented but remains a qualification gate: the
-physical ARM64 offline first prompt, warm reuse, cancellation, lifecycle, and
-low-memory evidence has not yet been recorded. Emulator or package evidence
-must not be promoted to release readiness.
+Android's native path is implemented and remains Beta: the physical ARM64
+offline first prompt, warm reuse, cancellation, lifecycle, and low-memory
+evidence has not yet been recorded. Emulator or package evidence must not be
+promoted to a stable runtime claim, but this follow-up does not block the
+desktop release contract.
 
 ## Security and privacy
 

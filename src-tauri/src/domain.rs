@@ -35,6 +35,10 @@ pub struct ProviderProfile {
     #[serde(default = "default_execution_location")]
     pub transport_location: String,
     pub api_key_ref: Option<String>,
+    #[serde(default)]
+    pub device_id: Option<String>,
+    #[serde(default)]
+    pub device_link_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -49,6 +53,10 @@ pub struct ModelProfile {
     pub catalog_id: Option<String>,
     #[serde(default)]
     pub managed_variant_id: Option<String>,
+    #[serde(default)]
+    pub artifact_id: Option<String>,
+    #[serde(default)]
+    pub runtime_id: Option<String>,
     #[serde(default = "default_execution_location")]
     pub execution_location: String,
     #[serde(default)]

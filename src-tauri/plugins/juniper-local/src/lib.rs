@@ -48,3 +48,42 @@ where
         .run_mobile_plugin(command, payload)
         .map_err(|error| format!("LOCAL_RUNTIME_PLUGIN_ERROR: {error}"))
 }
+
+#[cfg(target_os = "android")]
+pub fn secure_set_credential<R: Runtime>(
+    app: &AppHandle<R>,
+    reference: &str,
+    secret: &str,
+) -> Result<(), String> {
+    invoke::<R, serde_json::Value, _>(
+        app,
+        "secureSetCredential",
+        serde_json::json!({ "reference": reference, "secret": secret }),
+    )
+    .map(|_| ())
+}
+
+#[cfg(target_os = "android")]
+pub fn secure_get_credential<R: Runtime>(
+    app: &AppHandle<R>,
+    reference: &str,
+) -> Result<String, String> {
+    invoke(
+        app,
+        "secureGetCredential",
+        serde_json::json!({ "reference": reference }),
+    )
+}
+
+#[cfg(target_os = "android")]
+pub fn secure_delete_credential<R: Runtime>(
+    app: &AppHandle<R>,
+    reference: &str,
+) -> Result<(), String> {
+    invoke::<R, serde_json::Value, _>(
+        app,
+        "secureDeleteCredential",
+        serde_json::json!({ "reference": reference }),
+    )
+    .map(|_| ())
+}

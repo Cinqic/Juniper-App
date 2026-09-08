@@ -51,13 +51,13 @@ requirements:
     phase: 2
     status: PASS-NATIVE-TESTS
   REQ-SEC-001:
-    statement: Scoped attachments and desktop OS credential store
+    statement: Scoped attachments and platform secure credential stores
     implementation: [src-tauri/src/commands.rs, docs/security/threat-model.md]
     tests: [src-tauri/src/commands.rs]
     phase: 9
     status: IMPLEMENTED-NATIVE-TESTED
   REQ-MOBILE-001:
-    statement: Mobile-compatible shared architecture without claiming native 8B inference
+    statement: Mobile-compatible shared architecture with Android local inference explicitly classified Beta
     implementation: [src-tauri/capabilities/mobile.json, docs/adr/0009-mobile-runtime-strategy.md]
     tests: []
     phase: 8
@@ -129,7 +129,7 @@ requirements:
     phase: 11
     status: PASS-NATIVE-TESTS
   REQ-SQLITE:
-    statement: Native SQLite v3 is canonical for application state, normalized attachment metadata, and excludes private chats and chat-scoped grants
+    statement: Native SQLite v4 is canonical for application state, normalized attachment metadata, Device Link peer metadata, and excludes private chats and chat-scoped grants
     implementation: [src-tauri/src/storage.rs, src-tauri/src/commands.rs, src/lib/runtime.ts]
     tests: [src-tauri/src/storage.rs]
     phase: 11
@@ -159,7 +159,7 @@ requirements:
     phase: 11
     status: PASS-BY-INSPECTION
   REQ-MOBILE:
-    statement: Shared responsive UI and explicit endpoint privacy labels without implying native phone inference
+    statement: Shared responsive UI and explicit endpoint privacy labels with Android llama.cpp local inference classified Beta pending physical ARM64 evidence
     implementation: [src-tauri/capabilities/mobile.json, docs/adr/0009-mobile-runtime-strategy.md]
     tests: []
     phase: 11
@@ -211,3 +211,56 @@ requirements:
     tests: [scripts/build-llama-runtime.sh]
     phase: 12
     status: CI-BUILD-PENDING
+  REQ-RUNTIME-REGISTRY:
+    statement: Generic runtime registry separates runtime identity, maturity, artifact format, platform support, installation, and qualification state
+    implementation:
+      [
+        src/lib/runtime-registry.ts,
+        src-tauri/src/runtime_registry.rs,
+        src-tauri/src/device.rs,
+        src/app/ModelsMarket.tsx,
+      ]
+    tests: [src-tauri/src/runtime_registry.rs, src/lib/model-catalog.test.ts]
+    phase: 13
+    status: IMPLEMENTED-NATIVE-AND-FRONTEND-TESTED
+  REQ-ARTIFACT-CATALOG:
+    statement: Model catalog artifacts bind concrete runtime, format, files, hashes, source revision, and qualification without universal compatibility claims
+    implementation:
+      [
+        config/models/catalog.json,
+        src/lib/model-catalog.ts,
+        src-tauri/src/catalog.rs,
+        src-tauri/src/managed_models.rs,
+      ]
+    tests:
+      [src/lib/model-catalog.test.ts, src-tauri/src/catalog.rs, src-tauri/src/managed_models.rs]
+    phase: 13
+    status: IMPLEMENTED-NATIVE-AND-FRONTEND-TESTED
+  REQ-DEVICE-LINK:
+    statement: Device Link policy and Juniper Network client path use one-time pairing, TLS/LAN policy, bounded versioned frames, replay protection, least-privilege scopes, revocation, and private-chat isolation; socket discovery is deferred
+    implementation:
+      [
+        src-tauri/src/device_link.rs,
+        src-tauri/src/commands.rs,
+        src-tauri/src/storage.rs,
+        src/lib/runtime.ts,
+        src/app/pages.tsx,
+        docs/security/device-link-threat-model.md,
+      ]
+    tests: [src-tauri/src/device_link.rs, src-tauri/src/storage.rs, src-tauri/src/providers.rs]
+    phase: 13
+    status: IMPLEMENTED-POLICY-AND-CLIENT-TESTED-TRANSPORT-DEFERRED
+  REQ-ANDROID-SECURE-CREDENTIALS:
+    statement: Android provider credentials use an Android Keystore AES-GCM vault rather than plaintext or SQLite
+    implementation:
+      [
+        src-tauri/plugins/juniper-local/android/src/main/java/com/cinqic/juniper/local_runtime/JuniperLocalRuntimePlugin.kt,
+        src-tauri/plugins/juniper-local/src/lib.rs,
+        src-tauri/src/providers.rs,
+      ]
+    tests:
+      [
+        src-tauri/plugins/juniper-local/android/src/androidTest/java/com/cinqic/juniper/local_runtime/CredentialVaultInstrumentedTest.kt,
+      ]
+    phase: 13
+    status: IMPLEMENTED-INSTRUMENTATION-PENDING

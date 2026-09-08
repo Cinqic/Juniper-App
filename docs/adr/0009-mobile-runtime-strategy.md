@@ -16,9 +16,11 @@ where networking is permitted.
 The mobile application can carry chats, assistants, settings, and provider
 profiles while keeping model choice explicit. Android qualification is bounded
 to the supported arm64-v8a and x86_64 packaging targets; the final physical
-ARM64 device run remains a release gate.
+ARM64 device run remains a runtime-promotion follow-up, not a global desktop
+release gate. The runtime is reported as Beta until that evidence exists.
 
 ## Security/privacy
 
 Mobile capabilities exclude desktop filesystem, shell, and local-runtime
-permissions. Mobile secure credential storage remains an explicit limitation.
+permissions. Android secure credentials use Android Keystore; iOS remains an
+explicit limitation until an equivalent platform vault is integrated.

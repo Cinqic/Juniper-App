@@ -1,10 +1,10 @@
 format: juniper-release-manifest-v1
-version: 0.3.0-rc.28
-status: PENDING PRERELEASE - HOSTED VALIDATION REQUIRED
+version: 0.3.0-rc.29
+status: PENDING SOL INDEPENDENT REVIEW - NO RELEASE AUTHORIZATION
 release:
-  tag: v0.3.0-rc.28
+  tag: v0.3.0-rc.29
   commit: PENDING-MERGE
-  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.28
+  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.29
   prerelease: true
 canonical_repository: https://github.com/Cinqic/Juniper-App
 canonical_branch: main
@@ -13,9 +13,14 @@ telemetry: off
 model_architecture: model-agnostic
 supported_runtime_classes:
   - juniper-local
+  - juniper-network
   - ollama
   - llama-cpp
   - openai-compatible
+  - litert-lm
+  - executorch
+  - mlc-llm
+  - onnxruntime-genai
 model_catalog:
   source: config/models/catalog.json
   entries: 4
@@ -26,18 +31,35 @@ standalone_runtime:
   source_revision: e107984bcffcfd701e82738092a2b000b6fda7a2
   packaging: tauri-resource-built-by-scripts/build-llama-runtime.sh
   ownership: Juniper-starts-and-stops-loopback-process
+runtime_registry:
+  source: src/lib/runtime-registry.ts and src-tauri/src/runtime_registry.rs
+  android_llama_cpp: beta
+  desktop_llama_cpp: stable
+  optional_backends: package-only-or-unavailable-until-artifacts-and-device-evidence
+device_link:
+  protocol_version: 1
+  transport: TLS-1.3-pinned-private-or-link-local-network-only
+  default_scope: inference
+  private_chat: never-synced
 published_artifacts: []
 validated_in_this_environment:
-  frontend: tested-with-bundled-node-22-and-pnpm-11
-  frontend_tests: 43
-  native: cargo-check-and-clippy-deny-warnings
-  native_tests: WINDOWS-STATUS_ENTRYPOINT_NOT_FOUND-before-tests-hosted-Linux-gate-required
-  local_runtime_bundle: PASS-WINDOWS-MSI-BUILD-ANDROID-EMULATOR-BLOCKED-NO-HYPERVISOR
-  ollama: PASS-smollm-135m-local-api
-  website: PASS-SITE-VERIFIER
+  frontend: PASS-local-format-lint-typecheck-tests-build
+  frontend_tests: 46
+  native: PASS-cargo-fmt-clippy-tests
+  native_tests: 67-pass-2-ignored-live-service-tests
+  device_link_protocol: PASS-unit-tested
+  juniper_network_client: PASS-native-validation-and-streaming-boundary-tests
+  android_compile: UNVERIFIED-java-toolchain-not-installed-on-this-host
+  android_keystore: instrumentation-test-added-not-run-on-physical-device
 accepted_limitations:
-  - Android-model-management-is-supported-but-native-local-inference-runtime-is-not-yet-packaged
+  - Android-native-llama.cpp-is-beta-and-does-not-block-desktop-release-gating
+  - optional-runtime-artifacts-are-described-honestly-but-not-bundled
   - no-ios-or-macos-build
-  - external-provider-credentials-use-the-desktop-os-keychain-only
+  - Android-provider-credentials-use-Android-Keystore
+  - Device-Link-socket-listener-and-mDNS-discovery-are-not-enabled-in-this-candidate
   - no-telemetry-analytics-crash-reporting-or-account
-blockers_for_final_release: []
+blockers_for_final_release:
+  - SOL-independent-review
+promotion_followups:
+  - physical-ARM64-Android-inference-evidence-for-llama.cpp-beta-promotion
+  - enabled-Device-Link-transport-and-discovery-integration-review

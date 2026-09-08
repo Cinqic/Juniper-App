@@ -17,6 +17,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.io.File
+import java.nio.charset.StandardCharsets
+import java.security.KeyStore
+import java.security.MessageDigest
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.spec.GCMParameterSpec
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.max
@@ -46,6 +55,83 @@ class GenerateArgs {
 @InvokeArg
 class EventArgs {
     lateinit var requestId: String
+}
+
+@InvokeArg
+class CredentialArgs {
+    lateinit var reference: String
+    var secret: String? = null
+}
+
+internal object CredentialVault {
+    private const val preferencesName = "juniper-secure-credentials"
+    private const val version = 1
+    private const val keyPrefix = "juniper.credential."
+
+    private fun digest(reference: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(reference.toByteArray(StandardCharsets.UTF_8))
+        .joinToString("") { byte -> "%02x".format(byte) }
+
+    private fun alias(reference: String) = keyPrefix + digest(reference)
+
+    private fun key(reference: String): java.security.Key {
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val name = alias(reference)
+        val existing = store.getKey(name, null)
+        if (existing != null) return existing
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        generator.init(
+            KeyGenParameterSpec.Builder(
+                name,
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+            )
+                .setKeySize(256)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setRandomizedEncryptionRequired(true)
+                .build(),
+        )
+        return generator.generateKey()
+    }
+
+    fun set(context: Context, reference: String, secret: String) {
+        require(reference.isNotEmpty() && secret.isNotEmpty())
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key(reference))
+        cipher.updateAAD(reference.toByteArray(StandardCharsets.UTF_8))
+        val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+        val encoded = Base64.encodeToString(cipher.doFinal(secret.toByteArray(StandardCharsets.UTF_8)), Base64.NO_WRAP)
+        val iv = Base64.encodeToString(cipher.iv, Base64.NO_WRAP)
+        check(
+            preferences.edit()
+                .putInt("${digest(reference)}.version", version)
+                .putString("${digest(reference)}.ciphertext", encoded)
+                .putString("${digest(reference)}.iv", iv)
+                .commit(),
+        )
+    }
+
+    fun get(context: Context, reference: String): String {
+        val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+        check(preferences.getInt("${digest(reference)}.version", 0) == version) { "Credential version is unavailable" }
+        val iv = preferences.getString("${digest(reference)}.iv", null) ?: error("Credential is unavailable")
+        val ciphertext = preferences.getString("${digest(reference)}.ciphertext", null) ?: error("Credential is unavailable")
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key(reference), GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)))
+        cipher.updateAAD(reference.toByteArray(StandardCharsets.UTF_8))
+        return String(cipher.doFinal(Base64.decode(ciphertext, Base64.NO_WRAP)), StandardCharsets.UTF_8)
+    }
+
+    fun delete(context: Context, reference: String) {
+        val digest = digest(reference)
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit()
+            .remove("$digest.version")
+            .remove("$digest.ciphertext")
+            .remove("$digest.iv")
+            .commit()
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        store.deleteEntry(alias(reference))
+    }
 }
 
 internal data class NativeEvent(
@@ -494,6 +580,38 @@ class JuniperLocalRuntimePlugin(private val activity: Activity) : Plugin(activit
     fun memoryPressure(invoke: Invoke) {
         EngineOwner.unload()
         invoke.resolve(JSObject().apply { put("accepted", true) })
+    }
+
+    @Command
+    fun secureSetCredential(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(CredentialArgs::class.java)
+            CredentialVault.set(activity.applicationContext, args.reference, args.secret ?: "")
+            invoke.resolve(JSObject().apply { put("accepted", true) })
+        } catch (_: Throwable) {
+            invoke.reject("SECURE_STORAGE_UNAVAILABLE: Android Keystore refused the credential operation.")
+        }
+    }
+
+    @Command
+    fun secureGetCredential(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(CredentialArgs::class.java)
+            invoke.resolve(CredentialVault.get(activity.applicationContext, args.reference))
+        } catch (_: Throwable) {
+            invoke.reject("SECURE_CREDENTIAL_UNAVAILABLE: The credential is unavailable.")
+        }
+    }
+
+    @Command
+    fun secureDeleteCredential(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(CredentialArgs::class.java)
+            CredentialVault.delete(activity.applicationContext, args.reference)
+            invoke.resolve(JSObject().apply { put("accepted", true) })
+        } catch (_: Throwable) {
+            invoke.reject("SECURE_STORAGE_UNAVAILABLE: Android Keystore refused the credential operation.")
+        }
     }
 
     override fun onStop() {

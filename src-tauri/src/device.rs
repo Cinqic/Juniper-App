@@ -1,3 +1,4 @@
+use crate::runtime_registry::RuntimeDescriptor;
 use serde::Serialize;
 use std::path::Path;
 use sysinfo::{Disks, System};
@@ -24,6 +25,7 @@ pub struct DeviceCapabilities {
     pub native_total_memory_bytes: Option<u64>,
     pub native_available_memory_bytes: Option<u64>,
     pub native_low_memory: Option<bool>,
+    pub runtimes: Vec<RuntimeDescriptor>,
 }
 
 pub fn collect(model_directory: &Path) -> DeviceCapabilities {
@@ -61,6 +63,7 @@ pub fn collect(model_directory: &Path) -> DeviceCapabilities {
         native_total_memory_bytes: None,
         native_available_memory_bytes: None,
         native_low_memory: None,
+        runtimes: Vec::new(),
     }
 }
 

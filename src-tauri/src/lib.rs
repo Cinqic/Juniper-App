@@ -5,11 +5,13 @@ mod android_runtime;
 mod catalog;
 mod commands;
 mod device;
+pub mod device_link;
 mod domain;
 #[cfg(not(target_os = "android"))]
 mod local_runtime;
 mod managed_models;
 mod providers;
+mod runtime_registry;
 mod storage;
 mod tools;
 
@@ -32,6 +34,12 @@ pub fn run() {
             commands::system_info,
             commands::model_catalog,
             commands::device_capabilities,
+            commands::runtime_registry,
+            commands::device_link_status,
+            commands::device_link_start_pairing,
+            commands::device_link_complete_pairing,
+            commands::device_link_revoke_peer,
+            commands::device_link_update_peer_scopes,
             commands::managed_models,
             commands::download_managed_model,
             commands::cancel_managed_model,

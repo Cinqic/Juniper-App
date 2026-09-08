@@ -9,8 +9,9 @@ The principal direct dependencies are:
 - React, React DOM, Vite, TypeScript, ESLint, Vitest, and Prettier — MIT.
 - Tauri and its plugins — MIT or Apache-2.0 as identified by their package
   metadata.
-- Rust crates including Tokio, Reqwest, Serde, rusqlite, uuid, and keyring —
-  licenses are recorded in each crate's published package metadata.
+- Rust crates including Tokio, Reqwest, Serde, rusqlite, uuid, keyring, base64,
+  hmac, sha2, rustls, and rustls-pki-types — licenses are recorded in each
+  crate's published package metadata.
 
 Release packaging should run a dependency license audit for the target bundle
 and include any generated notices required by the selected platform.

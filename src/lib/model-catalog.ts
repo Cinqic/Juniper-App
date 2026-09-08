@@ -1,14 +1,37 @@
 import catalogJson from '../../config/models/catalog.json'
+import type { ArtifactQualification, RuntimeDescriptor } from '../types'
 
-export interface ModelVariant {
-  id: string
-  fileName: string
-  quantization: string
+export interface CatalogArtifactFile {
+  path: string
   sizeBytes: number
   sha256: string
-  url: string
-  sourceRevision: string
+  url?: string
 }
+
+/** A concrete runtime representation. A bundle is represented by `files`, not a fake file. */
+export interface CatalogArtifact {
+  id: string
+  runtimeId: string
+  format: string
+  platforms: string[]
+  architectures: string[]
+  quantization?: string
+  sizeBytes: number
+  sha256?: string
+  sourceUrl?: string
+  sourceRevision: string
+  files: CatalogArtifactFile[]
+  minimumRuntimeVersion?: string
+  maturity: 'stable' | 'beta' | 'experimental'
+  qualification: ArtifactQualification
+  /** @deprecated Compatibility fields for older UI consumers. */
+  fileName?: string
+  /** @deprecated Compatibility fields for older UI consumers. */
+  url?: string
+}
+
+/** @deprecated Kept as an in-memory compatibility alias for pre-v2 callers. */
+export type ModelVariant = CatalogArtifact
 
 export interface CatalogModel {
   id: string
@@ -20,7 +43,6 @@ export interface CatalogModel {
   useCases: string[]
   instructionTuned: boolean
   architecture: string
-  format: string
   sourceRepository: string
   sourceRevision: string
   originalModel?: string
@@ -33,14 +55,15 @@ export interface CatalogModel {
   recommendedRamBytes: number
   minimumStorageBytes: number
   supportedArchitectures: string[]
-  backendCompatibility: string[]
   tags: string[]
   releaseStatus: 'available' | 'deprecated'
-  variants: ModelVariant[]
+  artifacts: CatalogArtifact[]
+  /** Compatibility view; new code must use artifacts. */
+  variants: CatalogArtifact[]
 }
 
 export interface ModelCatalog {
-  version: number
+  version: 2
   minimumAppVersion: string
   models: CatalogModel[]
 }
@@ -63,13 +86,16 @@ export interface DeviceCapabilities {
   nativeRuntimeState?: 'unavailable' | 'loading' | 'ready' | 'busy' | 'failed'
   nativeAbi?: string
   nativeLowMemory?: boolean
+  runtimes?: RuntimeDescriptor[]
 }
 
 export type ModelFit = 'excellent' | 'good' | 'possible' | 'not-recommended' | 'unknown'
 
 export interface ModelRecommendation {
   model: CatalogModel
-  variant: ModelVariant
+  artifact: CatalogArtifact
+  /** Compatibility alias for the old variant-based market implementation. */
+  variant: CatalogArtifact
   score: number
   fit: ModelFit
   reasons: string[]
@@ -92,11 +118,118 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string' && item.length > 0)
 }
 
-/** Validate remote/catalog data before it is allowed into the UI or downloader. */
+function legacyArtifact(raw: unknown, modelId: string): CatalogArtifact {
+  if (
+    !isRecord(raw) ||
+    typeof raw.id !== 'string' ||
+    typeof raw.fileName !== 'string' ||
+    raw.fileName.length === 0 ||
+    raw.fileName.includes('/') ||
+    raw.fileName.includes('\\') ||
+    typeof raw.quantization !== 'string' ||
+    typeof raw.sizeBytes !== 'number' ||
+    !Number.isSafeInteger(raw.sizeBytes) ||
+    raw.sizeBytes <= 0 ||
+    !isSha256(raw.sha256) ||
+    typeof raw.url !== 'string' ||
+    !raw.url.startsWith('https://') ||
+    typeof raw.sourceRevision !== 'string'
+  ) {
+    throw new Error(`Catalog entry ${modelId} contains an invalid legacy artifact.`)
+  }
+  return {
+    id: raw.id,
+    runtimeId: 'llama.cpp',
+    format: 'GGUF',
+    platforms: ['android', 'linux', 'windows'],
+    architectures: ['arm64', 'x86_64'],
+    quantization: raw.quantization,
+    sizeBytes: raw.sizeBytes,
+    sha256: raw.sha256,
+    sourceUrl: raw.url,
+    sourceRevision: raw.sourceRevision,
+    files: [
+      {
+        path: raw.fileName,
+        sizeBytes: raw.sizeBytes,
+        sha256: raw.sha256,
+        url: raw.url,
+      },
+    ],
+    maturity: 'stable',
+    qualification: 'qualified',
+    fileName: raw.fileName,
+    url: raw.url,
+  }
+}
+
+function parseArtifact(raw: unknown, modelId: string): CatalogArtifact {
+  if (!isRecord(raw))
+    throw new Error(`Catalog entry ${modelId} contains an invalid variant/artifact.`)
+  const files = raw.files
+  if (
+    typeof raw.id !== 'string' ||
+    typeof raw.runtimeId !== 'string' ||
+    typeof raw.format !== 'string' ||
+    !isStringArray(raw.platforms) ||
+    !isStringArray(raw.architectures) ||
+    typeof raw.sizeBytes !== 'number' ||
+    !Number.isSafeInteger(raw.sizeBytes) ||
+    raw.sizeBytes <= 0 ||
+    typeof raw.sourceRevision !== 'string' ||
+    !['stable', 'beta', 'experimental'].includes(String(raw.maturity)) ||
+    !['qualified', 'package-only', 'not-qualified', 'unknown'].includes(
+      String(raw.qualification),
+    ) ||
+    !Array.isArray(files) ||
+    files.length === 0
+  ) {
+    throw new Error(`Catalog entry ${modelId} contains an invalid variant/artifact.`)
+  }
+  const parsedFiles = files.map((file) => {
+    if (
+      !isRecord(file) ||
+      typeof file.path !== 'string' ||
+      file.path.length === 0 ||
+      file.path.includes('/') ||
+      file.path.includes('\\') ||
+      typeof file.sizeBytes !== 'number' ||
+      !Number.isSafeInteger(file.sizeBytes) ||
+      file.sizeBytes <= 0 ||
+      !isSha256(file.sha256) ||
+      (file.url !== undefined && (typeof file.url !== 'string' || !file.url.startsWith('https://')))
+    ) {
+      throw new Error(`Catalog entry ${modelId} contains an invalid variant/artifact file.`)
+    }
+    return file as unknown as CatalogArtifactFile
+  })
+  if (
+    raw.sourceUrl !== undefined &&
+    (typeof raw.sourceUrl !== 'string' || !raw.sourceUrl.startsWith('https://'))
+  ) {
+    throw new Error(`Catalog entry ${modelId} contains an invalid variant/artifact source.`)
+  }
+  if (raw.sha256 !== undefined && !isSha256(raw.sha256)) {
+    throw new Error(`Catalog entry ${modelId} contains an invalid variant/artifact hash.`)
+  }
+  if (parsedFiles.reduce((sum, file) => sum + file.sizeBytes, 0) !== raw.sizeBytes) {
+    throw new Error(
+      `Catalog entry ${modelId} variant/artifact size does not match its file manifest.`,
+    )
+  }
+  return {
+    ...raw,
+    files: parsedFiles,
+    fileName: parsedFiles[0]?.path,
+    url: parsedFiles[0]?.url ?? (typeof raw.sourceUrl === 'string' ? raw.sourceUrl : undefined),
+  } as unknown as CatalogArtifact
+}
+
+/** Validate catalog data before it is allowed into the UI or downloader. */
 export function parseCatalog(value: unknown): ModelCatalog {
   if (
     !isRecord(value) ||
-    value.version !== 1 ||
+    ![1, 2].includes(Number(value.version)) ||
     typeof value.minimumAppVersion !== 'string' ||
     !value.minimumAppVersion ||
     !Array.isArray(value.models)
@@ -104,6 +237,7 @@ export function parseCatalog(value: unknown): ModelCatalog {
     throw new Error('The model catalog is malformed.')
   }
   const ids = new Set<string>()
+  const artifactIds = new Set<string>()
   const models = value.models.map((raw): CatalogModel => {
     if (!isRecord(raw) || typeof raw.id !== 'string' || ids.has(raw.id)) {
       throw new Error('The model catalog contains a duplicate or invalid model id.')
@@ -115,46 +249,45 @@ export function parseCatalog(value: unknown): ModelCatalog {
       typeof raw.family !== 'string' ||
       typeof raw.description !== 'string' ||
       typeof raw.architecture !== 'string' ||
-      typeof raw.format !== 'string' ||
       typeof raw.sourceRepository !== 'string' ||
       typeof raw.license !== 'string' ||
       typeof raw.chatTemplate !== 'string' ||
       !isStringArray(raw.useCases) ||
       !isStringArray(raw.supportedArchitectures) ||
-      !isStringArray(raw.backendCompatibility) ||
       !isStringArray(raw.tags) ||
       !['available', 'deprecated'].includes(String(raw.releaseStatus)) ||
       typeof raw.parameterCount !== 'number' ||
       typeof raw.minimumRecommendedRamBytes !== 'number' ||
-      typeof raw.minimumStorageBytes !== 'number' ||
-      !Array.isArray(raw.variants) ||
-      raw.variants.length === 0
+      typeof raw.recommendedRamBytes !== 'number' ||
+      typeof raw.minimumStorageBytes !== 'number'
     ) {
       throw new Error(`Catalog entry ${raw.id} is missing required metadata.`)
     }
-    const variantIds = new Set<string>()
-    const variants = raw.variants.map((variant): ModelVariant => {
-      if (
-        !isRecord(variant) ||
-        typeof variant.id !== 'string' ||
-        variantIds.has(variant.id) ||
-        typeof variant.fileName !== 'string' ||
-        typeof variant.quantization !== 'string' ||
-        typeof variant.sizeBytes !== 'number' ||
-        !isSha256(variant.sha256) ||
-        typeof variant.url !== 'string' ||
-        !variant.url.startsWith('https://') ||
-        !variant.url.includes('huggingface.co/') ||
-        typeof variant.sourceRevision !== 'string'
-      ) {
-        throw new Error(`Catalog entry ${raw.id} contains an invalid variant.`)
+    const rawArtifacts =
+      Number(value.version) === 1
+        ? raw.variants
+        : Array.isArray(raw.variants)
+          ? raw.variants
+          : raw.artifacts
+    if (!Array.isArray(rawArtifacts) || rawArtifacts.length === 0) {
+      throw new Error(`Catalog entry ${raw.id} must provide at least one artifact.`)
+    }
+    const artifacts = rawArtifacts.map((item) =>
+      Number(value.version) === 1 ? legacyArtifact(item, raw.id) : parseArtifact(item, raw.id),
+    )
+    for (const artifact of artifacts) {
+      if (artifactIds.has(artifact.id)) {
+        throw new Error(`The model catalog contains a duplicate artifact id: ${artifact.id}.`)
       }
-      variantIds.add(variant.id)
-      return variant as unknown as ModelVariant
-    })
-    return { ...raw, variants } as unknown as CatalogModel
+      artifactIds.add(artifact.id)
+    }
+    return {
+      ...raw,
+      artifacts,
+      variants: artifacts,
+    } as unknown as CatalogModel
   })
-  return { ...value, models } as unknown as ModelCatalog
+  return { version: 2, minimumAppVersion: value.minimumAppVersion, models }
 }
 
 export function formatBytes(bytes: number | undefined): string {
@@ -176,8 +309,8 @@ function memoryBudget(device: DeviceCapabilities): number | undefined {
   return Math.max(0, available - reserve)
 }
 
-function selectedVariant(model: CatalogModel): ModelVariant {
-  return [...model.variants].sort((left, right) => left.sizeBytes - right.sizeBytes)[0]!
+function selectedArtifact(model: CatalogModel): CatalogArtifact {
+  return [...model.artifacts].sort((left, right) => left.sizeBytes - right.sizeBytes)[0]!
 }
 
 function normalizedArchitecture(architecture: string): string {
@@ -191,28 +324,36 @@ function normalizedArchitecture(architecture: string): string {
   }
 }
 
+function artifactSupportsDevice(artifact: CatalogArtifact, device: DeviceCapabilities): boolean {
+  const architecture = normalizedArchitecture(device.architecture)
+  const platform = device.os.toLowerCase()
+  return (
+    (artifact.platforms.includes(platform) ||
+      (artifact.platforms.includes('desktop') && ['linux', 'windows'].includes(platform))) &&
+    (artifact.architectures.includes(device.architecture) ||
+      artifact.architectures.includes(architecture) ||
+      device.architecture === 'unknown')
+  )
+}
+
 export function recommendModel(
   model: CatalogModel,
   device: DeviceCapabilities,
 ): ModelRecommendation {
-  const variant = selectedVariant(model)
+  const artifact =
+    model.artifacts.find((item) => artifactSupportsDevice(item, device)) ?? selectedArtifact(model)
   const budget = memoryBudget(device)
   const reasons: string[] = []
   let score = 45
   let storageSafe = true
-  const catalogArchitecture = normalizedArchitecture(device.architecture)
-
-  if (
-    !model.supportedArchitectures.includes(device.architecture) &&
-    !model.supportedArchitectures.includes(catalogArchitecture) &&
-    device.architecture !== 'unknown'
-  ) {
+  if (!artifactSupportsDevice(artifact, device) && device.architecture !== 'unknown') {
     return {
       model,
-      variant,
+      artifact,
+      variant: artifact,
       score: 0,
       fit: 'not-recommended',
-      reasons: [`${device.architecture} is not listed as supported`],
+      reasons: [`${device.architecture} is not listed for the ${artifact.runtimeId} artifact`],
       storageSafe: false,
     }
   }
@@ -231,10 +372,9 @@ export function recommendModel(
     score -= 35
     reasons.push('Available memory is below the comfortable range')
   }
-
   const requiredStorage = Math.max(
     model.minimumStorageBytes,
-    variant.sizeBytes + STORAGE_HEADROOM_BYTES,
+    artifact.sizeBytes + STORAGE_HEADROOM_BYTES,
   )
   if (device.freeStorageBytes === undefined) {
     reasons.push('Free storage could not be measured')
@@ -249,7 +389,6 @@ export function recommendModel(
       `Needs about ${formatBytes(requiredStorage)} free storage including safety headroom`,
     )
   }
-
   if (device.memoryPressure === 'high') {
     score -= 18
     reasons.push('The device currently reports high memory pressure')
@@ -267,7 +406,15 @@ export function recommendModel(
         : score >= 35
           ? 'possible'
           : 'not-recommended'
-  return { model, variant, score: Math.max(0, Math.min(100, score)), fit, reasons, storageSafe }
+  return {
+    model,
+    artifact,
+    variant: artifact,
+    score: Math.max(0, Math.min(100, score)),
+    fit,
+    reasons,
+    storageSafe,
+  }
 }
 
 export function recommendModels(
@@ -278,8 +425,27 @@ export function recommendModels(
     .filter((model) => model.releaseStatus === 'available')
     .map((model) => recommendModel(model, device))
     .sort(
-      (left, right) => right.score - left.score || left.variant.sizeBytes - right.variant.sizeBytes,
+      (left, right) =>
+        right.score - left.score || left.artifact.sizeBytes - right.artifact.sizeBytes,
     )
+}
+
+export function runtimeOptionsForModel(
+  model: CatalogModel,
+  runtimes: RuntimeDescriptor[] = [],
+): Array<{
+  runtime: RuntimeDescriptor
+  artifact: CatalogArtifact | undefined
+  selectable: boolean
+}> {
+  return runtimes.map((runtime) => {
+    const artifact = model.artifacts.find((candidate) => candidate.runtimeId === runtime.id)
+    return {
+      runtime,
+      artifact,
+      selectable: Boolean(artifact && runtime.installed && runtime.state === 'available'),
+    }
+  })
 }
 
 export function browserDeviceCapabilities(): DeviceCapabilities {
@@ -296,5 +462,6 @@ export function browserDeviceCapabilities(): DeviceCapabilities {
     modelDirectory: 'Managed by Juniper',
     gpu: 'unknown',
     acceleration: 'unknown',
+    runtimes: [],
   }
 }

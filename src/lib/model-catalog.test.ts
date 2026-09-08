@@ -48,6 +48,28 @@ describe('model catalog', () => {
     expect(() => parseCatalog(malformed)).toThrow(/invalid variant/)
   })
 
+  it('converts a legacy v1 variant catalog into concrete artifacts safely', () => {
+    const legacy = {
+      version: 1,
+      minimumAppVersion: MODEL_CATALOG.minimumAppVersion,
+      models: MODEL_CATALOG.models.map(({ artifacts, ...model }) => ({
+        ...model,
+        variants: artifacts.map((artifact) => ({
+          id: artifact.id,
+          fileName: artifact.files[0]!.path,
+          quantization: artifact.quantization,
+          sizeBytes: artifact.sizeBytes,
+          sha256: artifact.sha256,
+          url: artifact.sourceUrl,
+          sourceRevision: artifact.sourceRevision,
+        })),
+      })),
+    }
+    const parsed = parseCatalog(legacy)
+    expect(parsed.version).toBe(2)
+    expect(parsed.models[0]?.artifacts[0]?.runtimeId).toBe('llama.cpp')
+  })
+
   it('explains why a model fits and protects low-storage devices', () => {
     const recommendation = recommendModel(MODEL_CATALOG.models[3]!, device)
     expect(recommendation.storageSafe).toBe(true)

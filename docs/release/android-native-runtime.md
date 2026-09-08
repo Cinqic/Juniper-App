@@ -90,8 +90,9 @@ also passes the app lifecycle smoke for cold start, rotation,
 force-stop/relaunch, and uninstall. The API 30 suite passed offline with the
 network disabled.
 
-These are emulator and cross-build results. A physical ARM64 device remains a
-release gate for offline first prompt, warm second prompt, prefill/decode
-cancellation, rotation/background/reload, low-memory recovery, and actual
-ARM64 execution. Until that device run is recorded, do not label the release
-fully cross-platform qualified or ready for independent release review.
+These are emulator and cross-build results. The Android llama.cpp runtime is
+Beta until a physical ARM64 device records offline first prompt, warm second
+prompt, prefill/decode cancellation, rotation/background/reload, low-memory
+recovery, and actual ARM64 execution. That evidence is a runtime promotion
+follow-up, not a global desktop release gate and not a reason to call an
+otherwise reviewable candidate blocked.

@@ -8,6 +8,7 @@ import {
   deleteProviderCredential,
   deleteProviderModel,
   getDiagnostics,
+  getDeviceLinkStatus,
   getRuntimeLogs,
   importGguf,
   inspectProviderModel,
@@ -18,6 +19,9 @@ import {
   runningInTauri,
   runningProviderModels,
   saveProviderCredential,
+  startDeviceLinkPairing,
+  revokeDeviceLinkPeer,
+  updateDeviceLinkPeerScopes,
 } from '../lib/runtime'
 import { PageHeading } from './ui'
 import { AssistantAvatar, JuniperMark } from './branding'
@@ -29,6 +33,8 @@ import type {
   Page,
   ProviderProfile,
   RuntimeLogEntry,
+  DeviceLinkPairingOffer,
+  DeviceLinkScope,
 } from '../types'
 
 function uid(prefix: string): string {
@@ -432,6 +438,8 @@ export function ModelsPage({
   const [providerName, setProviderName] = useState('Local llama.cpp server')
   const [baseUrl, setBaseUrl] = useState('http://127.0.0.1:8080/v1')
   const [providerKind, setProviderKind] = useState<ProviderProfile['kind']>('openai-compatible')
+  const [deviceId, setDeviceId] = useState('')
+  const [deviceFingerprint, setDeviceFingerprint] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [checkingProvider, setCheckingProvider] = useState<string | null>(null)
   const [refreshingModels, setRefreshingModels] = useState(false)
@@ -482,6 +490,8 @@ export function ModelsPage({
     setProviderName(provider?.name ?? 'Local llama.cpp server')
     setBaseUrl(provider?.baseUrl ?? 'http://127.0.0.1:8080/v1')
     setProviderKind(provider?.kind ?? 'openai-compatible')
+    setDeviceId(provider?.deviceId ?? '')
+    setDeviceFingerprint(provider?.deviceLinkFingerprint ?? '')
     setApiKey('')
     setShowProvider(true)
   }
@@ -532,6 +542,9 @@ export function ModelsPage({
             generationParameters: ['temperature'],
           }),
       },
+      deviceId: providerKind === 'juniper-network' ? deviceId.trim() : undefined,
+      deviceLinkFingerprint:
+        providerKind === 'juniper-network' ? deviceFingerprint.trim() : undefined,
     }
     update((current) => ({
       ...current,
@@ -785,6 +798,7 @@ export function ModelsPage({
               <option value="ollama">Ollama</option>
               <option value="openai-compatible">OpenAI-compatible</option>
               <option value="llama-cpp">llama.cpp-compatible</option>
+              <option value="juniper-network">Juniper Network (paired LAN device)</option>
             </select>
           </label>
           <label>
@@ -792,7 +806,7 @@ export function ModelsPage({
             <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
           </label>
           <label>
-            API key <small>Saved to OS keychain</small>
+            API key <small>Saved to the secure platform vault</small>
             <input
               type="password"
               value={apiKey}
@@ -800,6 +814,22 @@ export function ModelsPage({
               placeholder="Optional"
             />
           </label>
+          {providerKind === 'juniper-network' && (
+            <>
+              <label>
+                Paired device ID
+                <input value={deviceId} onChange={(event) => setDeviceId(event.target.value)} />
+              </label>
+              <label>
+                TLS fingerprint
+                <input
+                  value={deviceFingerprint}
+                  onChange={(event) => setDeviceFingerprint(event.target.value)}
+                  placeholder="SHA256:…"
+                />
+              </label>
+            </>
+          )}
           <div className="inline-form-actions">
             <button className="primary-button" onClick={() => void saveProvider()}>
               {editingProvider ? 'Update provider' : 'Save provider'}
@@ -1099,6 +1129,60 @@ export function SettingsPage({
 }) {
   const settings = data.settings
   const [memoryDraft, setMemoryDraft] = useState('')
+  const [pairingOffer, setPairingOffer] = useState<DeviceLinkPairingOffer | null>(null)
+  const [deviceLinkFingerprint, setDeviceLinkFingerprint] = useState<string | null>(null)
+  const [deviceLinkError, setDeviceLinkError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!runningInTauri) return
+    void getDeviceLinkStatus()
+      .then((status) => setDeviceLinkFingerprint(status?.fingerprint ?? null))
+      .catch(() => setDeviceLinkFingerprint(null))
+  }, [])
+
+  async function createPairingOffer() {
+    setDeviceLinkError(null)
+    try {
+      setPairingOffer(await startDeviceLinkPairing())
+    } catch (error) {
+      setDeviceLinkError(error instanceof Error ? error.message : 'Could not start pairing.')
+    }
+  }
+
+  async function revokePeer(id: string) {
+    try {
+      await revokeDeviceLinkPeer(id)
+      update((current) => ({
+        ...current,
+        deviceLink: {
+          ...current.deviceLink,
+          peers: current.deviceLink.peers.filter((peer) => peer.id !== id),
+        },
+      }))
+    } catch (error) {
+      setDeviceLinkError(error instanceof Error ? error.message : 'Could not revoke peer.')
+    }
+  }
+
+  async function togglePeerScope(id: string, scope: DeviceLinkScope) {
+    const peer = data.deviceLink.peers.find((item) => item.id === id)
+    if (!peer) return
+    const scopes = peer.scopes.includes(scope)
+      ? peer.scopes.filter((item) => item !== scope)
+      : [...peer.scopes, scope]
+    try {
+      const updated = await updateDeviceLinkPeerScopes(id, scopes)
+      update((current) => ({
+        ...current,
+        deviceLink: {
+          ...current.deviceLink,
+          peers: current.deviceLink.peers.map((item) => (item.id === id ? updated : item)),
+        },
+      }))
+    } catch (error) {
+      setDeviceLinkError(error instanceof Error ? error.message : 'Could not update peer scope.')
+    }
+  }
   function addMemory(event: FormEvent) {
     event.preventDefault()
     const content = memoryDraft.trim()
@@ -1336,6 +1420,85 @@ export function SettingsPage({
                   >
                     Delete
                   </button>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+        <section className="settings-card full device-link-card">
+          <span className="eyebrow">Device Link</span>
+          <h2>Trusted devices, with narrow permissions</h2>
+          <p>
+            Device Link is off by default. Pairing uses a one-time code; future connections must be
+            HTTPS on a private or link-local network with a pinned peer fingerprint. Private chats
+            and host context never cross this boundary.
+          </p>
+          <div className="setting-row">
+            <div>
+              <strong>Allow Device Link policy</strong>
+              <small>Changing this does not grant any peer additional scope.</small>
+            </div>
+            <button
+              className={`switch ${data.deviceLink.enabled ? 'on' : ''}`}
+              onClick={() =>
+                update((current) => ({
+                  ...current,
+                  deviceLink: { ...current.deviceLink, enabled: !current.deviceLink.enabled },
+                }))
+              }
+              aria-label="Toggle Device Link policy"
+            >
+              <span />
+            </button>
+          </div>
+          <div className="device-link-actions">
+            <button
+              className="secondary-button"
+              onClick={() => void createPairingOffer()}
+              disabled={!runningInTauri}
+            >
+              Create one-time pairing code
+            </button>
+            {!runningInTauri && <small>Available in the native Juniper app.</small>}
+          </div>
+          {deviceLinkFingerprint && (
+            <small className="device-link-fingerprint">This device: {deviceLinkFingerprint}</small>
+          )}
+          {pairingOffer && (
+            <div className="pairing-offer" role="status">
+              <strong>Show this code only to the device you are pairing</strong>
+              <code>{pairingOffer.token}</code>
+              <small>Verify the short code on both devices: {pairingOffer.authString}</small>
+              <button className="text-button" onClick={() => setPairingOffer(null)}>
+                Hide pairing code
+              </button>
+            </div>
+          )}
+          {deviceLinkError && <p className="inline-error">{deviceLinkError}</p>}
+          <div className="device-link-peers">
+            {data.deviceLink.peers.length === 0 ? (
+              <span className="empty-small">No paired devices.</span>
+            ) : (
+              data.deviceLink.peers.map((peer) => (
+                <div className="device-link-peer" key={peer.id}>
+                  <div>
+                    <strong>{peer.name}</strong>
+                    <small>{peer.fingerprint}</small>
+                    <span>Scopes: {peer.scopes.join(', ') || 'none'}</span>
+                  </div>
+                  <div className="device-link-peer-actions">
+                    <button
+                      className="text-button"
+                      onClick={() => void togglePeerScope(peer.id, 'app-control')}
+                    >
+                      {peer.scopes.includes('app-control')
+                        ? 'Remove app control'
+                        : 'Grant app control'}
+                    </button>
+                    <button className="text-button danger" onClick={() => void revokePeer(peer.id)}>
+                      Revoke
+                    </button>
+                  </div>
                 </div>
               ))
             )}

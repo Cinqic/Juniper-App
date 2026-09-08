@@ -6,7 +6,9 @@ React UI
 Juniper state and context builder
   ↓
 Rust Tauri commands / orchestrator boundary
-  ├─ provider adapters (Juniper local, Ollama, OpenAI-compatible, llama.cpp)
+  ├─ runtime registry and artifact-centric model catalog
+  ├─ provider adapters (Juniper local, Juniper Network, Ollama, OpenAI-compatible, llama.cpp)
+  ├─ Device Link pairing, TLS/LAN policy, frames, and scopes
   ├─ host tool runtime and permissions
   ├─ SQLite repositories and migrations
   ├─ OS credential store
@@ -35,7 +37,8 @@ connected. In the Tauri shell, provider requests happen behind Rust commands.
 
 Desktop can connect to external local providers, launch the Juniper-owned
 loopback runtime, and use the OS keychain. Mobile shares the UI/domain model and
-catalog management path and uses an in-process Kotlin/JNI llama.cpp bridge for
-the managed Android local provider. The Android bridge is implemented for
-`arm64-v8a` (with `x86_64` test packaging), but physical-device qualification
-remains a release gate.
+catalog management path, uses Android Keystore for provider secrets, and uses
+an in-process Kotlin/JNI llama.cpp bridge for the managed Android local
+provider. The Android bridge is implemented for `arm64-v8a` (with `x86_64` test
+packaging) and is reported as Beta until physical-device qualification; that
+promotion follow-up does not block core desktop release gates.
