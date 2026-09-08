@@ -597,7 +597,9 @@ class JuniperLocalRuntimePlugin(private val activity: Activity) : Plugin(activit
     fun secureGetCredential(invoke: Invoke) {
         try {
             val args = invoke.parseArgs(CredentialArgs::class.java)
-            invoke.resolve(CredentialVault.get(activity.applicationContext, args.reference))
+            invoke.resolve(JSObject().apply {
+                put("secret", CredentialVault.get(activity.applicationContext, args.reference))
+            })
         } catch (_: Throwable) {
             invoke.reject("SECURE_CREDENTIAL_UNAVAILABLE: The credential is unavailable.")
         }

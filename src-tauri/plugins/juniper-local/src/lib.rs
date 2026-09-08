@@ -68,11 +68,16 @@ pub fn secure_get_credential<R: Runtime>(
     app: &AppHandle<R>,
     reference: &str,
 ) -> Result<String, String> {
-    invoke(
+    let payload: serde_json::Value = invoke(
         app,
         "secureGetCredential",
         serde_json::json!({ "reference": reference }),
-    )
+    )?;
+    payload
+        .get("secret")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| "LOCAL_RUNTIME_PLUGIN_ERROR: Secure credential payload was malformed.".into())
 }
 
 #[cfg(target_os = "android")]
