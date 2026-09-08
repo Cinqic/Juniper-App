@@ -134,6 +134,7 @@ cleanup_instrumentation() {
 trap 'cleanup; cleanup_instrumentation' EXIT
 if ! timeout --foreground 8m "${adb[@]}" shell am instrument -w \
   -e model_path "$remote_name" \
+  -e context_size "${JUNIPER_TEST_CONTEXT_SIZE:-2048}" \
   "$test_package/androidx.test.runner.AndroidJUnitRunner" >"$instrumentation_output" 2>&1; then
   cat "$instrumentation_output"
   echo "Android native inference instrumentation command failed" >&2
@@ -141,7 +142,9 @@ if ! timeout --foreground 8m "${adb[@]}" shell am instrument -w \
 fi
 cat "$instrumentation_output"
 if grep -Fq 'FAILURES!!!' "$instrumentation_output" || \
-  grep -Fq 'INSTRUMENTATION_CODE: -1' "$instrumentation_output"; then
+  grep -Fq 'INSTRUMENTATION_CODE: -1' "$instrumentation_output" || \
+  grep -Fq 'INSTRUMENTATION_FAILED' "$instrumentation_output" || \
+  grep -Eq 'INSTRUMENTATION_RESULT: (shortMsg|longMsg)=' "$instrumentation_output"; then
   echo "Android native inference instrumentation reported test failures" >&2
   exit 1
 fi
