@@ -9,7 +9,7 @@ continues to own its packaged `llama-server` runtime.
 
 The source revision, Android ABIs, NDK, and CMake versions are recorded in
 [`config/llama-cpp.json`](../../config/llama-cpp.json). The Android plugin
-verifies the `llama.cpp` checkout before compiling and links the JNI bridge
+verifies the llama.cpp checkout before compiling and builds the CPU backend
 with 16 KiB `PT_LOAD` alignment for both `arm64-v8a` and `x86_64`.
 
 From a clean checkout with the Android SDK and Rust targets installed:
@@ -17,23 +17,25 @@ From a clean checkout with the Android SDK and Rust targets installed:
 ```bash
 pnpm install --frozen-lockfile
 pnpm tauri android init --ci
-pnpm tauri android build --apk --ci -- --locked
+pnpm tauri android build --debug --apk --ci --target aarch64 x86_64 -- --locked
 ```
 
-The release workflow runs the package audit below and publishes unstripped
-native symbols separately from the signed APK:
+Audit the resulting universal APK with:
 
 ```bash
-bash scripts/verify-android-apk.sh path/to/Juniper-android-universal.apk
-bash scripts/package-android-symbols.sh path/to/merged_native_libs/out/lib native-symbols.zip
+bash scripts/verify-android-apk.sh \
+  src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
 ```
 
-The audit requires exactly the two supported ABIs, the JNI bridge in each ABI,
-no server runtime library, and 16 KiB alignment for every packaged shared
-object.
+The audit requires exactly the two supported ABIs, the JNI bridge in each
+ABI, no server runtime library, 16 KiB alignment for every packaged shared
+object, and Android `zipalign -P 16` verification. The qualification build
+used NDK `29.0.13113456`, CMake `3.31.6`, and the pinned llama.cpp commit
+`e107984bcffcfd701e82738092a2b000b6fda7a2`.
 
-The host-side native contract checks cover parameter bounds, UTF-8 prefix
-buffering, cancellation state, and move-only resource cleanup:
+The host-side native contract checks cover parameter bounds, strict UTF-8
+buffering, UTF-16/UTF-8 conversion, cancellation state, and move-only
+resource cleanup:
 
 ```bash
 bash scripts/run-native-contract-tests.sh
@@ -44,22 +46,22 @@ Q4_K_M file without checking the model into the repository:
 
 ```bash
 ./gradlew :juniper-local-runtime:assembleDebugAndroidTest
-bash scripts/run-android-inference-smoke.sh \
+JUNIPER_TEST_CONTEXT_SIZE=2048 bash scripts/run-android-inference-smoke.sh \
   path/to/SmolLM2-135M-Instruct.Q4_K_M.gguf \
   src-tauri/plugins/juniper-local/android/build/outputs/apk/androidTest/debug/juniper-local-runtime-debug-androidTest.apk
 ```
 
 The script verifies the catalog SHA-256, pushes the model into test-app-private
-storage, and runs the instrumentation test for metadata validation, real
-streamed text, terminal-event uniqueness, cancellation, unload, and reload.
-The manually dispatched `android-inference` workflow runs the same smoke on a
-clean x86_64 emulator and uploads logcat and memory evidence; it is separate
-from the pull-request build and lifecycle gates. The latest hosted attempt
-([run 34106689907](https://github.com/Cinqic/Juniper-App/actions/runs/34106689907))
-passed compilation and model verification but stopped at the bounded boot
-deadline because the runner lacked `/dev/kvm` permission; the emulator did not
-reach instrumentation. This x86_64 lane is diagnostic only when hardware
-acceleration is unavailable.
+storage, and now rejects JUnit process-crash summaries as failures even when
+`am instrument` returns code zero. The test suite covers real streamed text,
+terminal-event uniqueness, Unicode/JNI conversion, immediate/prefill/decode
+cancellation, context overflow and recovery, unload, and reload.
+
+The reusable emulator smoke requires KVM and refuses software emulation. It
+supports an explicit `ANDROID_SYSTEM_IMAGE` override for API 24 and official
+16 KB-page images. The manually dispatched GitHub workflow follows the same
+rule: if the hosted runner cannot expose usable KVM, it exits with a truthful
+blocked status instead of reporting a slow software-emulation inference pass.
 
 ## Runtime contract
 
@@ -67,28 +69,29 @@ After the user downloads a model, Rust verifies its catalog SHA-256 and keeps
 it in app-private managed storage. The native bridge parses and validates GGUF
 version, tensor, architecture, and tokenizer metadata before it attempts the
 full model load. The first chat then loads that verified path into the process;
-subsequent prompts reuse the warm native context. Generation is
-serialized, streamed as `ChatStreamEvent` deltas, cancellable during prefill
-and decode, and unloaded on background lifecycle transitions. Rotation and
-reload therefore cannot leave a stale native request running.
+subsequent prompts reuse the warm native context. Generation is serialized,
+streamed as `ChatStreamEvent` deltas, cancellable during prefill and decode,
+and unloaded on background lifecycle transitions. Rotation and reload cannot
+leave a stale native request running.
 
 Before a native load, Android reports `ActivityManager.MemoryInfo` to the
 runtime. The controller accounts for the verified file size, context scratch
 space, and a native overhead reserve; unsafe loads fail with a stable
 `LOCAL_MEMORY_UNSAFE` result. Runtime status also reports the packaged ABI,
 available memory, low-memory state, and load failure code so the UI can keep
-downloaded, loading, ready, and unavailable states distinct. Critical trim and
-low-memory callbacks cancel generation and unload native allocations.
+downloaded, loading, ready, and unavailable states distinct. Critical trim
+and low-memory callbacks cancel generation and unload native allocations.
 
 ## Qualification status
 
-CI covers clean native compilation, APK contents, ABI alignment, emulator
-install/lifecycle smoke, and the existing Rust/frontend validation suite. The
-instrumentation smoke is available as a bounded device/manual gate; hosted
-x86_64 execution remains non-qualifying when hardware acceleration is absent.
-The real inference smoke and final qualification remain device gates: a
-physical ARM64 device still needs to be connected for the offline first prompt
-with a real streamed delta, warm second prompt, cancellation during
-prefill/decode, rotation/background/reload, and low-memory recovery. Until
-that run is recorded, the release must not be labelled `READY FOR INDEPENDENT
-REVIEW`.
+FLOWBOX evidence currently passes on KVM-accelerated x86_64 Android API 30,
+API 24, and an official Android 35 16 KB-page image. The universal debug APK
+also passes the app lifecycle smoke for cold start, rotation,
+force-stop/relaunch, and uninstall. The API 30 suite passed offline with the
+network disabled.
+
+These are emulator and cross-build results. A physical ARM64 device remains a
+release gate for offline first prompt, warm second prompt, prefill/decode
+cancellation, rotation/background/reload, low-memory recovery, and actual
+ARM64 execution. Until that device run is recorded, do not label the release
+fully cross-platform qualified or ready for independent release review.

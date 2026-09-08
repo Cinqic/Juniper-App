@@ -2,78 +2,86 @@
 
 ## Verdict
 
-**BLOCKED — not READY FOR INDEPENDENT REVIEW.**
+**VERIFIED ON KVM-ACCELERATED X86_64 ANDROID EMULATORS — PHYSICAL ARM64
+QUALIFICATION PENDING.**
 
-The implementation and package gates below are complete, but the required
-physical ARM64 qualification has not been performed. This document deliberately
-does not promote emulator or static evidence to a device result.
+The native Android implementation, package gates, lifecycle smoke, offline
+inference, API 24 compatibility lane, and official 16 KB-page lane pass on
+FLOWBOX. Emulator evidence is not promoted to a physical ARM64 result.
 
 ## Reproduced evidence
 
+- PR #31 was checked out at baseline commit
+  `8fbdfecaacc7852f44cac7ebf57dfcee0ad04e22` on branch
+  `codex/astra-independent-android-review`.
 - `config/llama-cpp.json` pins llama.cpp to
   `e107984bcffcfd701e82738092a2b000b6fda7a2`, NDK `29.0.13113456`, CMake
   `3.31.6`, and exactly `arm64-v8a` plus `x86_64`.
-- Debug and release universal APKs compiled successfully with the native JNI
-  bridge for both ABIs.
-- The APK audit found 33 shared libraries, one JNI bridge per ABI, no
-  `llama-server` library, and `0x4000` alignment for every `PT_LOAD` segment.
-- The catalog's smallest GGUF was downloaded to the local qualification cache
-  and matched its catalog SHA-256:
+- FLOWBOX is Linux `7.0.0-30-generic` on an AMD Ryzen 7 5700G host with 16
+  CPUs. `/dev/kvm` is readable and writable by the task user, and
+  `emulator -accel-check` reports `KVM ... installed and usable`.
+- The qualification model is SmolLM2 135M Q4_K_M, SHA-256
   `8030f04528538d47bda434f6f0bdf3952c40a58123e4d5e755332f23731a8684`.
-- Rust Android-target checks passed for `aarch64-linux-android` and
-  `x86_64-linux-android`.
-- The end-to-end release APK assembled from those Rust libraries has SHA-256
-  `43444ce6a5a1eddd32081ca3a60f0e286d11ca1fb7e9a82b74fe06aa10ab20ff`, and
-  the unstripped native symbol archive has SHA-256
-  `e10b99b31636d989e73ca52107d8b49c40669079209cb95f83db4bbfa81593bd`.
-- The shared native contract harness covers parameter bounds, UTF-8 buffering,
-  cancellation state, and idempotent move-only resource cleanup; Linux CI runs
-  it with `scripts/run-native-contract-tests.sh`.
-- Frontend validation passed: 43 tests, formatting, lint, typecheck, schema,
-  version, branding, Cargo fmt, and Clippy with `-D warnings`.
-- The native load path now parses GGUF metadata with the pinned `ggml-base`
-  parser before the full llama model load, rejecting unsupported version,
-  tensor, architecture, or tokenizer metadata as `LOCAL_GGUF_REJECTED`.
-- The Android instrumentation inference smoke exists as a reproducible test
-  command. It has not run locally because no ADB device or hardware-
-  accelerated emulator is available.
-- A hosted manual x86_64 workflow at commit `c1452033284ab36b86dee1ae01309bcc54a25a31`
-  passed the clean Android compile, native/package audits, and pinned model
-  hash verification ([run 34106689907](https://github.com/Cinqic/Juniper-App/actions/runs/34106689907)).
-  Its emulator boot was intentionally bounded and failed before
-  instrumentation because the runner had no permission to use `/dev/kvm`; the
-  retained emulator log reports that x86_64 emulation requires hardware
-  acceleration. Therefore this run produced no inference result.
-- A preceding hosted x86_64 diagnostic run ([34100159543](https://github.com/Cinqic/Juniper-App/actions/runs/34100159543))
-  confirmed that the packaged CPU backend was loaded and registered before
-  model load (`registrations=1` and `cpu=present` in logcat), but software
-  emulation did not finish the bounded generation smoke. This is diagnostic
-  evidence for the backend load path, not a qualification pass.
+- Rust Android-target checks and the native contract harness pass. The
+  frontend/Rust validation suite passes with 43 Vitest tests, formatting,
+  lint, typecheck, schema/version/branding checks, Cargo fmt, Clippy, and
+  Cargo tests.
+- The universal debug APK was built with the pinned toolchain and audited:
+  SHA-256 `c5beb5b8ababd0b7b6056503cadf2113a6a1d106ea2f190212bac833682d5886`;
+  both required ABIs; 33 native libraries; no server runtime; every native
+  `PT_LOAD` aligned at `0x4000`; and `zipalign -c -P 16` passed.
+- The x86_64 instrumentation APK audit passed with SHA-256
+  `c780fa7714d2456725ceb5db340997cdf8c9ebfdaba8df3c30ca8ff3cf9be1a1`.
+  Its ABI-specific audit found the JNI bridge, 19 native libraries, no
+  server runtime, `0x4000` ELF load alignment, and 16-byte zip alignment.
 
-The Tauri CLI's final Windows staging step could not create its Rust-library
-symlinks because Developer Mode / `SeCreateSymbolicLinkPrivilege` is disabled
-on this host. The Rust release libraries themselves compiled successfully for
-both targets; the audited local APK used file copies of those exact outputs.
-The Linux CI job uses the normal symlink-capable Tauri path.
+## Runtime matrix
 
-## Outstanding qualification
+All inference rows used production context `2048`, four native threads, and
+the hash-verified model. Each row ran the complete instrumentation suite:
+streamed cold and warm generation, Unicode/JNI text, 20-turn conversation,
+128-token long stream, structured context overflow and recovery, immediate
+cancel, prefill cancel, decode cancel, unload/reload, and exactly one terminal
+event per request.
 
-Run on a physical ARM64 Android device with networking disabled after the
-verified model is present in app-private managed storage:
+| Lane                                | Result          | Evidence                                                                                                     |
+| ----------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------ |
+| API 30 x86_64, KVM                  | PASS, 88.911 s  | CPU backend ready; load 449 ms; 128-token stream; `CONTEXT_TOO_LARGE`; both cancellation phases; reload pass |
+| API 30 x86_64 offline               | PASS, 87.742 s  | Airplane mode enabled, Wi-Fi/data disabled; same suite passed without network/localhost dependency           |
+| API 24 x86_64, KVM                  | PASS, 91.825 s  | SDK 24 boot/install/inference/recovery/reload pass                                                           |
+| API 35 x86_64 16 KB page image, KVM | PASS, 112.401 s | `ro.product.cpu.pagesize.max=16384`; AVD RAM 6144 MB; same suite passed                                      |
+| API 30 universal app lifecycle      | PASS            | Clean boot, install, MainActivity cold start, rotation/configuration change, force-stop/relaunch, uninstall  |
 
-1. Android inference smoke: run the documented
-   `scripts/run-android-inference-smoke.sh` command with the hash-verified
-   SmolLM2 135M Q4_K_M model, observe a valid streamed delta, and verify
-   exactly one terminal event; repeat with cancellation and unload/reload.
-2. First prompt: native load, real streamed tokens, and no network/localhost
-   dependency.
-3. Warm second prompt without a second model load.
-4. Cancellation during prefill and decode.
-5. Rotation, background/foreground, reload, and low-memory recovery without a
-   stale request or leaked native engine.
+The API 30 native logcat records CPU backend registration/readiness, context
+2048 and four threads, cold/warm output, Unicode, long streaming, structured
+overflow, prefill/decode cancellation, and reload. The offline emulator was
+restored to normal connectivity after the test.
 
-The local x86_64 emulator could not start because this host has no Android
-Emulator Hypervisor Driver. The hosted manual run likewise lacked `/dev/kvm`
-permission. x86_64 emulation therefore remains a bounded, non-qualifying
-diagnostic lane; neither result is evidence that the runtime passed on a
-supported ARM64 device.
+## Native and JNI hardening
+
+- Cancellation is request-scoped, including a pending-cancel handoff for the
+  race between the Kotlin start call and native entry. Prefill cancellation is
+  synchronized to a native phase callback in instrumentation, not a timing
+  sleep.
+- JNI string conversion uses standard Java UTF-16 to strict UTF-8 conversion
+  in both directions. Invalid UTF-8 is replaced safely, supplementary
+  characters round-trip, callback exceptions are cleared, and local JNI
+  references are released.
+- Native CPU backend readiness is checked after backend initialization, so
+  Kotlin reports `runtimeAvailable` truthfully instead of assuming that a
+  library load succeeded.
+- Native generation return codes are converted into one terminal failure event
+  rather than silently leaving a request busy.
+- The ARM64 build has `GGML_NATIVE=OFF`, `GGML_CPU_ALL_VARIANTS=ON`, and
+  `GGML_CPU_KLEIDIAI=ON`. The packaged ARM64 libraries are AArch64 and all
+  pass the 16 KiB `PT_LOAD` alignment audit. This is a static/cross-build and
+  packaging result, not a physical ARM64 execution result.
+
+## Remaining qualification gate
+
+A physical ARM64 Android device is still required before claiming complete
+cross-platform release qualification. On that device, repeat the offline
+first prompt, warm prompt, prefill/decode cancellation, rotation and
+background/foreground lifecycle, unload/reload, low-memory recovery, and
+managed-storage model verification. No merge, tag, or release was performed
+as part of this qualification work.
