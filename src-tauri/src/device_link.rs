@@ -10,11 +10,10 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
-use std::{
-    collections::{HashSet, VecDeque},
-    net::{IpAddr, SocketAddr},
-};
+use sha2::Sha256;
+use std::collections::{HashSet, VecDeque};
+#[cfg(test)]
+use std::net::{IpAddr, SocketAddr};
 use uuid::Uuid;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -211,17 +210,6 @@ fn short_auth_string(secret: &[u8; 32], session_id: &str) -> String {
         .join(" ")
 }
 
-pub fn fingerprint_for_device(device_id: &str) -> String {
-    let digest = Sha256::digest(device_id.as_bytes());
-    format!(
-        "SHA256:{}",
-        digest
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>()
-    )
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Envelope {
@@ -329,7 +317,8 @@ pub fn validate_inference_payload(payload: &Value) -> Result<(), String> {
     Ok(())
 }
 
-pub fn is_lan_address(address: &str) -> bool {
+#[cfg(test)]
+fn is_lan_address_syntax_hint(address: &str) -> bool {
     if let Ok(url) = reqwest::Url::parse(address)
         && let Some(host) = url.host_str()
     {
@@ -349,6 +338,7 @@ pub fn is_lan_address(address: &str) -> bool {
     is_lan_host(host)
 }
 
+#[cfg(test)]
 fn is_lan_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(value) => value.is_private() || value.is_link_local(),
@@ -356,28 +346,9 @@ fn is_lan_ip(ip: IpAddr) -> bool {
     }
 }
 
+#[cfg(test)]
 fn is_lan_host(host: &str) -> bool {
     host.parse::<IpAddr>().is_ok_and(is_lan_ip) || host.trim_end_matches('.').ends_with(".local")
-}
-
-pub fn validate_tls_endpoint(address: &str, fingerprint: &str) -> Result<(), String> {
-    let url = reqwest::Url::parse(address).map_err(|_| {
-        "DEVICE_LINK_LAN_ONLY: Device Link requires a valid HTTPS endpoint.".to_owned()
-    })?;
-    if url.scheme() != "https"
-        || url.username() != ""
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-        || !url.host_str().is_some_and(is_lan_host)
-    {
-        return Err("DEVICE_LINK_LAN_ONLY: Device Link accepts only HTTPS LAN endpoints.".into());
-    }
-    let pin = fingerprint.strip_prefix("SHA256:").unwrap_or(fingerprint);
-    if pin.len() != 64 || !pin.chars().all(|character| character.is_ascii_hexdigit()) {
-        return Err("DEVICE_LINK_TLS_PIN_REQUIRED: A pinned peer fingerprint is required.".into());
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -453,13 +424,10 @@ mod tests {
 
     #[test]
     fn only_private_or_link_local_endpoints_are_accepted() {
-        assert!(is_lan_address("192.168.1.5:8443"));
-        assert!(is_lan_address("device.local:8443"));
-        assert!(!is_lan_address("8.8.8.8:443"));
-        let fingerprint = "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        assert!(validate_tls_endpoint("https://192.168.1.5:8443", fingerprint).is_ok());
-        assert!(validate_tls_endpoint("https://192.168.1.5:8443/v1", fingerprint).is_ok());
-        assert!(validate_tls_endpoint("http://192.168.1.5:8443", fingerprint).is_err());
-        assert!(validate_tls_endpoint("https://8.8.8.8:8443/v1", fingerprint).is_err());
+        // This is syntax classification for policy tests only. A future
+        // transport must resolve hostnames and validate every destination IP.
+        assert!(is_lan_address_syntax_hint("192.168.1.5:8443"));
+        assert!(is_lan_address_syntax_hint("device.local:8443"));
+        assert!(!is_lan_address_syntax_hint("8.8.8.8:443"));
     }
 }

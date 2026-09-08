@@ -5,10 +5,20 @@ apk_path=${1:?APK path is required}
 evidence_dir=${2:-release-artifacts/android-apk-audit}
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 manifest="$repo_root/config/llama-cpp.json"
+evidence_abs=$(realpath -m "$evidence_dir")
+
+case "$evidence_abs" in
+  "$repo_root"/* | /tmp/*) ;;
+  *)
+    echo "Evidence directory must stay under the repository or /tmp: $evidence_abs" >&2
+    exit 1
+    ;;
+esac
 
 [[ -f "$apk_path" ]] || { echo "APK not found: $apk_path" >&2; exit 1; }
 command -v unzip >/dev/null 2>&1 || { echo 'unzip is required' >&2; exit 1; }
 command -v sha256sum >/dev/null 2>&1 || { echo 'sha256sum is required' >&2; exit 1; }
+command -v node >/dev/null 2>&1 || { echo 'node is required' >&2; exit 1; }
 
 readelf_bin=${READELF:-}
 if [[ -z "$readelf_bin" ]]; then
@@ -29,13 +39,17 @@ fi
   exit 1
 }
 
-rm -rf "$evidence_dir"
-mkdir -p "$evidence_dir"
+rm -rf "$evidence_abs"
+mkdir -p "$evidence_abs"
+evidence_dir=$evidence_abs
 tmp_dir=$(mktemp -d)
 cleanup() { rm -rf "$tmp_dir"; }
 trap cleanup EXIT
 
 unzip -t "$apk_path" > "$evidence_dir/zip-test.txt"
+unzip -Z1 "$apk_path" > "$evidence_dir/contents.txt"
+grep -Eq '(^|/)LICENSE$' "$evidence_dir/contents.txt"
+grep -Eq '(^|/)THIRD_PARTY_NOTICES\.md$' "$evidence_dir/contents.txt"
 "$zipalign_bin" -c -P 16 -v 4 "$apk_path" > "$evidence_dir/zipalign.txt"
 # Match the shared objects directly below each ABI directory. Some unzip
 # implementations do not treat an absent explicit `lib/` directory entry as
@@ -77,13 +91,15 @@ for abi in "${expected_abis[@]}"; do
 done
 
 sha256sum "$apk_path" | tee "$evidence_dir/SHA256SUMS"
+llama_cpp_commit=$(node -e "const fs=require('fs'); process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1], 'utf8')).commit)" "$manifest")
+[[ -n "$llama_cpp_commit" ]] || { echo 'Pinned llama.cpp commit is empty' >&2; exit 1; }
 {
   echo "APK=$apk_path"
   echo "READELF=$readelf_bin"
   echo "ZIPALIGN=$zipalign_bin"
   echo "EXPECTED_ABIS=${expected_abis[*]}"
   echo "NATIVE_LIBRARY_COUNT=${#native_entries[@]}"
-  echo "LLAMA_CPP_COMMIT=$(node -e "const fs=require('fs'); process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1], 'utf8')).commit)" "$manifest")"
+  echo "LLAMA_CPP_COMMIT=$llama_cpp_commit"
   echo 'SERVER_RUNTIME_LIBRARIES=0'
   echo 'LOAD_ALIGNMENT=0x4000'
   echo 'ZIP_ALIGNMENT=16'

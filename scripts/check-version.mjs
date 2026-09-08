@@ -7,6 +7,10 @@ const tauri = JSON.parse(
   await readFile(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8'),
 )
 const cargo = await readFile(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8')
+const pluginCargo = await readFile(
+  new URL('../src-tauri/plugins/juniper-local/Cargo.toml', import.meta.url),
+  'utf8',
+)
 const commands = await readFile(new URL('../src-tauri/src/commands.rs', import.meta.url), 'utf8')
 const runtime = await readFile(new URL('../src/lib/runtime.ts', import.meta.url), 'utf8')
 const manifest = await readFile(
@@ -15,13 +19,26 @@ const manifest = await readFile(
 )
 const expected = packageJson.version
 const cargoVersion = cargo.match(/^version\s*=\s*"([^"]+)"$/m)?.[1]
+const pluginVersion = pluginCargo.match(/^version\s*=\s*"([^"]+)"$/m)?.[1]
 const versionLabel = 'Juniper ' + expected
 const diagnosticsMatch = commands.includes(versionLabel) && runtime.includes(versionLabel)
+const staleReleaseMarkers = /PENDING SOL|PENDING-MERGE|published_artifacts:\s*\[\s*\]/i
+const expectedArtifactNames = [
+  `Juniper-${expected}-linux-x86_64.deb`,
+  `Juniper-${expected}-linux-x86_64.AppImage`,
+  `Juniper-${expected}-windows-x86_64.msi`,
+  `Juniper-${expected}-android-universal.apk`,
+  `Juniper-${expected}-android-native-symbols.zip`,
+]
 if (
   tauri.version !== expected ||
   cargoVersion !== expected ||
+  pluginVersion !== expected ||
   !diagnosticsMatch ||
-  !manifest.includes(`version: ${expected}`)
+  !manifest.includes(`version: ${expected}`) ||
+  !manifest.includes(`tag: v${expected}`) ||
+  staleReleaseMarkers.test(manifest) ||
+  expectedArtifactNames.some((name) => !manifest.includes(name))
 ) {
   throw new Error(
     `Version mismatch: expected ${expected} across package, Cargo, Tauri, and release manifest.`,
@@ -31,56 +48,24 @@ const releaseTag = process.env.RELEASE_TAG
 if (releaseTag && releaseTag !== `v${expected}`) {
   throw new Error(`Release tag mismatch: expected v${expected}, received ${releaseTag}.`)
 }
-const expectedAndroidVersionCodes = new Map([
-  ['0.3.0-rc.7', 3007],
-  ['0.3.0-rc.8', 3008],
-  ['0.3.0-rc.9', 3009],
-  ['0.3.0-rc.10', 3010],
-  ['0.3.0-rc.11', 3011],
-  ['0.3.0-rc.12', 3012],
-  ['0.3.0-rc.13', 3013],
-  ['0.3.0-rc.14', 3014],
-  ['0.3.0-rc.20', 3020],
-  ['0.3.0-rc.21', 3021],
-  ['0.3.0-rc.22', 3022],
-  ['0.3.0-rc.23', 3023],
-  ['0.3.0-rc.24', 3024],
-  ['0.3.0-rc.25', 3025],
-  ['0.3.0-rc.26', 3026],
-  ['0.3.0-rc.27', 3027],
-  ['0.3.0-rc.28', 3028],
-  ['0.3.0-rc.29', 3029],
-])
-const expectedMsiVersions = new Map([
-  ['0.3.0-rc.7', '0.3.0.7'],
-  ['0.3.0-rc.8', '0.3.0.8'],
-  ['0.3.0-rc.9', '0.3.0.9'],
-  ['0.3.0-rc.10', '0.3.0.10'],
-  ['0.3.0-rc.11', '0.3.0.11'],
-  ['0.3.0-rc.12', '0.3.0.12'],
-  ['0.3.0-rc.13', '0.3.0.13'],
-  ['0.3.0-rc.14', '0.3.0.14'],
-  ['0.3.0-rc.20', '0.3.0.20'],
-  ['0.3.0-rc.21', '0.3.0.21'],
-  ['0.3.0-rc.22', '0.3.0.22'],
-  ['0.3.0-rc.23', '0.3.0.23'],
-  ['0.3.0-rc.24', '0.3.0.24'],
-  ['0.3.0-rc.25', '0.3.0.25'],
-  ['0.3.0-rc.26', '0.3.0.26'],
-  ['0.3.0-rc.27', '0.3.0.27'],
-  ['0.3.0-rc.28', '0.3.0.28'],
-  ['0.3.0-rc.29', '0.3.0.29'],
-])
+const rcMatch = expected.match(/^0\.3\.0-rc\.([1-9][0-9]*)$/)
+if (!rcMatch) throw new Error(`Unsupported release-candidate version: ${expected}`)
+const rcNumber = Number(rcMatch[1])
+if (!Number.isSafeInteger(rcNumber) || rcNumber > 999) {
+  throw new Error(`Release-candidate number is outside the supported range: ${expected}`)
+}
+const expectedAndroidVersionCode = 3000 + rcNumber
+const expectedMsiVersion = `0.3.0.${rcNumber}`
 const androidVersionCode = tauri.bundle?.android?.versionCode
-if (androidVersionCode !== expectedAndroidVersionCodes.get(expected)) {
+if (androidVersionCode !== expectedAndroidVersionCode) {
   throw new Error(
-    `Android versionCode mismatch: ${expected} must use ${expectedAndroidVersionCodes.get(expected)}.`,
+    `Android versionCode mismatch: ${expected} must use ${expectedAndroidVersionCode}.`,
   )
 }
 const msiVersion = tauri.bundle?.windows?.wix?.version
-if (msiVersion !== expectedMsiVersions.get(expected)) {
+if (msiVersion !== expectedMsiVersion) {
   throw new Error(
-    `MSI version mismatch: ${expected} must use Windows Installer version ${expectedMsiVersions.get(expected)}.`,
+    `MSI version mismatch: ${expected} must use Windows Installer version ${expectedMsiVersion}.`,
   )
 }
 console.log(`Version consistency passed: ${expected}`)

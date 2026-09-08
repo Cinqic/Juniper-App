@@ -5,10 +5,6 @@ import type {
   Attachment,
   ChatRequest,
   ChatStreamEvent,
-  DeviceLinkPairingOffer,
-  DeviceLinkPeer,
-  DeviceLinkScope,
-  DeviceLinkStatus,
   DiscoveredModel,
   GgufSelection,
   ModelInspection,
@@ -169,48 +165,12 @@ export async function cancelModelPull(requestId: string): Promise<void> {
 export async function getModelCatalog(): Promise<ModelCatalog> {
   if (!runningInTauri) return MODEL_CATALOG
   const models = await invoke<unknown>('model_catalog')
-  return parseCatalog({ version: 2, minimumAppVersion: '0.3.0-rc.29', models })
+  return parseCatalog({ version: 2, minimumAppVersion: '0.3.0-rc.30', models })
 }
 
 export async function getRuntimeRegistry(): Promise<RuntimeDescriptor[]> {
   if (!runningInTauri) return []
   return invoke<RuntimeDescriptor[]>('runtime_registry')
-}
-
-export async function getDeviceLinkStatus(): Promise<DeviceLinkStatus | null> {
-  if (!runningInTauri) return null
-  return invoke<DeviceLinkStatus>('device_link_status')
-}
-
-export async function startDeviceLinkPairing(): Promise<DeviceLinkPairingOffer> {
-  if (!runningInTauri) throw new Error('Device Link pairing requires the Juniper native runtime.')
-  return invoke<DeviceLinkPairingOffer>('device_link_start_pairing')
-}
-
-export async function completeDeviceLinkPairing(proof: {
-  sessionId: string
-  peerId: string
-  peerName: string
-  peerFingerprint: string
-  token: string
-}): Promise<DeviceLinkPeer> {
-  if (!runningInTauri) throw new Error('Device Link pairing requires the Juniper native runtime.')
-  return invoke<DeviceLinkPeer>('device_link_complete_pairing', { proof })
-}
-
-export async function revokeDeviceLinkPeer(peerId: string): Promise<void> {
-  if (!runningInTauri)
-    throw new Error('Device Link management requires the Juniper native runtime.')
-  await invoke('device_link_revoke_peer', { peerId })
-}
-
-export async function updateDeviceLinkPeerScopes(
-  peerId: string,
-  scopes: DeviceLinkScope[],
-): Promise<DeviceLinkPeer> {
-  if (!runningInTauri)
-    throw new Error('Device Link management requires the Juniper native runtime.')
-  return invoke<DeviceLinkPeer>('device_link_update_peer_scopes', { peerId, scopes })
 }
 
 export async function getDeviceCapabilities(): Promise<DeviceCapabilities> {
@@ -349,7 +309,7 @@ export async function deleteProviderCredential(reference: string): Promise<void>
 export async function getDiagnostics(): Promise<Record<string, string>> {
   if (runningInTauri) return invoke<Record<string, string>>('system_info')
   return {
-    application: 'Juniper 0.3.0-rc.29',
+    application: 'Juniper 0.3.0-rc.30',
     runtime: browserPreviewEnabled
       ? 'Browser preview (development only)'
       : 'Native runtime unavailable',

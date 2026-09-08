@@ -23,6 +23,7 @@ import java.security.MessageDigest
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import androidx.appcompat.app.AppCompatActivity
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.spec.GCMParameterSpec
@@ -202,6 +203,7 @@ internal object EngineOwner {
     @Volatile private var failureMessage: String? = null
     private val abi: String? = Build.SUPPORTED_ABIS.firstOrNull { it == "arm64-v8a" || it == "x86_64" }
 
+    @Suppress("DEPRECATION")
     fun initialize(context: Context, nativeLibraryDir: String) {
         if (appContext == null) appContext = context.applicationContext
         if (!callbacksRegistered) {
@@ -623,8 +625,8 @@ class JuniperLocalRuntimePlugin(private val activity: Activity) : Plugin(activit
         super.onStop()
     }
 
-    override fun onDestroy() {
+    override fun onDestroy(activity: AppCompatActivity) {
         EngineOwner.unload()
-        super.onDestroy()
+        super.onDestroy(activity)
     }
 }

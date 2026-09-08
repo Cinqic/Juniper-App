@@ -1,7 +1,9 @@
 # Device Link threat model
 
-Device Link is an explicit, local-network trust boundary. It is disabled by
-default and does not make the app a general-purpose remote-control server.
+Device Link is a proposed local-network trust boundary. It is disabled in this
+candidate, has no listener or usable pairing transport, and does not make the
+app a general-purpose remote-control server. The controls below are requirements
+for a future implementation, not claims about a shipping network path.
 
 ## Security invariants
 
@@ -34,8 +36,8 @@ default and does not make the app a general-purpose remote-control server.
 | Public endpoint disguised as a provider               | HTTPS plus private/link-local address validation and explicit paired identity                    |
 | Database copied from the device                       | Peer metadata is non-secret; secrets are never persisted in SQLite                               |
 
-The current candidate ships the protocol/policy, trust-store commands, and the
-pinned Juniper Network client path. It does not enable a socket listener or
-mDNS discovery yet. Any future listener/discovery transport must use these
-checks as a mandatory pre-dispatch layer; it must not introduce a permissive
-fallback transport.
+The current candidate ships transport-neutral policy only. The pairing and
+Juniper Network UI/native command surfaces are disabled. A future listener must
+use a persistent secure TLS identity, exchange the exact certificate or SPKI
+pin used by transport, validate resolved private/link-local destinations, and
+call the native authorization path before dispatching operations.

@@ -1,6 +1,6 @@
 # ADR 0020: Android provider credentials use Keystore
 
-Status: Accepted for the rc29 review candidate
+Status: Accepted for the rc30 release candidate
 
 ## Decision
 

@@ -54,9 +54,12 @@ for reference. It is not evidence of a real-model result.
 Linux builds, `.deb`/`.AppImage` bundling, and a launch smoke are reproducible
 locally and in CI. Windows MSI bundling plus an install, launch, and uninstall
 smoke run on a Windows runner. A signed Android APK is built and put through an
-emulator install, launch, rotation, relaunch, and uninstall smoke. The package
-audit also requires the two supported native ABIs, rejects server-runtime
-libraries, and checks 16 KiB `PT_LOAD` alignment for every shared object.
+emulator credential-vault instrumentation run plus install, launch, rotation,
+relaunch, and uninstall smoke. The credential test proves plaintext absence,
+Android Keystore key ownership, per-reference AAD binding, deletion, and failed
+post-deletion retrieval. The package audit also requires the two supported
+native ABIs, rejects server-runtime libraries, and checks 16 KiB `PT_LOAD`
+alignment for every shared object.
 Release artifacts include the unstripped native symbol archive. The emulator
 cannot prove real offline token generation, so a physical ARM64 run remains a
 separate llama.cpp Beta-promotion follow-up. The validation and release

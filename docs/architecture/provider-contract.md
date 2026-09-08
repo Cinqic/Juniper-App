@@ -3,10 +3,10 @@
 Providers expose `listModels`, `healthCheck`, `inspectModel`, `pullModel`,
 `deleteModel`, `runningModels`, `capabilityProbe`, and `streamChat` semantics.
 v0.3 implements a Juniper-owned local `llama-server` path plus optional Ollama,
-generic OpenAI-compatible, llama.cpp-compatible, and paired Juniper Network
-servers. Juniper Network is an HTTPS/TLS-pinned private-LAN route with an
-explicit peer identity; it is not a cloud fallback and cannot be used for a
-private chat.
+generic OpenAI-compatible and llama.cpp-compatible servers. The Juniper Network
+provider kind is reserved but disabled in this candidate because Device Link
+does not yet have a persistent TLS identity or an end-to-end pairing and
+transport implementation. Private chats and implicit host context remain local.
 
 Capabilities are tri-state: `supported`, `unsupported`, or `unknown`.
 Unknown never enables a tool/thinking/generation control. Runtime metadata is

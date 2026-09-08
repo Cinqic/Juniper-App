@@ -1,6 +1,6 @@
 # ADR 0017: Runtime registry and maturity
 
-Status: Accepted for the rc29 review candidate
+Status: Accepted for the rc30 release candidate
 
 ## Decision
 
@@ -11,6 +11,6 @@ separate from provider transport and model metadata.
 
 ## Consequences
 
-The UI can show unavailable or package-only integrations without pretending
-they are ready. Android llama.cpp remains Beta until physical ARM64 evidence;
+The UI can show upstream runtime metadata as unavailable without pretending a
+Juniper adapter or artifact exists. Android llama.cpp remains Beta until physical ARM64 evidence;
 that follow-up does not block the desktop release contract.

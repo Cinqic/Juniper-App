@@ -2132,7 +2132,7 @@ dependencies = [
 
 [[package]]
 name = "juniper"
-version = "0.3.0-rc.29"
+version = "0.3.0-rc.30"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -2142,8 +2142,6 @@ dependencies = [
  "libc",
  "reqwest 0.12.28",
  "rusqlite",
- "rustls",
- "rustls-pki-types",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -2158,7 +2156,7 @@ dependencies = [
 
 [[package]]
 name = "juniper-local-runtime"
-version = "0.3.0"
+version = "0.3.0-rc.30"
 dependencies = [
  "serde",
  "serde_json",

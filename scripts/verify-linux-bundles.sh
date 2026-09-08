@@ -17,6 +17,8 @@ dpkg-deb --field "$deb" Version | grep -Fx "$version"
 # early and make dpkg-deb report SIGPIPE even when the match is valid.
 dpkg-deb --contents "$deb" > "$artifact_dir/CONTENTS-linux.txt"
 grep -Eq '/runtime/llama-server$' "$artifact_dir/CONTENTS-linux.txt"
+grep -Eq '/LICENSE$' "$artifact_dir/CONTENTS-linux.txt"
+grep -Eq '/THIRD_PARTY_NOTICES\.md$' "$artifact_dir/CONTENTS-linux.txt"
 chmod +x "$appimage"
 
 set +e

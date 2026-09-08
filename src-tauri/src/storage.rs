@@ -541,11 +541,13 @@ fn load_device_link_peers_from_connection(
         .collect()
 }
 
+#[cfg(test)]
 pub fn load_device_link_peers(path: &Path) -> Result<Vec<crate::device_link::DeviceLinkPeer>> {
     let connection = connection(path)?;
     load_device_link_peers_from_connection(&connection)
 }
 
+#[cfg(test)]
 pub fn upsert_device_link_peer(
     path: &Path,
     peer: &crate::device_link::DeviceLinkPeer,
@@ -566,11 +568,7 @@ pub fn upsert_device_link_peer(
     Ok(())
 }
 
-pub fn delete_device_link_peer(path: &Path, id: &str) -> Result<bool> {
-    let connection = connection(path)?;
-    Ok(connection.execute("DELETE FROM device_link_peers WHERE id = ?1", params![id])? > 0)
-}
-
+#[cfg(test)]
 pub fn load_device_link_identity(path: &Path) -> Result<Option<(String, String)>> {
     let connection = connection(path)?;
     connection
@@ -582,6 +580,7 @@ pub fn load_device_link_identity(path: &Path) -> Result<Option<(String, String)>
         .optional()
 }
 
+#[cfg(test)]
 pub fn save_device_link_identity(path: &Path, device_id: &str, fingerprint: &str) -> Result<()> {
     let connection = connection(path)?;
     connection.execute(

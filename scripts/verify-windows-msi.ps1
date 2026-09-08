@@ -2,7 +2,8 @@ param(
   [Parameter(Mandatory = $true)][string]$MsiPath,
   [Parameter(Mandatory = $true)][string]$ExpectedAppVersion,
   [Parameter(Mandatory = $true)][string]$ExpectedMsiVersion,
-  [Parameter(Mandatory = $true)][string]$EvidencePath
+  [Parameter(Mandatory = $true)][string]$EvidencePath,
+  [Parameter(Mandatory = $true)][string]$PackageEvidencePath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,6 +45,11 @@ $signature = Get-AuthenticodeSignature -LiteralPath $MsiPath
   "Architecture=x86_64"
   "AuthenticodeStatus=$($signature.Status)"
 ) | Set-Content -LiteralPath $EvidencePath -Encoding utf8
+@(
+  "ProductVersion=$productVersion"
+  "AppVersion=$ExpectedAppVersion"
+  "Architecture=x86_64"
+) | Set-Content -LiteralPath $PackageEvidencePath -Encoding utf8
 
 # 0 is success; 3010 is ERROR_SUCCESS_REBOOT_REQUIRED, which is also a
 # successful install and must not fail the smoke test.
@@ -54,6 +60,10 @@ $exe = Get-ChildItem -Path $env:ProgramFiles, ${env:ProgramFiles(x86)} -Filter J
 if (-not $exe) { throw 'Installed Juniper.exe was not found.' }
 $runtime = Get-ChildItem -Path $exe.Directory.FullName -Filter llama-server.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $runtime) { throw 'Installed Juniper local runtime was not found.' }
+$license = Get-ChildItem -Path $exe.Directory.FullName -Filter LICENSE -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $license) { throw 'Installed Apache-2.0 LICENSE was not found.' }
+$notices = Get-ChildItem -Path $exe.Directory.FullName -Filter THIRD_PARTY_NOTICES.md -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $notices) { throw 'Installed third-party notices were not found.' }
 $process = Start-Process -FilePath $exe.FullName -PassThru
 Start-Sleep -Seconds 10
 if ($process.HasExited) { throw "Juniper exited during launch smoke test with $($process.ExitCode)" }

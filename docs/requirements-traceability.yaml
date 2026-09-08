@@ -198,7 +198,7 @@ requirements:
       ]
     tests: [src-tauri/src/commands.rs, src-tauri/src/providers.rs]
     phase: 12
-    status: IMPLEMENTED-BUNDLE-SMOKE-PENDING
+    status: IMPLEMENTED-RELEASE-BUNDLE-SMOKE-GATED
   REQ-RUNTIME-PACKAGING:
     statement: Desktop release workflow builds a pinned llama.cpp runtime into Tauri resources without committing binaries or model weights
     implementation:
@@ -210,7 +210,7 @@ requirements:
       ]
     tests: [scripts/build-llama-runtime.sh]
     phase: 12
-    status: CI-BUILD-PENDING
+    status: IMPLEMENTED-RELEASE-BUILD-GATED
   REQ-RUNTIME-REGISTRY:
     statement: Generic runtime registry separates runtime identity, maturity, artifact format, platform support, installation, and qualification state
     implementation:
@@ -237,7 +237,7 @@ requirements:
     phase: 13
     status: IMPLEMENTED-NATIVE-AND-FRONTEND-TESTED
   REQ-DEVICE-LINK:
-    statement: Device Link policy and Juniper Network client path use one-time pairing, TLS/LAN policy, bounded versioned frames, replay protection, least-privilege scopes, revocation, and private-chat isolation; socket discovery is deferred
+    statement: Device Link framing, replay, scope, revocation-shape, and private-chat policy is retained as a preview; listener, discovery, pairing UI, peer transport, remote control, and Juniper Network provider are disabled pending a secure persistent TLS identity and end-to-end qualification
     implementation:
       [
         src-tauri/src/device_link.rs,
@@ -249,7 +249,7 @@ requirements:
       ]
     tests: [src-tauri/src/device_link.rs, src-tauri/src/storage.rs, src-tauri/src/providers.rs]
     phase: 13
-    status: IMPLEMENTED-POLICY-AND-CLIENT-TESTED-TRANSPORT-DEFERRED
+    status: PREVIEW-POLICY-TESTED-ALL-TRANSPORT-SURFACES-DISABLED
   REQ-ANDROID-SECURE-CREDENTIALS:
     statement: Android provider credentials use an Android Keystore AES-GCM vault rather than plaintext or SQLite
     implementation:
@@ -263,4 +263,4 @@ requirements:
         src-tauri/plugins/juniper-local/android/src/androidTest/java/com/cinqic/juniper/local_runtime/CredentialVaultInstrumentedTest.kt,
       ]
     phase: 13
-    status: IMPLEMENTED-INSTRUMENTATION-PENDING
+    status: IMPLEMENTED-EMULATOR-INSTRUMENTATION-VERIFIED

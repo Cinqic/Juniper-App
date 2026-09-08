@@ -1,10 +1,10 @@
 [package]
 name = "juniper-local-runtime"
-version = "0.3.0"
+version = "0.3.0-rc.30"
 description = "Juniper's in-process mobile llama.cpp runtime bridge"
 authors = ["Cinqic"]
 edition = "2024"
-license = "MIT"
+license = "Apache-2.0"
 links = "juniper-local-runtime"
 
 [lib]

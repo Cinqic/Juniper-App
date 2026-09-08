@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Juniper",
-  "version": "0.3.0-rc.29",
+  "version": "0.3.0-rc.30",
   "identifier": "com.cinqic.juniper",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -28,7 +28,11 @@
   },
   "bundle": {
     "active": true,
-    "resources": ["runtime/*"],
+    "resources": {
+      "runtime/*": "runtime/",
+      "../LICENSE": "LICENSE",
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    },
     "category": "Productivity",
     "shortDescription": "Your AI, your models, your machine.",
     "longDescription": "A local-first AI environment that turns compatible models into personal Juniper assistants.",
@@ -37,11 +41,11 @@
     "icon": ["icons/icon.png", "icons/icon.ico", "icons/icon.icns"],
     "android": {
       "minSdkVersion": 24,
-      "versionCode": 3029
+      "versionCode": 3030
     },
     "windows": {
       "wix": {
-        "version": "0.3.0.29",
+        "version": "0.3.0.30",
         "upgradeCode": "c76ebe12-b9ae-59ab-b99e-c4b6dcd55238"
       }
     }

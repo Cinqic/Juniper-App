@@ -57,6 +57,8 @@ jobs:
           test "$commit" = "$(git rev-parse HEAD)"
           test "$(git tag --points-at HEAD | grep -Fx "$RELEASE_TAG" | wc -l)" -eq 1
           RELEASE_TAG="$RELEASE_TAG" node scripts/check-version.mjs
+          node scripts/check-project-license.mjs
+          node scripts/check-runtime-contract.mjs
           version=${RELEASE_TAG#v}
           publish=false
           if test "$GITHUB_EVENT_NAME" = push || test "$REQUESTED_PUBLISH" = true; then
@@ -182,6 +184,7 @@ jobs:
           -ExpectedAppVersion "$env:VERSION"
           -ExpectedMsiVersion ((Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).bundle.windows.wix.version)
           -EvidencePath 'release-artifacts/SIGNING-windows.txt'
+          -PackageEvidencePath 'release-artifacts/PACKAGE-windows.txt'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: juniper-windows-x86_64
@@ -212,7 +215,7 @@ jobs:
           java-version: '17'
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
       - name: Install Android SDK packages
-        run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.13113456' 'cmake;3.31.6' 'emulator' 'system-images;android-30;google_apis;x86_64'
+        run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.13113456' 'cmake;3.31.6' 'emulator' 'system-images;android-30;default;x86_64'
       - name: Install Android package audit tools
         run: sudo apt-get update && sudo apt-get install -y unzip zip binutils
       - name: Put Android build-tools on PATH
@@ -244,6 +247,11 @@ jobs:
           node scripts/configure-android-signing.mjs
       - name: Build signed release APK from locked source
         run: pnpm tauri android build --apk --ci --target aarch64 x86_64 -- --locked
+      - name: Build Android credential-vault instrumentation
+        working-directory: src-tauri/gen/android
+        run: >-
+          bash ./gradlew :juniper-local-runtime:assembleDebugAndroidTest
+          -PjuniperNativeAbis=x86_64 --no-daemon --stacktrace
       - name: Collect and verify exactly one signed APK
         env:
           VERSION: ${{ needs.contract.outputs.version }}
@@ -269,6 +277,7 @@ jobs:
       - name: Install, launch, lifecycle smoke, and uninstall APK
         env:
           VERSION: ${{ needs.contract.outputs.version }}
+          JUNIPER_CREDENTIAL_TEST_APK: ${{ github.workspace }}/src-tauri/plugins/juniper-local/android/build/outputs/apk/androidTest/debug/juniper-local-runtime-debug-androidTest.apk
         run: >-
           timeout --foreground 30m bash scripts/run-android-emulator-smoke.sh
           "release-artifacts/Juniper-$VERSION-android-universal.apk"
@@ -294,6 +303,9 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.contract.outputs.tag }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: juniper-*
@@ -316,14 +328,38 @@ jobs:
           test -f "release-artifacts/Juniper-$VERSION-linux-x86_64.AppImage"
           test -f "release-artifacts/Juniper-$VERSION-windows-x86_64.msi"
           test -f "release-artifacts/Juniper-$VERSION-android-universal.apk"
+          test -f "release-artifacts/Juniper-$VERSION-android-native-symbols.zip"
           test -f release-artifacts/SIGNING-windows.txt
           test -f release-artifacts/SIGNING-android.txt
+          test -f release-artifacts/PACKAGE-linux.txt
+          test -f release-artifacts/PACKAGE-windows.txt
+          test -f release-artifacts/PACKAGE-android.txt
           test "$(find release-artifacts -maxdepth 1 -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.msi' -o -name '*.apk' \) | wc -l)" -eq 4
+          cp LICENSE THIRD_PARTY_NOTICES.md release-artifacts/
           (cd release-artifacts && sha256sum Juniper-* > SHA256SUMS.txt)
           (cd release-artifacts && sha256sum --check SHA256SUMS.txt)
           apksigner verify --verbose --print-certs "release-artifacts/Juniper-$VERSION-android-universal.apk"
           dpkg-deb --field "release-artifacts/Juniper-$VERSION-linux-x86_64.deb" Version | grep -Fx "$VERSION"
           file release-artifacts/Juniper-*
+      - name: Generate resolved release provenance
+        env:
+          VERSION: ${{ needs.contract.outputs.version }}
+          TAG: ${{ needs.contract.outputs.tag }}
+          COMMIT: ${{ needs.contract.outputs.commit }}
+        run: |
+          jq -Rn \
+            --arg version "$VERSION" \
+            --arg tag "$TAG" \
+            --arg commit "$COMMIT" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --arg release_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG" \
+            --argjson artifacts "$(jq -Rn '[inputs | capture("^(?<sha256>[0-9a-f]{64})  (?<name>.+)$")]' < release-artifacts/SHA256SUMS.txt)" \
+            '{format:"juniper-release-provenance-v1", version:$version, tag:$tag, commit:$commit, workflowRunId:$run_id, workflowRunUrl:$run_url, releaseUrl:$release_url, prerelease:true, projectLicense:"Apache-2.0", windowsSigning:"see SIGNING-windows.txt", androidSigning:"see SIGNING-android.txt", androidQualification:"Beta; physical ARM64 inference unverified", deviceLink:"preview policy only; transport disabled", artifacts:$artifacts}' \
+            > release-artifacts/RELEASE-PROVENANCE.json
+          jq -e --arg version "$VERSION" --arg tag "$TAG" --arg commit "$COMMIT" \
+            '.version == $version and .tag == $tag and .commit == $commit and (.artifacts | length) == 5' \
+            release-artifacts/RELEASE-PROVENANCE.json
       - name: Attest executable release artifacts
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
@@ -384,12 +420,14 @@ jobs:
             echo '## Runtime notes'
             echo
             echo '- Models Market downloads verified GGUF weights on demand; the desktop bundle owns its loopback llama.cpp runtime and does not require Ollama.'
-            echo '- Desktop credentials use the operating-system credential store. Secure credential storage is unavailable on Android.'
+            echo '- Desktop credentials use the operating-system credential store; Android credentials use Android Keystore-backed AES-GCM storage.'
             echo '- Android loopback addresses refer to the phone itself; use an explicit LAN endpoint to reach a computer.'
-            echo '- External providers remain optional. MCP client calls, iOS, and macOS are not included.'
+            echo '- Android llama.cpp remains Beta because physical ARM64 inference qualification is not yet recorded.'
+            echo '- Device Link is a non-networked policy preview. Pairing, discovery, peer connections, remote control, and Juniper Network transport are disabled.'
+            echo '- Ollama, OpenAI-compatible, and llama.cpp-compatible providers remain optional. MCP client calls, iOS, and macOS are not included.'
             echo
             echo 'Source: https://github.com/Cinqic/Juniper-App'
-            echo 'License: MIT'
+            echo 'License: Apache-2.0'
           } > RELEASE_NOTES.md
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
@@ -403,3 +441,6 @@ jobs:
             release-artifacts/SHA256SUMS.txt
             release-artifacts/SIGNING-*.txt
             release-artifacts/PACKAGE-*.txt
+            release-artifacts/RELEASE-PROVENANCE.json
+            release-artifacts/LICENSE
+            release-artifacts/THIRD_PARTY_NOTICES.md

@@ -141,8 +141,10 @@ function legacyArtifact(raw: unknown, modelId: string): CatalogArtifact {
     id: raw.id,
     runtimeId: 'llama.cpp',
     format: 'GGUF',
-    platforms: ['android', 'linux', 'windows'],
-    architectures: ['arm64', 'x86_64'],
+    // Legacy v1 records did not carry platform or architecture evidence.
+    // Preserve integrity metadata without inventing compatibility.
+    platforms: ['unknown'],
+    architectures: ['unknown'],
     quantization: raw.quantization,
     sizeBytes: raw.sizeBytes,
     sha256: raw.sha256,
@@ -156,8 +158,8 @@ function legacyArtifact(raw: unknown, modelId: string): CatalogArtifact {
         url: raw.url,
       },
     ],
-    maturity: 'stable',
-    qualification: 'qualified',
+    maturity: 'experimental',
+    qualification: 'unknown',
     fileName: raw.fileName,
     url: raw.url,
   }

@@ -1,10 +1,10 @@
 {
   "name": "juniper-app",
-  "version": "0.3.0-rc.29",
+  "version": "0.3.0-rc.30",
   "private": true,
   "type": "module",
   "description": "Juniper — your AI, your models, your machine.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "Cinqic",
   "packageManager": "pnpm@11.19.0",
   "scripts": {
@@ -20,10 +20,12 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "validate": "pnpm format && pnpm lint && pnpm typecheck && pnpm test && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --locked --manifest-path src-tauri/Cargo.toml && pnpm schema:validate && pnpm version:check && pnpm branding:verify",
-    "validate:no-native-tests": "pnpm format && pnpm lint && pnpm typecheck && pnpm test && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && pnpm schema:validate && pnpm version:check && pnpm branding:verify",
+    "validate": "pnpm format && pnpm lint && pnpm typecheck && pnpm test && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --locked --manifest-path src-tauri/Cargo.toml && pnpm schema:validate && pnpm version:check && pnpm license:check && pnpm runtime:check && pnpm branding:verify",
+    "validate:no-native-tests": "pnpm format && pnpm lint && pnpm typecheck && pnpm test && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && pnpm schema:validate && pnpm version:check && pnpm license:check && pnpm runtime:check && pnpm branding:verify",
     "schema:validate": "node scripts/validate-schemas.mjs",
     "version:check": "node scripts/check-version.mjs",
+    "license:check": "node scripts/check-project-license.mjs",
+    "runtime:check": "node scripts/check-runtime-contract.mjs",
     "branding:verify": "node scripts/verify-branding-assets.mjs"
   },
   "dependencies": {

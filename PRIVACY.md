@@ -6,10 +6,11 @@ stay in the local application data directory when using a local provider.
 
 When a user configures a remote provider, that provider receives the prompts,
 context, attachments, and tool inputs included in the request. The UI marks
-that route REMOTE. Juniper Network is a distinct paired private-LAN route:
-private chats, implicit memories, and host context are rejected rather than
-sent. Model Market downloads and future MCP/web tools are explicit actions,
-not silent fallback.
+that route REMOTE. Device Link and Juniper Network are disabled in this
+candidate: the repository contains non-networked protocol and authorization
+policy for future work, but no listener, discovery, usable pairing flow, peer
+transport, or remote-control route. Model Market downloads and future MCP/web
+tools are explicit actions, not silent fallback.
 
 Desktop provider credentials are stored in the operating system credential
 store, Android provider credentials use Android Keystore, and neither is

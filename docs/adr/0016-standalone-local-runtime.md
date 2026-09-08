@@ -1,6 +1,6 @@
 # ADR-0016: Standalone local runtime boundary
 
-Status: accepted for the rc29 review candidate; Android llama.cpp remains Beta
+Status: accepted for the rc30 release candidate; Android llama.cpp remains Beta
 pending physical qualification
 
 ## Decision

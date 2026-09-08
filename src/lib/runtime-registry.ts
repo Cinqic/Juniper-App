@@ -41,16 +41,16 @@ export const RUNTIME_DEFINITIONS: RuntimeDefinition[] = [
     name: 'LiteRT-LM',
     version: '0.16.1',
     sourceRevision: 'v0.16.1',
-    platforms: ['android', 'linux', 'windows'],
-    architectures: ['arm64-v8a', 'aarch64', 'arm64', 'x86_64'],
+    platforms: [],
+    architectures: [],
     artifactFormats: ['.litertlm'],
-    capabilities: ['chat', 'streaming', 'cancellation', 'cpu', 'accelerator-probe'],
+    capabilities: [],
     accelerator: 'unknown',
-    maturityByPlatform: { android: 'beta', linux: 'beta', windows: 'beta' },
+    maturityByPlatform: { android: 'unavailable', linux: 'unavailable', windows: 'unavailable' },
     reasonByPlatform: {
-      android: 'Optional pinned integration; no compatible artifact is bundled.',
-      linux: 'Optional native integration; no compatible artifact is bundled.',
-      windows: 'Optional native integration; no compatible artifact is bundled.',
+      android: 'Upstream target metadata only; Juniper has no LiteRT-LM adapter or artifact.',
+      linux: 'Upstream target metadata only; Juniper has no LiteRT-LM adapter or artifact.',
+      windows: 'Upstream target metadata only; Juniper has no LiteRT-LM adapter or artifact.',
     },
   },
   {
@@ -58,16 +58,16 @@ export const RUNTIME_DEFINITIONS: RuntimeDefinition[] = [
     name: 'ExecuTorch',
     version: '1.4.1',
     sourceRevision: 'v1.4.1',
-    platforms: ['android', 'linux', 'windows'],
-    architectures: ['arm64-v8a', 'aarch64', 'arm64', 'x86_64'],
+    platforms: [],
+    architectures: [],
     artifactFormats: ['PTE', 'tokenizer/config bundle'],
-    capabilities: ['chat', 'streaming', 'cancellation', 'cpu-xnnpack'],
-    accelerator: 'cpu',
-    maturityByPlatform: { android: 'beta', linux: 'beta', windows: 'beta' },
+    capabilities: [],
+    accelerator: 'unknown',
+    maturityByPlatform: { android: 'unavailable', linux: 'unavailable', windows: 'unavailable' },
     reasonByPlatform: {
-      android: 'Pinned release AAR path; LLM Java API remains experimental.',
-      linux: 'Pinned release worker path; no compatible artifact is bundled.',
-      windows: 'Pinned release worker path; no compatible artifact is bundled.',
+      android: 'Upstream target metadata only; Juniper has no ExecuTorch adapter or artifact.',
+      linux: 'Upstream target metadata only; Juniper has no ExecuTorch adapter or artifact.',
+      windows: 'Upstream target metadata only; Juniper has no ExecuTorch adapter or artifact.',
     },
   },
   {
@@ -75,16 +75,16 @@ export const RUNTIME_DEFINITIONS: RuntimeDefinition[] = [
     name: 'MLC LLM',
     version: 'source-main',
     sourceRevision: '9fa644f54b04983adea4d0168f49fc6af4a893ba',
-    platforms: ['android', 'linux', 'windows'],
-    architectures: ['arm64-v8a', 'aarch64', 'arm64', 'x86_64'],
+    platforms: [],
+    architectures: [],
     artifactFormats: ['compiled MLC bundle'],
-    capabilities: ['chat', 'streaming', 'cancellation', 'vulkan-probe'],
-    accelerator: 'gpu',
-    maturityByPlatform: { android: 'experimental', linux: 'experimental', windows: 'experimental' },
+    capabilities: [],
+    accelerator: 'unknown',
+    maturityByPlatform: { android: 'unavailable', linux: 'unavailable', windows: 'unavailable' },
     reasonByPlatform: {
-      android: 'Requires a compiled model/runtime bundle and physical GPU qualification.',
-      linux: 'Requires a compiled model/runtime bundle; not packaged in this candidate.',
-      windows: 'Requires a compiled model/runtime bundle; not packaged in this candidate.',
+      android: 'Upstream target metadata only; Juniper has no MLC LLM adapter or compiled bundle.',
+      linux: 'Upstream target metadata only; Juniper has no MLC LLM adapter or compiled bundle.',
+      windows: 'Upstream target metadata only; Juniper has no MLC LLM adapter or compiled bundle.',
     },
   },
   {
@@ -92,16 +92,19 @@ export const RUNTIME_DEFINITIONS: RuntimeDefinition[] = [
     name: 'ONNX Runtime GenAI',
     version: '0.15.2',
     sourceRevision: 'v0.15.2',
-    platforms: ['android', 'linux', 'windows'],
-    architectures: ['arm64-v8a', 'aarch64', 'arm64', 'x86_64'],
+    platforms: [],
+    architectures: [],
     artifactFormats: ['ONNX GenAI model bundle'],
-    capabilities: ['chat', 'streaming', 'cancellation', 'cpu'],
+    capabilities: [],
     accelerator: 'unknown',
-    maturityByPlatform: { android: 'experimental', linux: 'experimental', windows: 'experimental' },
+    maturityByPlatform: { android: 'unavailable', linux: 'unavailable', windows: 'unavailable' },
     reasonByPlatform: {
-      android: 'The pinned GenAI API is Preview and no bundle is shipped.',
-      linux: 'The pinned GenAI API is Preview and no bundle is shipped.',
-      windows: 'The pinned GenAI API is Preview and no bundle is shipped.',
+      android:
+        'Upstream target metadata only; Juniper has no ONNX Runtime GenAI adapter or artifact.',
+      linux:
+        'Upstream target metadata only; Juniper has no ONNX Runtime GenAI adapter or artifact.',
+      windows:
+        'Upstream target metadata only; Juniper has no ONNX Runtime GenAI adapter or artifact.',
     },
   },
 ]
@@ -135,7 +138,14 @@ export function runtimeRegistryForDevice(
       id: definition.id,
       name: definition.name,
       maturity,
-      state: available ? 'available' : architectureKnown ? 'unavailable' : 'not-qualified',
+      state:
+        available || maturity === 'unavailable'
+          ? available
+            ? 'available'
+            : 'unavailable'
+          : architectureKnown
+            ? 'unavailable'
+            : 'not-qualified',
       version: definition.version,
       sourceRevision: definition.sourceRevision,
       platforms: definition.platforms,
@@ -146,7 +156,7 @@ export function runtimeRegistryForDevice(
       installed: packaged,
       reason: available
         ? definition.reasonByPlatform[platform]
-        : architectureKnown
+        : maturity === 'unavailable' || architectureKnown
           ? (definition.reasonByPlatform[platform] ??
             'This runtime is not packaged in the candidate.')
           : `The ${device.architecture} architecture is not qualified for this runtime.`,

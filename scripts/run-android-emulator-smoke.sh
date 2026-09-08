@@ -163,4 +163,21 @@ fi
 export ANDROID_SERIAL="$serial"
 printf 'Android emulator package manager is ready.\n'
 adb_timeout 10 devices -l | tee "$evidence_dir/adb-devices.txt"
+if [[ -n "${JUNIPER_CREDENTIAL_TEST_APK:-}" ]]; then
+  [[ -f "$JUNIPER_CREDENTIAL_TEST_APK" ]] || {
+    printf 'Credential instrumentation APK not found: %s\n' "$JUNIPER_CREDENTIAL_TEST_APK" >&2
+    exit 1
+  }
+  adb_timeout 300 install --no-streaming -r "$JUNIPER_CREDENTIAL_TEST_APK"
+  if ! adb_timeout 300 shell am instrument -w \
+    -e class com.cinqic.juniper.local_runtime.CredentialVaultInstrumentedTest \
+    com.cinqic.juniper.local_runtime.test/androidx.test.runner.AndroidJUnitRunner \
+    > "$evidence_dir/credential-instrumentation.txt" 2>&1; then
+    cat "$evidence_dir/credential-instrumentation.txt" >&2
+    exit 1
+  fi
+  cat "$evidence_dir/credential-instrumentation.txt"
+  grep -Fq 'OK (1 test)' "$evidence_dir/credential-instrumentation.txt"
+  adb_timeout 60 uninstall com.cinqic.juniper.local_runtime.test
+fi
 timeout --foreground 12m bash scripts/verify-android-lifecycle.sh "$apk_path" "$package_name" "$evidence_dir"

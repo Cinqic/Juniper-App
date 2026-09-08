@@ -52,6 +52,10 @@ android {
 
 dependencies {
     implementation(project(":tauri-android"))
+    // Plugin lifecycle hooks expose AppCompatActivity in Tauri's public API,
+    // so the plugin module must compile against AppCompat directly instead of
+    // relying on the application module's non-transitive dependency.
+    implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
     androidTestImplementation("androidx.test:runner:1.4.0")

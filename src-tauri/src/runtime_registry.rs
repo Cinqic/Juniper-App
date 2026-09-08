@@ -51,10 +51,10 @@ const DEFINITIONS: &[Definition] = &[
         version: "0.16.1",
         source_revision: "v0.16.1",
         formats: &[".litertlm"],
-        capabilities: &["chat", "streaming", "cancellation", "accelerator-probe"],
+        capabilities: &[],
         accelerator: "unknown",
-        maturity: "beta",
-        reason: "Pinned optional integration; no compatible artifact is bundled in this candidate.",
+        maturity: "unavailable",
+        reason: "Upstream target metadata only; Juniper has no LiteRT-LM adapter or artifact.",
     },
     Definition {
         id: "executorch",
@@ -62,10 +62,10 @@ const DEFINITIONS: &[Definition] = &[
         version: "1.4.1",
         source_revision: "v1.4.1",
         formats: &["PTE", "tokenizer/config bundle"],
-        capabilities: &["chat", "streaming", "cancellation", "cpu-xnnpack"],
-        accelerator: "cpu",
-        maturity: "beta",
-        reason: "Pinned release integration; no compatible artifact is bundled in this candidate.",
+        capabilities: &[],
+        accelerator: "unknown",
+        maturity: "unavailable",
+        reason: "Upstream target metadata only; Juniper has no ExecuTorch adapter or artifact.",
     },
     Definition {
         id: "mlc-llm",
@@ -73,10 +73,10 @@ const DEFINITIONS: &[Definition] = &[
         version: "source-main",
         source_revision: "9fa644f54b04983adea4d0168f49fc6af4a893ba",
         formats: &["compiled MLC bundle"],
-        capabilities: &["chat", "streaming", "cancellation", "vulkan-probe"],
-        accelerator: "gpu",
-        maturity: "experimental",
-        reason: "Requires a compiled model/runtime bundle and physical GPU qualification.",
+        capabilities: &[],
+        accelerator: "unknown",
+        maturity: "unavailable",
+        reason: "Upstream target metadata only; Juniper has no MLC LLM adapter or compiled bundle.",
     },
     Definition {
         id: "onnxruntime-genai",
@@ -84,18 +84,16 @@ const DEFINITIONS: &[Definition] = &[
         version: "0.15.2",
         source_revision: "v0.15.2",
         formats: &["ONNX GenAI model bundle"],
-        capabilities: &["chat", "streaming", "cancellation", "cpu"],
+        capabilities: &[],
         accelerator: "unknown",
-        maturity: "experimental",
-        reason: "The pinned GenAI API is Preview and no model bundle is shipped.",
+        maturity: "unavailable",
+        reason: "Upstream target metadata only; Juniper has no ONNX Runtime GenAI adapter or artifact.",
     },
 ];
 
 fn platform_maturity(id: &str, platform: &str) -> &'static str {
     if id == "llama.cpp" && platform == "android" {
         "beta"
-    } else if platform == "android" && id == "mlc-llm" {
-        "experimental"
     } else {
         DEFINITIONS
             .iter()
@@ -164,11 +162,19 @@ pub fn for_device(
                 .to_owned(),
                 version: definition.version.to_owned(),
                 source_revision: definition.source_revision.to_owned(),
-                platforms: vec!["android", "linux", "windows"]
-                    .into_iter()
-                    .map(str::to_owned)
-                    .collect(),
-                architectures: architectures(),
+                platforms: if definition.id == "llama.cpp" {
+                    vec!["android", "linux", "windows"]
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect()
+                } else {
+                    Vec::new()
+                },
+                architectures: if definition.id == "llama.cpp" {
+                    architectures()
+                } else {
+                    Vec::new()
+                },
                 artifact_formats: definition
                     .formats
                     .iter()
@@ -209,7 +215,9 @@ mod tests {
             runtimes
                 .iter()
                 .any(|runtime| runtime.id == "onnxruntime-genai"
-                    && runtime.maturity == "experimental")
+                    && runtime.maturity == "unavailable"
+                    && runtime.platforms.is_empty()
+                    && runtime.architectures.is_empty())
         );
     }
 }

@@ -7,8 +7,8 @@ Juniper state and context builder
   ↓
 Rust Tauri commands / orchestrator boundary
   ├─ runtime registry and artifact-centric model catalog
-  ├─ provider adapters (Juniper local, Juniper Network, Ollama, OpenAI-compatible, llama.cpp)
-  ├─ Device Link pairing, TLS/LAN policy, frames, and scopes
+  ├─ provider adapters (Juniper local, Ollama, OpenAI-compatible, llama.cpp)
+  ├─ Device Link preview policy (no listener, pairing UI, or transport)
   ├─ host tool runtime and permissions
   ├─ SQLite repositories and migrations
   ├─ OS credential store

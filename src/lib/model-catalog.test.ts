@@ -24,6 +24,54 @@ const device: DeviceCapabilities = {
 }
 
 describe('model catalog', () => {
+  it('does not fabricate compatibility or qualification for legacy v1 artifacts', () => {
+    const converted = parseCatalog({
+      version: 1,
+      minimumAppVersion: '0.2.0',
+      models: [
+        {
+          id: 'legacy-model',
+          displayName: 'Legacy model',
+          organization: 'Example',
+          family: 'Example',
+          parameterCount: 1,
+          description: 'Legacy fixture',
+          useCases: ['test'],
+          instructionTuned: true,
+          architecture: 'unknown',
+          sourceRepository: 'https://example.invalid/model',
+          sourceRevision: 'legacy',
+          license: 'unknown',
+          licenseUrl: 'https://example.invalid/license',
+          attribution: 'Legacy fixture',
+          chatTemplate: 'unknown',
+          contextLength: 1,
+          minimumRecommendedRamBytes: 1,
+          recommendedRamBytes: 1,
+          minimumStorageBytes: 1,
+          supportedArchitectures: ['unknown'],
+          tags: ['legacy'],
+          releaseStatus: 'available',
+          variants: [
+            {
+              id: 'legacy-artifact',
+              fileName: 'legacy.gguf',
+              quantization: 'unknown',
+              sizeBytes: 1,
+              sha256: 'a'.repeat(64),
+              url: 'https://example.invalid/legacy.gguf',
+              sourceRevision: 'legacy',
+            },
+          ],
+        },
+      ],
+    })
+    const artifact = converted.models[0]!.artifacts[0]!
+    expect(artifact.platforms).toEqual(['unknown'])
+    expect(artifact.architectures).toEqual(['unknown'])
+    expect(artifact.maturity).toBe('experimental')
+    expect(artifact.qualification).toBe('unknown')
+  })
   it('ships four under-1B models with verified HTTPS variants', () => {
     expect(MODEL_CATALOG.models).toHaveLength(4)
     expect(MODEL_CATALOG.models.every((model) => model.parameterCount < 1_000_000_000)).toBe(true)

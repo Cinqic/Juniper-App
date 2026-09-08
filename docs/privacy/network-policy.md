@@ -17,9 +17,10 @@ Provider credentials are referenced by opaque IDs. Desktop uses the OS
 credential store; Android uses Android Keystore. Exports intentionally omit
 credential values.
 
-Juniper Network is a separate local-network provider. It requires a paired
-Device Link identity, HTTPS/TLS pinning, and an explicit endpoint. It strips
-implicit memories, conversation context, and host context from the network
-request; private chats are rejected before network I/O. Device Link starts
-with inference-only scope and stores peer metadata in SQLite, never pairing
-secrets or TLS private keys.
+Device Link and the Juniper Network provider are disabled in this candidate.
+The repository retains bounded framing, replay, least-privilege scope, and
+private-chat policy as a non-networked preview, but there is no listener,
+discovery, usable pairing flow, peer connection, or remote-control route. A
+future implementation must exchange the exact TLS certificate or SPKI pin used
+by transport, store the private key in a platform secure facility, and validate
+resolved destinations as private or link-local before any network I/O.

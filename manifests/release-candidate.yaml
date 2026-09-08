@@ -1,26 +1,31 @@
-format: juniper-release-manifest-v1
-version: 0.3.0-rc.29
-status: PENDING SOL INDEPENDENT REVIEW - NO RELEASE AUTHORIZATION
+format: juniper-release-contract-v2
+version: 0.3.0-rc.30
+status: release-candidate
 release:
-  tag: v0.3.0-rc.29
-  commit: PENDING-MERGE
-  url: https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.29
+  tag: v0.3.0-rc.30
+  commit: resolved-from-tag
+  url: derived-at-release
   prerelease: true
+  overwrite_existing_release: forbidden
 canonical_repository: https://github.com/Cinqic/Juniper-App
 canonical_branch: main
-license: MIT
+project_license: Apache-2.0
+third_party_licenses: preserved-in-THIRD_PARTY_NOTICES.md
 telemetry: off
 model_architecture: model-agnostic
-supported_runtime_classes:
+supported_provider_classes:
   - juniper-local
-  - juniper-network
   - ollama
   - llama-cpp
   - openai-compatible
-  - litert-lm
-  - executorch
-  - mlc-llm
-  - onnxruntime-genai
+deferred_provider_classes:
+  - juniper-network
+runtime_registry:
+  source: src/lib/runtime-registry.ts and src-tauri/src/runtime_registry.rs
+  llama_cpp_source_revision: e107984bcffcfd701e82738092a2b000b6fda7a2
+  android_llama_cpp: beta-package-and-emulator-evidence-only
+  desktop_llama_cpp: stable
+  optional_backends: upstream-metadata-only-no-Juniper-adapters-or-artifacts
 model_catalog:
   source: config/models/catalog.json
   entries: 4
@@ -31,35 +36,56 @@ standalone_runtime:
   source_revision: e107984bcffcfd701e82738092a2b000b6fda7a2
   packaging: tauri-resource-built-by-scripts/build-llama-runtime.sh
   ownership: Juniper-starts-and-stops-loopback-process
-runtime_registry:
-  source: src/lib/runtime-registry.ts and src-tauri/src/runtime_registry.rs
-  android_llama_cpp: beta
-  desktop_llama_cpp: stable
-  optional_backends: package-only-or-unavailable-until-artifacts-and-device-evidence
 device_link:
+  status: preview-policy-only-transport-disabled
   protocol_version: 1
-  transport: TLS-1.3-pinned-private-or-link-local-network-only
-  default_scope: inference
+  listener: disabled
+  discovery: disabled
+  pairing_ui: disabled
+  juniper_network_provider: disabled
   private_chat: never-synced
-published_artifacts: []
-validated_in_this_environment:
-  frontend: PASS-local-format-lint-typecheck-tests-build
-  frontend_tests: 46
-  native: PASS-cargo-fmt-clippy-tests
-  native_tests: 67-pass-2-ignored-live-service-tests
-  device_link_protocol: PASS-unit-tested
-  juniper_network_client: PASS-native-validation-and-streaming-boundary-tests
-  android_compile: UNVERIFIED-java-toolchain-not-installed-on-this-host
-  android_keystore: instrumentation-test-added-not-run-on-physical-device
+  promotion_requirements:
+    - persistent-secure-TLS-keypair-and-certificate
+    - pairing-exchanges-the-exact-certificate-or-SPKI-pin-used-by-transport
+    - resolved-address-private-network-enforcement
+    - native-authorization-and-end-to-end-transport-tests
+expected_published_artifacts:
+  - Juniper-0.3.0-rc.30-linux-x86_64.deb
+  - Juniper-0.3.0-rc.30-linux-x86_64.AppImage
+  - Juniper-0.3.0-rc.30-windows-x86_64.msi
+  - Juniper-0.3.0-rc.30-android-universal.apk
+  - Juniper-0.3.0-rc.30-android-native-symbols.zip
+  - SHA256SUMS.txt
+  - SIGNING-android.txt
+  - SIGNING-windows.txt
+  - PACKAGE-android.txt
+  - PACKAGE-linux.txt
+  - PACKAGE-windows.txt
+  - RELEASE-PROVENANCE.json
+  - LICENSE
+  - THIRD_PARTY_NOTICES.md
+generated_release_evidence:
+  source: release-workflow
+  filename: RELEASE-PROVENANCE.json
+  resolves:
+    - exact-tag-commit
+    - workflow-run-id-and-url
+    - release-url
+    - artifact-names-and-sha256
+    - signing-and-qualification-status
 accepted_limitations:
-  - Android-native-llama.cpp-is-beta-and-does-not-block-desktop-release-gating
-  - optional-runtime-artifacts-are-described-honestly-but-not-bundled
+  - Android-native-llama.cpp-remains-beta-without-physical-ARM64-execution-evidence
+  - optional-runtime-adapters-and-artifacts-are-not-bundled
+  - Windows-MSI-may-be-unsigned-and-signing-evidence-is-published
   - no-ios-or-macos-build
-  - Android-provider-credentials-use-Android-Keystore
-  - Device-Link-socket-listener-and-mDNS-discovery-are-not-enabled-in-this-candidate
-  - no-telemetry-analytics-crash-reporting-or-account
-blockers_for_final_release:
-  - SOL-independent-review
-promotion_followups:
-  - physical-ARM64-Android-inference-evidence-for-llama.cpp-beta-promotion
-  - enabled-Device-Link-transport-and-discovery-integration-review
+  - no-MCP-client
+  - Device-Link-and-Juniper-Network-transport-are-disabled
+release_gates:
+  - exact-tag-version-and-commit-contract
+  - project-license-consistency
+  - deterministic-version-consistency
+  - frontend-native-schema-and-supply-chain-validation
+  - clean-Android-build-instrumentation-and-package-audit
+  - Linux-Windows-Android-install-launch-smokes
+  - downloaded-artifact-hash-and-signing-verification
+  - immutable-GitHub-prerelease-publication

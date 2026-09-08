@@ -1,5 +1,4 @@
 use crate::commands::{AppState, Cancellation, record_runtime_log, valid_credential_reference};
-use crate::device_link;
 use crate::domain::{
     ChatRequest, ChatStreamEvent, DiscoveredModel, HostToolContext, ModelInspection,
     ModelPullProgress, NormalizedToolCall, PermissionGrant, PermissionRequest, RuntimeError, Usage,
@@ -8,12 +7,8 @@ use crate::tools;
 use futures_util::StreamExt;
 use reqwest::{Client, Response};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, HashSet};
 use std::time::Instant;
-use std::{
-    collections::{BTreeMap, HashSet},
-    sync::Arc,
-};
 use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::oneshot;
 use tokio::time::{Duration, timeout};
@@ -53,128 +48,16 @@ fn provider_client() -> Result<Client, ProviderError> {
 
 fn provider_client_for(
     provider_kind: &str,
-    base_url: &str,
-    device_link_fingerprint: Option<&str>,
+    _base_url: &str,
+    _device_link_fingerprint: Option<&str>,
 ) -> Result<Client, ProviderError> {
-    if provider_kind != "juniper-network" {
-        return provider_client();
-    }
-    let fingerprint = device_link_fingerprint.ok_or_else(|| {
-        ProviderError::new(
-            "DEVICE_LINK_TLS_REQUIRED",
-            "Juniper Network requires a SHA256 certificate fingerprint.",
-        )
-    })?;
-    device_link::validate_tls_endpoint(base_url, fingerprint)
-        .map_err(|message| ProviderError::new("DEVICE_LINK_TLS_REQUIRED", message))?;
-    pinned_provider_client(fingerprint)
-}
-
-#[derive(Debug)]
-struct PinnedCertificateVerifier {
-    expected: [u8; 32],
-    crypto: Arc<rustls::crypto::CryptoProvider>,
-}
-
-impl rustls::client::danger::ServerCertVerifier for PinnedCertificateVerifier {
-    fn verify_server_cert(
-        &self,
-        end_entity: &rustls_pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls_pki_types::CertificateDer<'_>],
-        _server_name: &rustls_pki_types::ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: rustls_pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        let actual = Sha256::digest(end_entity.as_ref());
-        if actual.as_slice() != self.expected {
-            return Err(rustls::Error::General(
-                "Juniper Network certificate fingerprint did not match the paired device.".into(),
-            ));
-        }
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls_pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls12_signature(
-            message,
-            cert,
-            dss,
-            &self.crypto.signature_verification_algorithms,
-        )
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls_pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls13_signature(
-            message,
-            cert,
-            dss,
-            &self.crypto.signature_verification_algorithms,
-        )
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        self.crypto
-            .signature_verification_algorithms
-            .supported_schemes()
-    }
-}
-
-fn pinned_provider_client(fingerprint: &str) -> Result<Client, ProviderError> {
-    let value = fingerprint.strip_prefix("SHA256:").unwrap_or(fingerprint);
-    if value.len() != 64 || !value.chars().all(|character| character.is_ascii_hexdigit()) {
+    if provider_kind == "juniper-network" {
         return Err(ProviderError::new(
-            "DEVICE_LINK_TLS_REQUIRED",
-            "Juniper Network requires a SHA256 certificate fingerprint.",
+            "DEVICE_LINK_TRANSPORT_UNAVAILABLE",
+            "Juniper Network is a preview policy only; no Device Link transport ships in this candidate.",
         ));
     }
-    let mut expected = [0u8; 32];
-    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
-        expected[index] = (hex_digit(pair[0])? << 4) | hex_digit(pair[1])?;
-    }
-    let crypto = Arc::new(rustls::crypto::ring::default_provider());
-    let verifier = Arc::new(PinnedCertificateVerifier {
-        expected,
-        crypto: crypto.clone(),
-    });
-    let tls = rustls::ClientConfig::builder_with_provider(crypto)
-        .with_protocol_versions(&[&rustls::version::TLS13])
-        .map_err(|_| ProviderError::new("DEVICE_LINK_TLS_REQUIRED", "TLS 1.3 is unavailable."))?
-        .dangerous()
-        .with_custom_certificate_verifier(verifier)
-        .with_no_client_auth();
-    Client::builder()
-        .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(PROVIDER_TIMEOUT)
-        .use_preconfigured_tls(tls)
-        .build()
-        .map_err(|_| {
-            ProviderError::new(
-                "PROVIDER_CLIENT_ERROR",
-                "The provider client could not be initialized.",
-            )
-        })
-}
-
-fn hex_digit(value: u8) -> Result<u8, ProviderError> {
-    match value {
-        b'0'..=b'9' => Ok(value - b'0'),
-        b'a'..=b'f' => Ok(value - b'a' + 10),
-        b'A'..=b'F' => Ok(value - b'A' + 10),
-        _ => Err(ProviderError::new(
-            "DEVICE_LINK_TLS_REQUIRED",
-            "Juniper Network requires a SHA256 certificate fingerprint.",
-        )),
-    }
+    provider_client()
 }
 
 fn validated_base_url(base_url: &str) -> Result<String, ProviderError> {
@@ -212,9 +95,15 @@ fn openai_api_base(base_url: &str) -> Result<String, ProviderError> {
 }
 
 fn validate_chat_request(request: &ChatRequest) -> Result<(), ProviderError> {
+    if request.provider.kind == "juniper-network" {
+        return Err(ProviderError::new(
+            "DEVICE_LINK_TRANSPORT_UNAVAILABLE",
+            "Juniper Network is a preview policy only; no Device Link transport ships in this candidate.",
+        ));
+    }
     if !matches!(
         request.provider.kind.as_str(),
-        "ollama" | "openai-compatible" | "llama-cpp" | "juniper-network"
+        "ollama" | "openai-compatible" | "llama-cpp"
     ) {
         return Err(ProviderError::new(
             "UNSUPPORTED_PROVIDER",
@@ -222,40 +111,6 @@ fn validate_chat_request(request: &ChatRequest) -> Result<(), ProviderError> {
         ));
     }
     validated_base_url(&request.provider.base_url)?;
-    if request.provider.kind == "juniper-network" {
-        if request.private_chat {
-            return Err(ProviderError::new(
-                "PRIVATE_CHAT_REMOTE",
-                "Private chats never leave this device and cannot use Juniper Network.",
-            ));
-        }
-        if request.provider.transport_location != "local-network"
-            || request
-                .provider
-                .device_id
-                .as_deref()
-                .is_none_or(str::is_empty)
-            || request
-                .provider
-                .device_link_fingerprint
-                .as_deref()
-                .is_none_or(str::is_empty)
-        {
-            return Err(ProviderError::new(
-                "DEVICE_LINK_NOT_PAIRED",
-                "Juniper Network requires a paired device and a local-network transport.",
-            ));
-        }
-        device_link::validate_tls_endpoint(
-            &request.provider.base_url,
-            request
-                .provider
-                .device_link_fingerprint
-                .as_deref()
-                .unwrap_or_default(),
-        )
-        .map_err(|message| ProviderError::new("DEVICE_LINK_TLS_REQUIRED", message))?;
-    }
     if request.model.provider_id != request.provider.id {
         return Err(ProviderError::new(
             "MODEL_PROVIDER_MISMATCH",
@@ -1352,17 +1207,7 @@ async fn stream_one_openai_turn<R: Runtime>(
     topic: &str,
     cancellation: &Cancellation,
 ) -> Result<TurnOutcome, ProviderError> {
-    let client = if request.provider.kind == "juniper-network" {
-        pinned_provider_client(
-            request
-                .provider
-                .device_link_fingerprint
-                .as_deref()
-                .unwrap_or_default(),
-        )?
-    } else {
-        provider_client()?
-    };
+    let client = provider_client()?;
     let call = client
         .post(endpoint)
         .header("user-agent", CLIENT_NAME)
@@ -1745,10 +1590,7 @@ pub async fn health_check_with_pin(
     api_key_ref: Option<&str>,
     device_link_fingerprint: Option<&str>,
 ) -> Result<String, String> {
-    if !matches!(
-        provider_kind,
-        "ollama" | "openai-compatible" | "llama-cpp" | "juniper-network"
-    ) {
+    if !matches!(provider_kind, "ollama" | "openai-compatible" | "llama-cpp") {
         return Err("Unsupported provider type.".into());
     }
     let url = if provider_kind == "ollama" {
@@ -1793,10 +1635,7 @@ pub async fn list_models_with_pin(
     api_key_ref: Option<&str>,
     device_link_fingerprint: Option<&str>,
 ) -> Result<Vec<DiscoveredModel>, String> {
-    if !matches!(
-        provider_kind,
-        "ollama" | "openai-compatible" | "llama-cpp" | "juniper-network"
-    ) {
+    if !matches!(provider_kind, "ollama" | "openai-compatible" | "llama-cpp") {
         return Err("Unsupported provider type.".into());
     }
     let url = if provider_kind == "ollama" {
@@ -1880,10 +1719,7 @@ pub async fn inspect_model_with_pin(
     api_key_ref: Option<&str>,
     device_link_fingerprint: Option<&str>,
 ) -> Result<ModelInspection, String> {
-    if !matches!(
-        provider_kind,
-        "ollama" | "openai-compatible" | "llama-cpp" | "juniper-network"
-    ) {
+    if !matches!(provider_kind, "ollama" | "openai-compatible" | "llama-cpp") {
         return Err("Unsupported provider type.".into());
     }
     if model_id.is_empty() || model_id.len() > 256 || model_id.chars().any(char::is_control) {
@@ -2328,7 +2164,13 @@ mod tests {
     }
 
     #[test]
-    fn juniper_network_requires_paired_tls_and_never_accepts_private_chat() {
+    fn juniper_network_is_rejected_while_transport_is_deferred() {
+        assert_eq!(
+            provider_client_for("juniper-network", "https://192.168.1.20:8443", None)
+                .unwrap_err()
+                .code,
+            "DEVICE_LINK_TRANSPORT_UNAVAILABLE"
+        );
         let mut request = request();
         request.provider.kind = "juniper-network".into();
         request.provider.base_url = "https://192.168.1.20:8443/v1".into();
@@ -2336,7 +2178,7 @@ mod tests {
         request.model.execution_location = "local-network".into();
         assert_eq!(
             validate_chat_request(&request).unwrap_err().code,
-            "DEVICE_LINK_NOT_PAIRED"
+            "DEVICE_LINK_TRANSPORT_UNAVAILABLE"
         );
 
         request.provider.device_id = Some("device-peer".into());
@@ -2345,12 +2187,14 @@ mod tests {
         request.private_chat = true;
         assert_eq!(
             validate_chat_request(&request).unwrap_err().code,
-            "PRIVATE_CHAT_REMOTE"
+            "DEVICE_LINK_TRANSPORT_UNAVAILABLE"
         );
 
         request.private_chat = false;
-        assert!(validate_chat_request(&request).is_ok());
-        assert_eq!(tool_payload(&request).len(), 1);
+        assert_eq!(
+            validate_chat_request(&request).unwrap_err().code,
+            "DEVICE_LINK_TRANSPORT_UNAVAILABLE"
+        );
 
         request.tools.push(crate::domain::ToolDefinition {
             name: "memory.list".into(),

@@ -94,7 +94,10 @@ jobs:
           java-version: '17'
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
       - name: Install Android SDK packages
-        run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.13113456' 'cmake;3.31.6'
+        run: >-
+          sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+          'ndk;29.0.13113456' 'cmake;3.31.6' 'emulator'
+          'system-images;android-30;default;x86_64'
       - name: Install Android package audit tools
         run: sudo apt-get update && sudo apt-get install -y unzip zip binutils
       - run: pnpm install --frozen-lockfile
@@ -107,6 +110,27 @@ jobs:
           mapfile -d '' apks < <(find src-tauri/gen/android -type f -name '*debug*.apk' -print0)
           test "${#apks[@]}" -eq 1
           bash scripts/verify-android-apk.sh "${apks[0]}" android-apk-audit
+      - name: Build Android credential-vault instrumentation
+        working-directory: src-tauri/gen/android
+        run: >-
+          bash ./gradlew :juniper-local-runtime:assembleDebugAndroidTest
+          -PjuniperNativeAbis=x86_64 --no-daemon --stacktrace
+      - name: Run credential instrumentation and lifecycle smoke
+        env:
+          JUNIPER_CREDENTIAL_TEST_APK: ${{ github.workspace }}/src-tauri/plugins/juniper-local/android/build/outputs/apk/androidTest/debug/juniper-local-runtime-debug-androidTest.apk
+        run: |
+          mapfile -d '' apks < <(find src-tauri/gen/android -type f -name '*debug*.apk' -print0)
+          test "${#apks[@]}" -eq 1
+          timeout --foreground 30m bash scripts/run-android-emulator-smoke.sh \
+            "${apks[0]}" com.cinqic.juniper android-runtime-evidence
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: android-validation-evidence
+          path: |
+            android-apk-audit
+            android-runtime-evidence
+          if-no-files-found: error
 
   android-inference:
     name: Android native inference smoke (manual)
