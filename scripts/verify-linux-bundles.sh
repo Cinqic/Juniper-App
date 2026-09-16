@@ -21,7 +21,7 @@
 # <artifact-dir>/linux-smoke-<environment-label>/.
 set -euo pipefail
 
-artifact_dir=${1:?artifact directory is required}
+artifact_dir=$(realpath "${1:?artifact directory is required}")
 version=${2:?version is required}
 environment_label=${3:-$(. /etc/os-release && printf '%s-%s' "$ID" "$VERSION_ID")}
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

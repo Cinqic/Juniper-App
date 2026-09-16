@@ -35,6 +35,10 @@ jobs:
           toolchain: 1.90.0
           targets: x86_64-linux-android
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        # The action's default also requests the removed legacy 'tools' package,
+        # which now fails sdkmanager with "Failed to find package 'tools'".
+        with:
+          packages: platform-tools
       - name: Install Android build and emulator packages
         run: |
           sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' \

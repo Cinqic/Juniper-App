@@ -65,7 +65,7 @@ jobs:
         run: pnpm build
       - name: Install Linux launch-probe tools
         run: >-
-          sudo apt-get install -y xvfb x11-utils python3-gi gir1.2-gtk-3.0
+          sudo apt-get install -y xvfb x11-utils x11-apps python3-gi gir1.2-gtk-3.0
       - name: Prove the Linux launch probe rejects non-usable launches
         run: xvfb-run -a -s '-screen 0 1440x900x24' scripts/test-linux-launch-probe.sh linux-probe-selftest
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -104,6 +104,10 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        # The action's default also requests the removed legacy 'tools' package,
+        # which now fails sdkmanager with "Failed to find package 'tools'".
+        with:
+          packages: platform-tools
       - name: Install Android SDK packages
         run: >-
           sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
@@ -222,7 +226,7 @@ jobs:
       - name: Install launch-smoke prerequisites
         run: >-
           sudo apt-get update && sudo apt-get install -y
-          xvfb x11-utils desktop-file-utils fuse3 file python3
+          xvfb x11-utils x11-apps desktop-file-utils fuse3 file python3
       - name: Install, launch, and uninstall Linux bundles
         run: >-
           xvfb-run -a -s '-screen 0 1440x900x24'
