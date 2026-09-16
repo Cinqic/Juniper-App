@@ -26,7 +26,8 @@
     "version:check": "node scripts/check-version.mjs",
     "license:check": "node scripts/check-project-license.mjs",
     "runtime:check": "node scripts/check-runtime-contract.mjs",
-    "branding:verify": "node scripts/verify-branding-assets.mjs"
+    "branding:verify": "node scripts/verify-branding-assets.mjs",
+    "android:branding": "node scripts/install-android-branding.mjs && node scripts/verify-android-branding.mjs project"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",

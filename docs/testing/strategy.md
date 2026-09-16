@@ -2,11 +2,23 @@
 
 `pnpm validate` is the canonical validation command. It runs formatting, lint,
 TypeScript, frontend tests, Rust formatting, Clippy with `-D warnings`, Rust
-tests, JSON schema checks, and version consistency in one sequence.
+tests, JSON schema checks, version consistency, license and runtime contracts,
+and branding checks in one sequence.
+
+`pnpm typecheck` checks `tsconfig.app.json` and `tsconfig.node.json`
+explicitly. Before `0.3.0-rc.32` it ran `tsc --noEmit` against the solution
+`tsconfig.json`, whose `files` list is empty, so it type-checked nothing and
+an unimported identifier reached a release.
+
+A gate passes only when it has exercised the property it claims. Surviving a
+timeout, finding a file by name, or matching a source checksum is not
+evidence that a shipped artifact works or carries the right branding.
 
 ## Deterministic tests
 
-Frontend tests cover the zero-model shell and navigation, assistant
+Frontend tests cover the native startup path under a mocked Tauri runtime
+(stored Ollama discovery, the frontend-ready report, and the root error
+boundary), the zero-model shell and navigation, assistant
 import/export, context order and truncation, private-chat exclusion from both
 persistence and user export, attachment metadata privacy, model-fit estimates,
 markdown rendering, and browser-preview streaming.
@@ -51,8 +63,31 @@ for reference. It is not evidence of a real-model result.
 
 ## Platform validation
 
-Linux builds, `.deb`/`.AppImage` bundling, and a launch smoke are reproducible
-locally and in CI. Windows MSI bundling plus an install, launch, and uninstall
+Linux bundles are built once on Ubuntu 22.04 and smoked on Ubuntu 22.04 and
+24.04 under Xvfb (X11) in pull-request validation and in the release workflow.
+`scripts/verify-linux-bundles.sh` launches the normal FUSE AppImage, the
+`APPIMAGE_EXTRACT_AND_RUN=1` fallback, and the installed DEB through its desktop
+entry. Each launch goes through `scripts/linux-launch-probe.sh`, which passes
+only after Juniper reports `[juniper-startup] frontend ready`, a viewable
+Juniper window is rendered with real content, no fatal diagnostic appears
+during a settle period, and the process exits on SIGTERM. A timeout is always a
+failure. Each mode runs from an empty profile and again with stored state that
+enables an Ollama provider backed by a loopback stand-in (the rc.31 blank-window
+state), and must persist the discovered model. The script also checks
+architecture, an executable bundled `llama-server`, licenses, the desktop
+entry, icons against the official artwork, and that purging the DEB removes
+package files but keeps user data. `scripts/test-linux-launch-probe.sh` proves
+the probe rejects a hung process, an early exit, a window that never becomes
+ready, a blank surface, and a crash after readiness. No automated check covers
+a native Wayland session.
+
+Android builds start from a clean `tauri android init`, install the official
+launcher icons, and verify them in the generated project and in the built APK
+with `scripts/verify-android-branding.mjs` (pixel comparison of every launcher,
+round, and adaptive-foreground density plus the adaptive XML and background).
+The emulator smoke also resolves the launcher activity, checks that the
+launcher drew the Juniper icon, opens Juniper from that launcher entry, and
+requires the frontend-ready report and non-blank content. Windows MSI bundling plus an install, launch, and uninstall
 smoke run on a Windows runner. A signed Android APK is built and put through an
 emulator credential-vault instrumentation run plus install, launch, rotation,
 relaunch, and uninstall smoke. The credential test proves plaintext absence,

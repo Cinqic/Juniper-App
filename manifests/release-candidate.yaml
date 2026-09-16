@@ -80,12 +80,17 @@ accepted_limitations:
   - no-ios-or-macos-build
   - no-MCP-client
   - Device-Link-and-Juniper-Network-transport-are-disabled
+  - Linux-launch-is-verified-on-X11-only-native-Wayland-is-not-verified
 release_gates:
   - exact-tag-version-and-commit-contract
   - project-license-consistency
   - deterministic-version-consistency
   - frontend-native-schema-and-supply-chain-validation
   - clean-Android-build-instrumentation-and-package-audit
+  - Android-generated-project-and-APK-launcher-branding-verification
+  - Android-launcher-icon-launch-and-frontend-readiness-smoke
+  - Linux-positive-readiness-launch-probe-AppImage-FUSE-extract-and-installed-DEB
+  - Linux-artifact-smoke-on-Ubuntu-22.04-and-24.04
   - Linux-Windows-Android-install-launch-smokes
   - downloaded-artifact-hash-and-signing-verification
   - immutable-GitHub-prerelease-publication
