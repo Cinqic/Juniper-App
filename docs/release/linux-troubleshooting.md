@@ -60,6 +60,17 @@ interface crashed while adding the discovered models. This is fixed in
 `0.3.0-rc.32`; upgrade instead of changing graphics settings. On rc.31 only,
 stopping the Ollama service before starting Juniper avoids the crash.
 
+## Host libraries the AppImage uses
+
+Like other AppImages, Juniper's image bundles WebKitGTK and GTK but takes the
+graphics driver stack and core system libraries from the host, as every
+graphical desktop provides them: glibc and libstdc++, X11/XCB, EGL, GL, GBM,
+DRM (with Mesa or the vendor GPU driver), fontconfig, FreeType, HarfBuzz, and
+FriBidi. On a minimal system, `error while loading shared libraries:
+libEGL.so.1` means that stack is missing; on Debian and Ubuntu install
+`libegl1 libgl1 libgbm1 libegl-mesa0 libgl1-mesa-dri`. The DEB declares its
+dependencies and apt installs them.
+
 ## FUSE and the AppImage
 
 The normal AppImage path mounts the image with FUSE. On Debian and Ubuntu

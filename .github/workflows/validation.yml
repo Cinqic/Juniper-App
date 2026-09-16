@@ -223,10 +223,14 @@ jobs:
         with:
           name: linux-bundles-unreleased
           path: linux-artifacts
+      # A bare runner lacks the graphics and font libraries every desktop has and
+      # AppImages deliberately take from the host (EGL/GL/GBM, Mesa, fontconfig).
       - name: Install launch-smoke prerequisites
         run: >-
           sudo apt-get update && sudo apt-get install -y
           xvfb x11-utils x11-apps desktop-file-utils fuse3 file python3
+          libegl1 libgl1 libgbm1 libegl-mesa0 libgl1-mesa-dri libfontconfig1
+          libharfbuzz0b libfribidi0 libx11-xcb1
       - name: Install, launch, and uninstall Linux bundles
         run: >-
           xvfb-run -a -s '-screen 0 1440x900x24'
