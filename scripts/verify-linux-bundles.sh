@@ -77,8 +77,12 @@ require_entry ' (\./)?usr/lib/Juniper/THIRD_PARTY_NOTICES\.md$' 'THIRD_PARTY_NOT
 require_entry ' (\./)?usr/share/applications/Juniper\.desktop$' 'its desktop entry'
 
 step 'Inspect packaged trees'
+# Downloads (and GitHub workflow artifacts) drop the executable bit; users are
+# told to `chmod +x` first, so the smoke does the same before any execution.
+chmod +x "$appimage"
+appimage_abs=$(realpath "$appimage")
 dpkg-deb -x "$deb" "$work/deb-root"
-(cd "$work" && "$(realpath "$appimage")" --appimage-extract > /dev/null)
+(cd "$work" && "$appimage_abs" --appimage-extract > /dev/null)
 mv "$work/squashfs-root" "$work/appimage-root"
 for tree in deb-root appimage-root; do
   root="$work/$tree"
@@ -146,8 +150,6 @@ launch_mode() {
   python3 "$regression" check "$database" | tee -a "$evidence/$mode-ollama-result.txt"
 }
 
-chmod +x "$appimage"
-appimage_abs=$(realpath "$appimage")
 if mode_enabled appimage; then
   step 'Normal AppImage execution (FUSE)'
   [[ -c /dev/fuse ]] || die '/dev/fuse is unavailable; the normal AppImage path cannot be exercised here'
