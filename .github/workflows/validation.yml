@@ -103,6 +103,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Initialize Android from a clean checkout
         run: pnpm tauri android init --ci
+      - name: Install official Juniper launcher branding
+        run: node scripts/install-android-branding.mjs
+      - name: Verify generated Android launcher branding
+        run: node scripts/verify-android-branding.mjs project
       - name: Compile debug APK without signing material
         run: pnpm tauri android build --debug --apk --ci --target aarch64 x86_64
       - name: Require exactly one debug APK
@@ -110,6 +114,8 @@ jobs:
           mapfile -d '' apks < <(find src-tauri/gen/android -type f -name '*debug*.apk' -print0)
           test "${#apks[@]}" -eq 1
           bash scripts/verify-android-apk.sh "${apks[0]}" android-apk-audit
+          node scripts/verify-android-branding.mjs apk "${apks[0]}" \
+            --evidence android-apk-audit/launcher-branding.json
       - name: Build Android credential-vault instrumentation
         working-directory: src-tauri/gen/android
         run: >-

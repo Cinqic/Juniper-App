@@ -223,6 +223,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Initialize Android from clean source
         run: pnpm tauri android init --ci
+      - name: Install official Juniper launcher branding
+        run: node scripts/install-android-branding.mjs
+      - name: Verify generated Android launcher branding
+        run: node scripts/verify-android-branding.mjs project
       - name: Provision ephemeral Android signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -269,6 +273,9 @@ jobs:
           bash scripts/verify-android-apk.sh \
             "release-artifacts/Juniper-$VERSION-android-universal.apk" \
             release-artifacts/android-apk-audit
+          node scripts/verify-android-branding.mjs apk \
+            "release-artifacts/Juniper-$VERSION-android-universal.apk" \
+            --evidence release-artifacts/android-apk-audit/launcher-branding.json
           symbols_dir=$(find src-tauri/gen/android/app/build/intermediates/merged_native_libs \
             -type d -path '*/out/lib' | sort | tail -n 1)
           test -n "$symbols_dir" && test -d "$symbols_dir"
