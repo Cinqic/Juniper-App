@@ -6,6 +6,8 @@ Two defects were reported against the published `0.3.0-rc.31` prerelease:
 2. the Linux build did not start usably on the reporter's PC.
 
 Both were reproduced against the published rc.31 artifacts before any change.
+The later release review of this candidate, with further defects found and
+fixed before tagging, is [rc32-independent-review.md](rc32-independent-review.md).
 This record lists what was reproduced, the root causes, the repairs, and the
 evidence. `PASS`, `FAIL`, `NOT VERIFIED`, and `NOT APPLICABLE` are used
 literally; missing evidence is never recorded as a pass.
