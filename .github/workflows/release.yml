@@ -102,6 +102,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y
           libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev
           libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb cmake
+          x11-utils x11-apps desktop-file-utils fuse3 python3
       - run: pnpm install --frozen-lockfile
       - run: pnpm validate
       - name: Build pinned Juniper local runtime
@@ -121,14 +122,54 @@ jobs:
           mkdir release-artifacts
           cp "${debs[0]}" "release-artifacts/Juniper-$VERSION-linux-x86_64.deb"
           cp "${appimages[0]}" "release-artifacts/Juniper-$VERSION-linux-x86_64.AppImage"
+      # Positive-readiness smoke: normal AppImage (FUSE), extract-and-run
+      # fallback, and installed DEB must each render a ready Juniper window.
       - name: Install, launch, and uninstall Linux bundles
         env:
           VERSION: ${{ needs.contract.outputs.version }}
-        run: scripts/verify-linux-bundles.sh release-artifacts "$VERSION"
+        run: >-
+          xvfb-run -a -s '-screen 0 1440x900x24'
+          scripts/verify-linux-bundles.sh release-artifacts "$VERSION" ubuntu-22.04-x11
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: juniper-linux-x86_64
           path: release-artifacts
+          if-no-files-found: error
+
+  linux-noble:
+    name: Linux artifact launch smoke on Ubuntu 24.04
+    needs: [contract, linux]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.contract.outputs.tag }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: juniper-linux-x86_64
+          path: noble-artifacts
+      # A bare runner lacks the graphics and font libraries every desktop has and
+      # AppImages deliberately take from the host (EGL/GL/GBM, Mesa, fontconfig).
+      - name: Install launch-smoke prerequisites
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          xvfb x11-utils x11-apps desktop-file-utils fuse3 file python3
+          libegl1 libgl1 libgles2 libgbm1 libegl-mesa0 libgl1-mesa-dri libfontconfig1
+          libharfbuzz0b libfribidi0 libx11-xcb1
+      - name: Install, launch, and uninstall the built Linux bundles
+        env:
+          VERSION: ${{ needs.contract.outputs.version }}
+        run: >-
+          xvfb-run -a -s '-screen 0 1440x900x24'
+          scripts/verify-linux-bundles.sh noble-artifacts "$VERSION" ubuntu-24.04-x11
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: linux-smoke-evidence-ubuntu-24.04
+          path: noble-artifacts/linux-smoke-ubuntu-24.04-x11
           if-no-files-found: error
 
   windows:
@@ -214,6 +255,10 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        # The action's default also requests the removed legacy 'tools' package,
+        # which now fails sdkmanager with "Failed to find package 'tools'".
+        with:
+          packages: platform-tools
       - name: Install Android SDK packages
         run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.13113456' 'cmake;3.31.6' 'emulator' 'system-images;android-30;default;x86_64'
       - name: Install Android package audit tools
@@ -223,6 +268,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Initialize Android from clean source
         run: pnpm tauri android init --ci
+      - name: Install official Juniper launcher branding
+        run: node scripts/install-android-branding.mjs
+      - name: Verify generated Android launcher branding
+        run: node scripts/verify-android-branding.mjs project
       - name: Provision ephemeral Android signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -269,6 +318,9 @@ jobs:
           bash scripts/verify-android-apk.sh \
             "release-artifacts/Juniper-$VERSION-android-universal.apk" \
             release-artifacts/android-apk-audit
+          node scripts/verify-android-branding.mjs apk \
+            "release-artifacts/Juniper-$VERSION-android-universal.apk" \
+            --evidence release-artifacts/android-apk-audit/launcher-branding.json
           symbols_dir=$(find src-tauri/gen/android/app/build/intermediates/merged_native_libs \
             -type d -path '*/out/lib' | sort | tail -n 1)
           test -n "$symbols_dir" && test -d "$symbols_dir"
@@ -302,7 +354,7 @@ jobs:
 
   verify:
     name: Downloaded artifact verification and provenance
-    needs: [contract, linux, windows, android]
+    needs: [contract, linux, linux-noble, windows, android]
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -322,6 +374,10 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        # The action's default also requests the removed legacy 'tools' package,
+        # which now fails sdkmanager with "Failed to find package 'tools'".
+        with:
+          packages: platform-tools
       - name: Install Android verification tools
         run: sdkmanager 'build-tools;35.0.0'
       - name: Put Android build-tools on PATH

@@ -17,6 +17,7 @@ From a clean checkout with the Android SDK and Rust targets installed:
 ```bash
 pnpm install --frozen-lockfile
 pnpm tauri android init --ci
+pnpm android:branding   # install and verify the official Juniper launcher icons
 pnpm tauri android build --debug --apk --ci --target aarch64 x86_64 -- --locked
 ```
 
@@ -26,6 +27,9 @@ Audit the resulting universal APK with:
 bash scripts/verify-android-apk.sh \
   src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
 ```
+
+Verify the launcher branding the APK actually ships with
+`node scripts/verify-android-branding.mjs apk <apk>`.
 
 The audit requires exactly the two supported ABIs, the JNI bridge in each
 ABI, no server runtime library, 16 KiB alignment for every packaged shared

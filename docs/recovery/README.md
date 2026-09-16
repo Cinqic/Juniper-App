@@ -27,7 +27,8 @@ if you need one.
 
 Install Android Studio, JDK, SDK Platform/Platform Tools, NDK, build tools,
 and the Android Rust targets from the Tauri prerequisites. Run
-`pnpm tauri android init` once, then `pnpm tauri android build`.
+`pnpm tauri android init`, then `pnpm android:branding` (a fresh init always
+writes Tauri's default launcher icons), then `pnpm tauri android build`.
 
 ## iOS
 

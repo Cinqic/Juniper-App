@@ -284,6 +284,27 @@ export async function loadNativeAppData(): Promise<AppData | null> {
   return value ? normalizeAppData(value) : null
 }
 
+/** Tells the native host the interface mounted and hydrated stored state. */
+export async function reportFrontendReady(): Promise<void> {
+  if (!runningInTauri) return
+  await invoke('frontend_ready')
+}
+
+/**
+ * Sends a bounded, single-error summary to the native host's local stderr so a
+ * crashed interface is diagnosable. Nothing leaves the device.
+ */
+export async function reportFrontendFatal(error: unknown): Promise<void> {
+  if (!runningInTauri) return
+  const summary =
+    error instanceof Error
+      ? [`${error.name}: ${error.message}`, ...(error.stack ?? '').split('\n').slice(1, 6)]
+          .map((line) => line.trim())
+          .join(' | ')
+      : String(error)
+  await invoke('frontend_fatal', { report: summary.slice(0, 800) })
+}
+
 export async function saveNativeAppData(data: AppData): Promise<void> {
   if (!runningInTauri) return
 
@@ -309,7 +330,7 @@ export async function deleteProviderCredential(reference: string): Promise<void>
 export async function getDiagnostics(): Promise<Record<string, string>> {
   if (runningInTauri) return invoke<Record<string, string>>('system_info')
   return {
-    application: 'Juniper 0.3.0-rc.31',
+    application: 'Juniper 0.3.0-rc.32',
     runtime: browserPreviewEnabled
       ? 'Browser preview (development only)'
       : 'Native runtime unavailable',

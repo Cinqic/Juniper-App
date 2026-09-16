@@ -5,7 +5,7 @@ import { initialAppData, modelProfileFromDiscovery } from '../lib/defaults'
 import App from './App'
 import { modelFitLabel } from './pages'
 
-function buttonByText(container: HTMLElement, text: string): HTMLButtonElement {
+function buttonByText(container: Element, text: string): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll('button')).find((item) =>
     item.textContent?.includes(text),
   )

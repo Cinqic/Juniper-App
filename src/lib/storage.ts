@@ -49,7 +49,7 @@ export function normalizeAppData(value: unknown): AppData {
   const defaults = initialAppData()
   if (!value || typeof value !== 'object') return defaults
   const parsed = value as Partial<AppData>
-  const parsedSettings =
+  const parsedSettings: Partial<AppData['settings']> =
     parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {}
   const savedAccent = typeof parsedSettings.accent === 'string' ? parsedSettings.accent : undefined
   const providers = (Array.isArray(parsed.providers) ? parsed.providers : defaults.providers).map(
@@ -83,7 +83,7 @@ export function normalizeAppData(value: unknown): AppData {
       },
     }
   })
-  const rawDeviceLink =
+  const rawDeviceLink: Partial<AppData['deviceLink']> =
     parsed.deviceLink && typeof parsed.deviceLink === 'object' ? parsed.deviceLink : {}
   const deviceLink = {
     ...defaults.deviceLink,

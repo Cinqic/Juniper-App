@@ -1,6 +1,6 @@
 {
   "name": "juniper-app",
-  "version": "0.3.0-rc.31",
+  "version": "0.3.0-rc.32",
   "private": true,
   "type": "module",
   "description": "Juniper — your AI, your models, your machine.",
@@ -9,14 +9,14 @@
   "packageManager": "pnpm@11.19.0",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "pnpm typecheck && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
@@ -26,7 +26,8 @@
     "version:check": "node scripts/check-version.mjs",
     "license:check": "node scripts/check-project-license.mjs",
     "runtime:check": "node scripts/check-runtime-contract.mjs",
-    "branding:verify": "node scripts/verify-branding-assets.mjs"
+    "branding:verify": "node scripts/verify-branding-assets.mjs",
+    "android:branding": "node scripts/install-android-branding.mjs && node scripts/verify-android-branding.mjs project"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",

@@ -1,8 +1,8 @@
 format: juniper-release-contract-v2
-version: 0.3.0-rc.31
+version: 0.3.0-rc.32
 status: release-candidate
 release:
-  tag: v0.3.0-rc.31
+  tag: v0.3.0-rc.32
   commit: resolved-from-tag
   url: derived-at-release
   prerelease: true
@@ -50,11 +50,11 @@ device_link:
     - resolved-address-private-network-enforcement
     - native-authorization-and-end-to-end-transport-tests
 expected_published_artifacts:
-  - Juniper-0.3.0-rc.31-linux-x86_64.deb
-  - Juniper-0.3.0-rc.31-linux-x86_64.AppImage
-  - Juniper-0.3.0-rc.31-windows-x86_64.msi
-  - Juniper-0.3.0-rc.31-android-universal.apk
-  - Juniper-0.3.0-rc.31-android-native-symbols.zip
+  - Juniper-0.3.0-rc.32-linux-x86_64.deb
+  - Juniper-0.3.0-rc.32-linux-x86_64.AppImage
+  - Juniper-0.3.0-rc.32-windows-x86_64.msi
+  - Juniper-0.3.0-rc.32-android-universal.apk
+  - Juniper-0.3.0-rc.32-android-native-symbols.zip
   - SHA256SUMS.txt
   - SIGNING-android.txt
   - SIGNING-windows.txt
@@ -80,12 +80,17 @@ accepted_limitations:
   - no-ios-or-macos-build
   - no-MCP-client
   - Device-Link-and-Juniper-Network-transport-are-disabled
+  - Linux-launch-is-verified-on-X11-only-native-Wayland-is-not-verified
 release_gates:
   - exact-tag-version-and-commit-contract
   - project-license-consistency
   - deterministic-version-consistency
   - frontend-native-schema-and-supply-chain-validation
   - clean-Android-build-instrumentation-and-package-audit
+  - Android-generated-project-and-APK-launcher-branding-verification
+  - Android-launcher-icon-launch-and-frontend-readiness-smoke
+  - Linux-positive-readiness-launch-probe-AppImage-FUSE-extract-and-installed-DEB
+  - Linux-artifact-smoke-on-Ubuntu-22.04-and-24.04
   - Linux-Windows-Android-install-launch-smokes
   - downloaded-artifact-hash-and-signing-verification
   - immutable-GitHub-prerelease-publication

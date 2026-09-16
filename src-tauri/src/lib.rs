@@ -12,6 +12,7 @@ mod local_runtime;
 mod managed_models;
 mod providers;
 mod runtime_registry;
+mod startup;
 mod storage;
 mod tools;
 
@@ -25,9 +26,20 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(juniper_local_runtime::init())
         .setup(|app| {
-            let data_dir = app.path().app_data_dir()?;
-            std::fs::create_dir_all(&data_dir)?;
-            storage::initialize(&data_dir.join("juniper.db"))?;
+            startup::announce();
+            let data_dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|error| startup::stage_failed("resolve-app-data-dir", None, &error))?;
+            std::fs::create_dir_all(&data_dir).map_err(|error| {
+                startup::stage_failed("create-app-data-dir", Some(&data_dir), &error)
+            })?;
+            let database = data_dir.join("juniper.db");
+            storage::initialize(&database)
+                .map_err(|error| startup::stage_failed("open-database", Some(&database), &error))?;
+            #[cfg(not(target_os = "android"))]
+            startup::local_runtime(local_runtime::runtime_executable(app.handle()));
+            startup::stage_ok("native-setup");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -58,8 +70,10 @@ pub fn run() {
             commands::pick_gguf,
             commands::read_attachment,
             commands::secure_set_credential,
-            commands::secure_delete_credential
+            commands::secure_delete_credential,
+            commands::frontend_ready,
+            commands::frontend_fatal
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Juniper");
+        .unwrap_or_else(|error| startup::exit_after_run_error(&error));
 }

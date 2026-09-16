@@ -1,7 +1,7 @@
 /* global URL, console */
 
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 
 const manifestUrl = new URL('../src-tauri/icons/branding.sha256', import.meta.url)
 const manifest = await readFile(manifestUrl, 'utf8')
@@ -31,4 +31,42 @@ if (!background.includes('<color name="ic_launcher_background">#000000</color>')
   throw new Error('Android adaptive icon background must use Juniper black (#000000).')
 }
 
-console.log(`Branding integrity passed: ${entries.length} official Juniper assets verified.`)
+// Source checksums alone never reached the APK: a clean `tauri android init`
+// regenerates Tauri's default launcher icons. Every workflow that builds the
+// Juniper APK must install and verify the official launcher set in order.
+const workflowsUrl = new URL('../.github/workflows/', import.meta.url)
+let androidBuildWorkflows = 0
+for (const name of (await readdir(workflowsUrl)).filter((file) => file.endsWith('.yml'))) {
+  const workflow = await readFile(new URL(name, workflowsUrl), 'utf8')
+  const build = workflow.indexOf('tauri android build')
+  if (build < 0) continue
+  androidBuildWorkflows += 1
+  const order = [
+    ['pnpm tauri android init --ci', workflow.indexOf('pnpm tauri android init --ci')],
+    ['install-android-branding.mjs', workflow.indexOf('node scripts/install-android-branding.mjs')],
+    [
+      'verify-android-branding.mjs project',
+      workflow.indexOf('node scripts/verify-android-branding.mjs project'),
+    ],
+    ['tauri android build', build],
+    [
+      'verify-android-branding.mjs apk',
+      workflow.indexOf('scripts/verify-android-branding.mjs apk'),
+    ],
+  ]
+  for (let index = 0; index < order.length; index += 1) {
+    const [step, position] = order[index]
+    if (position < 0 || (index > 0 && position < order[index - 1][1])) {
+      throw new Error(
+        `${name}: Android launcher branding step "${step}" is missing or out of order; expected ${order.map(([label]) => label).join(' -> ')}.`,
+      )
+    }
+  }
+}
+if (androidBuildWorkflows === 0) throw new Error('No workflow builds the Android APK.')
+
+console.log(
+  `Branding integrity passed: ${entries.length} official Juniper source assets verified; ` +
+    `${androidBuildWorkflows} Android build workflows install and verify launcher branding. ` +
+    'Shipped artifacts are verified by verify-android-branding.mjs and verify-desktop-branding.mjs.',
+)
