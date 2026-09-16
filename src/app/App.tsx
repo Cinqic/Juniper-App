@@ -241,6 +241,8 @@ export default function App() {
       .then((models) => {
         if (!models) return
         update((current) => {
+          // NEGATIVE CONTROL ONLY: reproduce rc.31's render-time crash after discovery.
+          if (models.length > 0) throw new ReferenceError('negativeControlRenderCrash is not defined')
           const next = [...current.models]
           for (const discovered of models) {
             const existingIndex = next.findIndex(
