@@ -44,8 +44,7 @@ jobs:
       - name: Require the native runtime resource before bundling
         shell: pwsh
         run: if (-not (Test-Path -LiteralPath 'src-tauri/runtime/llama-server.exe' -PathType Leaf)) { throw 'llama-server.exe was not built.' }
-      # Native unit tests are excluded on Windows only; see release.yml.
-      - run: pnpm validate:no-native-tests
+      # NEGATIVE CONTROL: unit tests removed so the packaged-app probe must catch the crash.
       - name: Build MSI from locked source
         run: pnpm tauri build --bundles msi -- --locked
       - name: Collect exactly one MSI
