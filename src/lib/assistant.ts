@@ -140,10 +140,11 @@ export function validateAssistant(
   ) {
     return false
   }
-  if (!isRecord(assistant.personality) || !hasExactKeys(assistant.personality, personalityKeys)) {
+  const personality = assistant.personality
+  if (!isRecord(personality) || !hasExactKeys(personality, personalityKeys)) {
     return false
   }
-  if (!personalityKeys.every((key) => boundedNumber(assistant.personality[key], 0, 100))) {
+  if (!personalityKeys.every((key) => boundedNumber(personality[key], 0, 100))) {
     return false
   }
   if (!validGeneration(assistant.generation, value.version)) return false

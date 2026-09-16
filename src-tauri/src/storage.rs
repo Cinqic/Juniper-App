@@ -148,7 +148,14 @@ fn migrate(connection: &Connection) -> Result<()> {
         |row| row.get(0),
     )?;
     if version > SCHEMA_VERSION {
-        return Err(rusqlite::Error::InvalidQuery);
+        // Left untouched rather than migrated backwards; the message tells the
+        // user why startup stopped.
+        return Err(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+            Some(format!(
+                "database schema v{version} was written by a newer Juniper; this build supports up to v{SCHEMA_VERSION} and left the file unchanged"
+            )),
+        ));
     }
     if version < 2 {
         let has_model_profile_id: bool = transaction.query_row(
@@ -824,7 +831,17 @@ mod tests {
         connection.execute_batch(
             "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL); INSERT INTO schema_migrations VALUES(99, 'future');",
         )?;
-        assert!(migrate(&connection).is_err());
+        let error = migrate(&connection).expect_err("a newer schema must be refused");
+        assert!(
+            error
+                .to_string()
+                .contains("schema v99 was written by a newer Juniper")
+        );
+        let version: i64 =
+            connection.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })?;
+        assert_eq!(version, 99);
         Ok(())
     }
 

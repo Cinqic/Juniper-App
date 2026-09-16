@@ -2462,3 +2462,16 @@ select {
     font-size: 30px;
   }
 }
+
+.startup-error {
+  max-width: 640px;
+  margin: 12vh auto;
+  padding: 0 24px;
+  color: var(--ink);
+}
+
+.startup-error pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--error);
+}

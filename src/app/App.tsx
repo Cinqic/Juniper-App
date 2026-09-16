@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { buildContext, type ContextSummary } from '../lib/context'
-import { defaultAssistant, builtinTools, initialAppData } from '../lib/defaults'
+import {
+  defaultAssistant,
+  builtinTools,
+  initialAppData,
+  modelProfileFromDiscovery,
+} from '../lib/defaults'
 import {
   checkProviderConnection,
   cancelChat,
   loadNativeAppData,
   pickAttachment,
   readAttachment,
+  reportFrontendReady,
   resolvePermission,
   runningInTauri,
   saveNativeAppData,
@@ -183,6 +189,11 @@ export default function App() {
       })
       .finally(() => setHydrated(true))
   }, [])
+
+  useEffect(() => {
+    if (!runningInTauri || !hydrated) return
+    void reportFrontendReady().catch(() => undefined)
+  }, [hydrated])
 
   useEffect(() => {
     if (!hydrated) return

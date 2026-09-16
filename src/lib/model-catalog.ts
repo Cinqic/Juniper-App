@@ -274,8 +274,9 @@ export function parseCatalog(value: unknown): ModelCatalog {
     if (!Array.isArray(rawArtifacts) || rawArtifacts.length === 0) {
       throw new Error(`Catalog entry ${raw.id} must provide at least one artifact.`)
     }
+    const modelId = raw.id
     const artifacts = rawArtifacts.map((item) =>
-      Number(value.version) === 1 ? legacyArtifact(item, raw.id) : parseArtifact(item, raw.id),
+      Number(value.version) === 1 ? legacyArtifact(item, modelId) : parseArtifact(item, modelId),
     )
     for (const artifact of artifacts) {
       if (artifactIds.has(artifact.id)) {

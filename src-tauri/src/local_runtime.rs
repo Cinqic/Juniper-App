@@ -113,7 +113,7 @@ pub fn emit_error<R: Runtime>(app: &AppHandle<R>, request_id: &str, error: &str)
     );
 }
 
-fn runtime_executable<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+pub(crate) fn runtime_executable<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     if let Ok(value) = std::env::var("JUNIPER_LLAMA_SERVER") {
         let path = PathBuf::from(value);
         if path.is_file() {

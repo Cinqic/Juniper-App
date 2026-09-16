@@ -114,6 +114,20 @@ pub fn record_runtime_log(
     }
 }
 
+/// Positive readiness signal: the webview loaded, React mounted, and stored
+/// state was hydrated through IPC. Written to local stderr only.
+#[tauri::command]
+pub fn frontend_ready() {
+    crate::startup::frontend_ready();
+}
+
+/// Bounded summary of an error that unmounted the interface, so a blank
+/// window leaves a local diagnostic instead of nothing. Never sent anywhere.
+#[tauri::command]
+pub fn frontend_fatal(report: String) {
+    crate::startup::frontend_fatal(&report);
+}
+
 #[tauri::command]
 pub fn runtime_logs(state: State<'_, AppState>) -> Vec<RuntimeLogEntry> {
     state
