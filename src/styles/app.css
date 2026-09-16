@@ -2463,6 +2463,14 @@ select {
   }
 }
 
+.persistence-error {
+  margin: 0 24px 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--error);
+  border-radius: 10px;
+  color: var(--error);
+}
+
 .startup-error {
   max-width: 640px;
   margin: 12vh auto;

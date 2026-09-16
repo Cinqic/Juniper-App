@@ -10,8 +10,8 @@ with any of the following, the phase report is stale:
 
 - [README](../../README.md) — current capabilities, limitations, and downloads
 - [Release manifest](../../manifests/release-candidate.yaml) — authoritative release state
-- [docs/release/](../release/) — release records and the current review verdict
-- [docs/qualification/](../qualification/) — real-model evidence
+- [docs/release/](../release/) — release runbooks and troubleshooting
+- [docs/qualification/](../qualification/) — real-model evidence, platform defect records, and the current independent review
 
 `independent-review-verdict.md` is the 2026-09-02 review, superseded by
-[the final review](../release/0.2.0-rc.1-final-review.md).
+the final review (that report, `docs/release/0.2.0-rc.1-final-review.md`, was never committed to this repository).

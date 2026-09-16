@@ -24,6 +24,8 @@ pub struct AppState {
     pub gguf_files: Mutex<HashMap<String, PathBuf>>,
     pub permission_waiters: Mutex<HashMap<String, oneshot::Sender<String>>>,
     pub runtime_logs: Mutex<VecDeque<RuntimeLogEntry>>,
+    #[cfg(not(target_os = "android"))]
+    pub local_runtimes: crate::local_runtime::RuntimeProcesses,
 }
 
 pub const MAX_RUNTIME_LOGS: usize = 200;

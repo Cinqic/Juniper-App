@@ -18,12 +18,14 @@ evidence that a shipped artifact works or carries the right branding.
 
 Frontend tests cover the native startup path under a mocked Tauri runtime
 (stored Ollama discovery, the frontend-ready report, and the root error
-boundary), the zero-model shell and navigation, assistant
+boundary, no save after a failed load, and a visible save failure), the zero-model shell and navigation, assistant
 import/export, context order and truncation, private-chat exclusion from both
 persistence and user export, attachment metadata privacy, model-fit estimates,
 markdown rendering, and browser-preview streaming.
 
-Native tests cover the safe calculator, unit conversion, host-authored
+Native tests cover SQLite snapshot saves whose chats or models reference a
+removed provider or model, exit cleanup of the bundled `llama-server` child,
+the per-round bound on every host tool call, the safe calculator, unit conversion, host-authored
 result shape, tool loop bounds, the default-deny tool gate, permission scope
 matching, capability gating of generation controls, provider JSON/SSE/pull
 parsing, fake HTTP discovery/inspection/chat/tool/error servers, unknown-model
@@ -87,8 +89,19 @@ with `scripts/verify-android-branding.mjs` (pixel comparison of every launcher,
 round, and adaptive-foreground density plus the adaptive XML and background).
 The emulator smoke also resolves the launcher activity, checks that the
 launcher drew the Juniper icon, opens Juniper from that launcher entry, and
-requires the frontend-ready report and non-blank content. Windows MSI bundling plus an install, launch, and uninstall
-smoke run on a Windows runner. A signed Android APK is built and put through an
+requires the frontend-ready report and non-blank content.
+
+Windows MSI bundling plus an install, launch, and uninstall smoke run on a
+Windows runner in pull-request validation and again in the release workflow.
+`scripts/verify-windows-msi.ps1` checks the MSI `ProductVersion`, installs it,
+requires the installed `llama-server.exe`, `LICENSE`, and notices, and launches
+Juniper twice: from a fresh profile and with stored state that enables an
+Ollama provider backed by a loopback stand-in. Each launch must report
+`[juniper-startup] frontend ready`, stay alive through a settle period, and
+produce no fatal startup or frontend report; the second must persist the
+discovered model. Before `0.3.0-rc.32` this smoke passed on ten seconds of
+process survival. It does not capture window pixels, so a blank-but-ready
+Windows surface is not detected. A signed Android APK is built and put through an
 emulator credential-vault instrumentation run plus install, launch, rotation,
 relaunch, and uninstall smoke. The credential test proves plaintext absence,
 Android Keystore key ownership, per-reference AAD binding, deletion, and failed

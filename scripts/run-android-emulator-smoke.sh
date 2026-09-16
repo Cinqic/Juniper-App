@@ -68,10 +68,21 @@ cleanup() {
     capture_failure_evidence
   fi
   adb_timeout 10 emu kill >/dev/null 2>&1 || true
-  if [[ -n "$emulator_pid" ]] && kill -0 "$emulator_pid" 2>/dev/null; then
-    kill "$emulator_pid" 2>/dev/null || true
-  fi
   if [[ -n "$emulator_pid" ]]; then
+    # The emulator can ignore SIGTERM while shutting down. An unbounded wait
+    # then held a fully passed smoke until the outer timeout reported 124, so
+    # the drain is bounded and escalates to SIGKILL for the emulator and qemu.
+    kill "$emulator_pid" 2>/dev/null || true
+    local attempt
+    for attempt in $(seq 1 60); do
+      kill -0 "$emulator_pid" 2>/dev/null || break
+      sleep 1
+    done
+    if kill -0 "$emulator_pid" 2>/dev/null; then
+      printf 'Emulator did not exit within 60s of SIGTERM; sending SIGKILL.\n' >&2
+      pkill -KILL -P "$emulator_pid" 2>/dev/null || true
+      kill -KILL "$emulator_pid" 2>/dev/null || true
+    fi
     wait "$emulator_pid" 2>/dev/null || true
   fi
   exit "$status"

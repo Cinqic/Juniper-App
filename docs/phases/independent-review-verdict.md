@@ -7,7 +7,7 @@
 > Android APK was built and put through an emulator lifecycle smoke; and the
 > prerelease was published. It is kept unedited as a dated record of what was
 > known at the time. For the current release state see
-> [the final review](../release/0.2.0-rc.1-final-review.md) and
+> the final review (that report, `docs/release/0.2.0-rc.1-final-review.md`, was never committed to this repository) and
 > [the release manifest](../../manifests/release-candidate.yaml).
 
 ## Provenance

@@ -727,6 +727,29 @@ async fn host_tool_turn<R: Runtime>(
             "type": "function",
             "function": { "name": call.name, "arguments": serde_json::to_string(&call.arguments).map_err(|_| ProviderError::new("MALFORMED_TOOL_CALL", "Tool arguments could not be serialized."))? }
         }));
+        // The per-round bound applies to every tool, before any permission
+        // prompt or host data access, not only to the stateless tools that
+        // `tools::execute_call` checks itself.
+        if !tools::loop_allowed(round, index as u32 + 1) {
+            record_runtime_log(
+                state,
+                "tool.denied",
+                Some("TOOL_LOOP_LIMIT"),
+                Some(&request.provider.kind),
+                None,
+            );
+            results.push(tools::host_result(
+                &call.id,
+                &call.name,
+                "denied",
+                None,
+                Some(json!({
+                    "code": "TOOL_LOOP_LIMIT",
+                    "message": "Tool loop limit reached."
+                })),
+            ));
+            continue;
+        }
         match tool_gate(request, &call.name, session_grants) {
             ToolGate::NotEnabled => {
                 record_runtime_log(
@@ -2597,6 +2620,65 @@ mod tests {
             host_context.memories.is_empty(),
             "a denied memory.save must not mutate host state"
         );
+    }
+
+    #[test]
+    fn host_data_tool_calls_beyond_the_per_round_bound_are_denied_unexecuted() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let mut request = request();
+        request.tools = serde_json::from_value(json!([{
+            "name": "memory.save",
+            "description": "Save a memory",
+            "risk": "user-data-write",
+            "enabled": true,
+            "schema": { "type": "object" }
+        }]))
+        .expect("tool definition should deserialize");
+        request.permission_grants = vec![PermissionGrant {
+            id: "grant-1".into(),
+            tool_name: "memory.save".into(),
+            scope: "assistant".into(),
+            assistant_id: "assistant-test".into(),
+            conversation_id: None,
+        }];
+        let limit = tools::MAX_TOOL_CALLS_PER_ROUND as usize;
+        let calls = (0..limit + 5)
+            .map(|index| NormalizedToolCall {
+                id: format!("call-{index}"),
+                name: "memory.save".into(),
+                arguments: json!({ "content": format!("memory {index}") }),
+            })
+            .collect::<Vec<_>>();
+        let mut session_grants = HashSet::new();
+        let mut host_context = request.host_context.clone();
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime should start");
+        let (assistant_calls, results) = runtime
+            .block_on(async {
+                host_tool_turn(
+                    &request,
+                    &calls,
+                    0,
+                    &Cancellation::default(),
+                    &handle,
+                    "test-topic",
+                    &AppState::default(),
+                    &mut session_grants,
+                    &mut host_context,
+                )
+                .await
+            })
+            .expect("bounded tool calls should not fail the turn");
+        assert_eq!(assistant_calls.len(), calls.len());
+        assert_eq!(results.len(), calls.len());
+        assert_eq!(host_context.memories.len(), limit);
+        for result in &results[..limit] {
+            assert_eq!(result["status"], "success");
+        }
+        for result in &results[limit..] {
+            assert_eq!(result["status"], "denied");
+            assert_eq!(result["error"]["code"], "TOOL_LOOP_LIMIT");
+        }
     }
 
     #[test]

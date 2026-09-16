@@ -137,7 +137,7 @@ separation, and context assembly.
 
 Both suites were re-run from a clean state during the final independent review,
 after the tool-permission and thinking fixes described in
-[the final review report](../release/0.2.0-rc.1-final-review.md). Same host,
+the final review report (that report, `docs/release/0.2.0-rc.1-final-review.md`, was never committed to this repository). Same host,
 same Ollama 0.33.2.
 
 ```

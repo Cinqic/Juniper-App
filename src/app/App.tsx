@@ -167,16 +167,25 @@ export default function App() {
     data.assistants[0]?.id ?? defaultAssistant.id,
   )
   const [onboardingOpen, setOnboardingOpen] = useState(!data.settings.onboardingComplete)
+  // Set when stored state could not be read. Saving the in-memory defaults would
+  // then overwrite the user's database, so persistence stays off for the session.
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!hydrated) return
-    if (runningInTauri) void saveNativeAppData(data)
-    else saveAppData(data)
+    if (runningInTauri) {
+      if (!loadFailed)
+        void saveNativeAppData(data).then(
+          () => setSaveError(null),
+          (error: unknown) => setSaveError(error instanceof Error ? error.message : String(error)),
+        )
+    } else saveAppData(data)
     document.documentElement.dataset.theme = data.settings.theme
     document.documentElement.style.setProperty('--accent', data.settings.accent)
     document.documentElement.style.setProperty('--font-scale', String(data.settings.fontScale))
     document.documentElement.dataset.reducedMotion = String(data.settings.reducedMotion)
-  }, [data, hydrated])
+  }, [data, hydrated, loadFailed])
 
   useEffect(() => {
     if (!runningInTauri) return
@@ -185,6 +194,7 @@ export default function App() {
         if (stored) setData(stored)
       })
       .catch((error) => {
+        setLoadFailed(true)
         window.alert(error instanceof Error ? error.message : 'Could not load the SQLite state.')
       })
       .finally(() => setHydrated(true))
@@ -332,6 +342,13 @@ export default function App() {
             <AssistantAvatar assistant={activeAssistant} className="avatar-button-mark" />
           </button>
         </header>
+        {(loadFailed || saveError) && (
+          <div className="persistence-error" role="alert">
+            {loadFailed
+              ? 'Juniper could not read its stored data, so changes in this session are not saved and the stored data was left unchanged.'
+              : `Juniper could not save your latest changes: ${saveError}`}
+          </div>
+        )}
         <div className="page-content">
           {page === 'chats' && (
             <ChatPage
