@@ -53,7 +53,7 @@ These are deliberate exclusions in this release, not oversights:
 
 ## Privacy and security
 
-- Telemetry is off and there is no analytics or crash-reporting code. No hardcoded external host appears anywhere in the sources; every outbound request is built from the provider base URL you configure.
+- Telemetry is off and there is no analytics or crash-reporting code. Juniper makes network requests only to provider endpoints you configure and, when you choose to download a model in Models Market, to the pinned HTTPS Hugging Face URLs listed in `config/models/catalog.json`. At startup it contacts only an enabled Ollama provider you added, to refresh its model list.
 - Juniper labels every route as ON DEVICE, LOCAL NETWORK, REMOTE, or UNKNOWN, and never treats UNKNOWN as safe.
 - Desktop provider credentials are stored in the OS keychain; Android provider credentials use Android Keystore. Both are referenced only by an opaque identifier. Secrets are never written to the SQLite state and are stripped from exports.
 - Device Link is a protocol/policy preview only in this candidate. No listener, usable pairing flow, discovery, peer connection, remote-control path, or Juniper Network provider is enabled.

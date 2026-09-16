@@ -112,6 +112,44 @@ describe('Juniper native startup', () => {
     expect(savedModels).toContain('ollama-local:qwen3:0.6b')
   })
 
+  it('never overwrites stored state with defaults when loading it failed', async () => {
+    const alerts: string[] = []
+    const originalAlert = window.alert
+    window.alert = (message?: unknown) => void alerts.push(String(message))
+    try {
+      installTauri((command) => {
+        if (command === 'load_app_data') throw new Error('DATABASE_ERROR: disk I/O error')
+        return null
+      })
+
+      await mountApp()
+
+      expect(uncaught).toEqual([])
+      expect(alerts).toEqual(['DATABASE_ERROR: disk I/O error'])
+      expect(commands).not.toContain('save_app_data')
+      expect(container.textContent).toContain('stored data was left unchanged')
+    } finally {
+      window.alert = originalAlert
+    }
+  })
+
+  it('shows a save failure instead of silently dropping changes', async () => {
+    installTauri((command) => {
+      if (command === 'load_app_data') return storedStateWithOllama()
+      if (command === 'save_app_data')
+        throw new Error('DATABASE_ERROR: FOREIGN KEY constraint failed')
+      return null
+    })
+
+    await mountApp()
+
+    expect(uncaught).toEqual([])
+    expect(commands).toContain('save_app_data')
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'could not save your latest changes: DATABASE_ERROR: FOREIGN KEY constraint failed',
+    )
+  })
+
   it('reports frontend readiness to the native host once stored state is hydrated', async () => {
     installTauri(() => null)
 

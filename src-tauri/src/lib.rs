@@ -74,6 +74,12 @@ pub fn run() {
             commands::frontend_ready,
             commands::frontend_fatal
         ])
-        .run(tauri::generate_context!())
-        .unwrap_or_else(|error| startup::exit_after_run_error(&error));
+        .build(tauri::generate_context!())
+        .unwrap_or_else(|error| startup::exit_after_run_error(&error))
+        .run(|_app, _event| {
+            #[cfg(not(target_os = "android"))]
+            if let tauri::RunEvent::Exit = _event {
+                _app.state::<AppState>().local_runtimes.terminate_all();
+            }
+        });
 }

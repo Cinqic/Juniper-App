@@ -1,7 +1,7 @@
 use rusqlite::{Connection, OptionalExtension, Result, params, types::Type};
 use serde_json::{Value, json};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -331,6 +331,16 @@ pub fn save_app_data_with_paths(
     ] {
         transaction.execute(&format!("DELETE FROM {table}"), [])?;
     }
+    // `app_state` holds the authoritative snapshot and is what `load_app_data`
+    // returns. The relational tables below are a projection of it, so a
+    // reference the interface legitimately leaves dangling (a model whose
+    // provider was removed, a chat pinned to a removed model) is dropped from
+    // the projection instead of failing the foreign key and, with it, every
+    // later save.
+    let mut assistant_ids = HashSet::new();
+    let mut provider_ids = HashSet::new();
+    let mut model_ids = HashSet::new();
+    let mut conversation_ids = HashSet::new();
     for item in persisted
         .get("assistants")
         .and_then(Value::as_array)
@@ -338,7 +348,7 @@ pub fn save_app_data_with_paths(
         .flatten()
     {
         let id = item["id"].as_str().unwrap_or_default();
-        if id.is_empty() {
+        if id.is_empty() || !assistant_ids.insert(id.to_owned()) {
             continue;
         }
         transaction.execute("INSERT INTO assistants(id, schema_version, payload, created_at, updated_at) VALUES(?1, ?2, ?3, ?4, ?5)", params![id, item["schemaVersion"].as_i64().unwrap_or(2), item.to_string(), item["createdAt"].as_str().unwrap_or(""), item["updatedAt"].as_str().unwrap_or("")])?;
@@ -350,7 +360,7 @@ pub fn save_app_data_with_paths(
         .flatten()
     {
         let id = item["id"].as_str().unwrap_or_default();
-        if id.is_empty() {
+        if id.is_empty() || !provider_ids.insert(id.to_owned()) {
             continue;
         }
         transaction.execute("INSERT INTO provider_profiles(id, payload, created_at, updated_at) VALUES(?1, ?2, ?3, ?4)", params![id, item.to_string(), "", ""])?;
@@ -363,7 +373,8 @@ pub fn save_app_data_with_paths(
     {
         let id = item["id"].as_str().unwrap_or_default();
         let provider_id = item["providerId"].as_str().unwrap_or_default();
-        if id.is_empty() || provider_id.is_empty() {
+        if id.is_empty() || !provider_ids.contains(provider_id) || !model_ids.insert(id.to_owned())
+        {
             continue;
         }
         transaction.execute("INSERT INTO model_profiles(id, provider_id, payload, created_at, updated_at) VALUES(?1, ?2, ?3, ?4, ?5)", params![id, provider_id, item.to_string(), "", ""])?;
@@ -378,7 +389,10 @@ pub fn save_app_data_with_paths(
         if id.is_empty() {
             continue;
         }
-        transaction.execute("INSERT INTO memories(id, assistant_id, content, source, enabled, created_at, updated_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)", params![id, item["assistantId"].as_str(), item["content"].as_str().unwrap_or(""), item["source"].as_str().unwrap_or("user"), item["enabled"].as_bool().unwrap_or(true), item["createdAt"].as_str().unwrap_or(""), item["updatedAt"].as_str().unwrap_or("")])?;
+        let assistant_id = item["assistantId"]
+            .as_str()
+            .filter(|assistant_id| assistant_ids.contains(*assistant_id));
+        transaction.execute("INSERT OR IGNORE INTO memories(id, assistant_id, content, source, enabled, created_at, updated_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)", params![id, assistant_id, item["content"].as_str().unwrap_or(""), item["source"].as_str().unwrap_or("user"), item["enabled"].as_bool().unwrap_or(true), item["createdAt"].as_str().unwrap_or(""), item["updatedAt"].as_str().unwrap_or("")])?;
     }
     for conversation in persisted
         .get("conversations")
@@ -388,32 +402,31 @@ pub fn save_app_data_with_paths(
     {
         let id = conversation["id"].as_str().unwrap_or_default();
         let assistant_id = conversation["assistantId"].as_str().unwrap_or_default();
-        if id.is_empty() || assistant_id.is_empty() {
+        if id.is_empty()
+            || !assistant_ids.contains(assistant_id)
+            || !conversation_ids.insert(id.to_owned())
+        {
             continue;
         }
-        transaction.execute("INSERT INTO conversations(id, assistant_id, title, private_chat, created_at, updated_at, model_profile_id) VALUES(?1, ?2, ?3, 0, ?4, ?5, ?6)", params![id, assistant_id, conversation["title"].as_str().unwrap_or("New conversation"), conversation["createdAt"].as_str().unwrap_or(""), conversation["updatedAt"].as_str().unwrap_or(""), conversation["modelProfileId"].as_str()])?;
+        let model_profile_id = conversation["modelProfileId"]
+            .as_str()
+            .filter(|model_id| model_ids.contains(*model_id));
+        transaction.execute("INSERT INTO conversations(id, assistant_id, title, private_chat, created_at, updated_at, model_profile_id) VALUES(?1, ?2, ?3, 0, ?4, ?5, ?6)", params![id, assistant_id, conversation["title"].as_str().unwrap_or("New conversation"), conversation["createdAt"].as_str().unwrap_or(""), conversation["updatedAt"].as_str().unwrap_or(""), model_profile_id])?;
         for message in conversation["messages"].as_array().into_iter().flatten() {
             let message_id = message["id"].as_str().unwrap_or_default();
             if message_id.is_empty() {
                 continue;
             }
-            transaction.execute("INSERT INTO messages(id, conversation_id, role, created_at, model_id, provider_id) VALUES(?1, ?2, ?3, ?4, ?5, ?6)", params![message_id, id, message["role"].as_str().unwrap_or("user"), message["createdAt"].as_str().unwrap_or(""), message["modelId"].as_str(), message["providerId"].as_str()])?;
+            transaction.execute("INSERT OR IGNORE INTO messages(id, conversation_id, role, created_at, model_id, provider_id) VALUES(?1, ?2, ?3, ?4, ?5, ?6)", params![message_id, id, message["role"].as_str().unwrap_or("user"), message["createdAt"].as_str().unwrap_or(""), message["modelId"].as_str(), message["providerId"].as_str()])?;
             for part in message["parts"].as_array().into_iter().flatten() {
                 let part_id = part["id"].as_str().unwrap_or_default();
                 if part_id.is_empty() {
                     continue;
                 }
-                transaction.execute("INSERT INTO message_parts(id, message_id, part_type, text, payload) VALUES(?1, ?2, ?3, ?4, ?5)", params![part_id, message_id, part["type"].as_str().unwrap_or("text"), part["text"].as_str(), serde_json::to_string(&part["metadata"]).unwrap_or_else(|_| "null".into())])?;
+                transaction.execute("INSERT OR IGNORE INTO message_parts(id, message_id, part_type, text, payload) VALUES(?1, ?2, ?3, ?4, ?5)", params![part_id, message_id, part["type"].as_str().unwrap_or("text"), part["text"].as_str(), serde_json::to_string(&part["metadata"]).unwrap_or_else(|_| "null".into())])?;
             }
         }
     }
-    let persisted_conversation_ids = persisted
-        .get("conversations")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|conversation| conversation["id"].as_str().map(str::to_owned))
-        .collect::<std::collections::HashSet<_>>();
     for attachment in persisted
         .get("attachments")
         .and_then(Value::as_array)
@@ -424,7 +437,7 @@ pub fn save_app_data_with_paths(
         let conversation_id = attachment["conversationId"].as_str().unwrap_or_default();
         if id.is_empty()
             || conversation_id.is_empty()
-            || !persisted_conversation_ids.contains(conversation_id)
+            || !conversation_ids.contains(conversation_id)
         {
             continue;
         }
@@ -434,7 +447,7 @@ pub fn save_app_data_with_paths(
             .map(|value| value.to_string_lossy().into_owned())
             .unwrap_or_default();
         transaction.execute(
-            "INSERT INTO attachments(id, conversation_id, name, path, size_bytes, content_type, created_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))",
+            "INSERT OR IGNORE INTO attachments(id, conversation_id, name, path, size_bytes, content_type, created_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))",
             params![
                 id,
                 conversation_id,
@@ -454,17 +467,23 @@ pub fn save_app_data_with_paths(
         let id = permission["id"].as_str().unwrap_or_default();
         let assistant_id = permission["assistantId"].as_str().unwrap_or_default();
         let scope = permission["scope"].as_str().unwrap_or_default();
-        if id.is_empty() || assistant_id.is_empty() || !matches!(scope, "chat" | "assistant") {
+        let conversation_id = permission["conversationId"].as_str();
+        if id.is_empty()
+            || !assistant_ids.contains(assistant_id)
+            || !matches!(scope, "chat" | "assistant")
+            || conversation_id
+                .is_some_and(|conversation_id| !conversation_ids.contains(conversation_id))
+        {
             continue;
         }
         transaction.execute(
-            "INSERT INTO permissions(id, tool_name, scope, assistant_id, conversation_id, created_at, updated_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT OR IGNORE INTO permissions(id, tool_name, scope, assistant_id, conversation_id, created_at, updated_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 id,
                 permission["toolName"].as_str().unwrap_or_default(),
                 scope,
                 assistant_id,
-                permission["conversationId"].as_str(),
+                conversation_id,
                 permission["createdAt"].as_str().unwrap_or_default(),
                 permission["updatedAt"].as_str().unwrap_or_default()
             ],
@@ -945,6 +964,81 @@ mod tests {
             1
         );
         std::fs::remove_file(path).expect("temporary database should be removable");
+        Ok(())
+    }
+
+    /// Removing a provider keeps its model profiles (marked not-found), and
+    /// removing a managed model leaves chats pinned to it. Both used to fail
+    /// the foreign keys, so that save and every later one was rejected and all
+    /// subsequent changes were lost on restart.
+    #[test]
+    fn saves_survive_references_left_dangling_by_removals() -> Result<()> {
+        let path =
+            std::env::temp_dir().join(format!("juniper-dangling-test-{}.db", uuid::Uuid::new_v4()));
+        let assistant = json!({ "id": "assistant-1", "schemaVersion": 2 });
+        let removed_provider = json!({
+            "assistants": [assistant],
+            "providers": [{ "id": "provider-kept" }],
+            "models": [
+                { "id": "model-orphan", "providerId": "provider-removed", "status": "not-found" },
+                { "id": "model-kept", "providerId": "provider-kept" }
+            ],
+            "memories": [{ "id": "memory-1", "assistantId": "assistant-removed", "content": "kept" }],
+            "attachments": [{
+                "id": "attachment-1",
+                "conversationId": "chat-1",
+                "name": "notes.txt",
+                "sizeBytes": 5,
+                "contentType": "text/plain"
+            }],
+            "permissions": [
+                { "id": "grant-orphan", "toolName": "memory.list", "scope": "chat",
+                  "assistantId": "assistant-1", "conversationId": "chat-removed" },
+                { "id": "grant-kept", "toolName": "memory.list", "scope": "assistant",
+                  "assistantId": "assistant-1" }
+            ],
+            "conversations": [{
+                "id": "chat-1",
+                "assistantId": "assistant-1",
+                "title": "Pinned to a removed model",
+                "modelProfileId": "model-removed",
+                "messages": [{ "id": "message-1", "role": "user",
+                               "parts": [{ "id": "part-1", "type": "text", "text": "hello" }] }]
+            }],
+            "settings": { "telemetry": "off" }
+        });
+        save_app_data_with_paths(&path, &removed_provider, &HashMap::new())?;
+
+        // A later change must still be saved.
+        let mut renamed = removed_provider.clone();
+        renamed["conversations"][0]["title"] = json!("Renamed after removal");
+        save_app_data_with_paths(&path, &renamed, &HashMap::new())?;
+
+        let loaded = load_app_data(&path)?.expect("saved state should be present");
+        assert_eq!(loaded["conversations"][0]["title"], "Renamed after removal");
+        assert_eq!(
+            loaded["conversations"][0]["modelProfileId"],
+            "model-removed"
+        );
+        assert_eq!(loaded["models"].as_array().map(Vec::len), Some(2));
+        assert_eq!(loaded["attachments"][0]["id"], "attachment-1");
+
+        let connection = Connection::open(&path)?;
+        let count = |sql: &str| connection.query_row::<i64, _, _>(sql, [], |row| row.get(0));
+        assert_eq!(count("SELECT COUNT(*) FROM model_profiles")?, 1);
+        assert_eq!(
+            count("SELECT COUNT(*) FROM conversations WHERE model_profile_id IS NULL")?,
+            1
+        );
+        assert_eq!(
+            count("SELECT COUNT(*) FROM memories WHERE assistant_id IS NULL")?,
+            1
+        );
+        assert_eq!(count("SELECT COUNT(*) FROM permissions")?, 1);
+        assert_eq!(count("SELECT COUNT(*) FROM message_parts")?, 1);
+        assert_eq!(count("SELECT COUNT(*) FROM pragma_foreign_key_check")?, 0);
+        drop(connection);
+        std::fs::remove_file(path).ok();
         Ok(())
     }
 
