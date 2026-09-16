@@ -64,11 +64,11 @@ stopping the Ollama service before starting Juniper avoids the crash.
 
 Like other AppImages, Juniper's image bundles WebKitGTK and GTK but takes the
 graphics driver stack and core system libraries from the host, as every
-graphical desktop provides them: glibc and libstdc++, X11/XCB, EGL, GL, GBM,
+graphical desktop provides them: glibc and libstdc++, X11/XCB, EGL, GL, GLES 2 (loaded at run time by the bundled libepoxy), GBM,
 DRM (with Mesa or the vendor GPU driver), fontconfig, FreeType, HarfBuzz, and
 FriBidi. On a minimal system, `error while loading shared libraries:
-libEGL.so.1` means that stack is missing; on Debian and Ubuntu install
-`libegl1 libgl1 libgbm1 libegl-mesa0 libgl1-mesa-dri`. The DEB declares its
+libEGL.so.1` or `Couldn't open libGLESv2.so.2` means that stack is missing; on Debian and Ubuntu install
+`libegl1 libgl1 libgles2 libgbm1 libegl-mesa0 libgl1-mesa-dri`. The DEB declares its
 dependencies and apt installs them.
 
 ## FUSE and the AppImage
