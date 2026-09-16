@@ -74,4 +74,3 @@ jobs:
             windows-artifacts/*.txt
             windows-artifacts/windows-smoke
           if-no-files-found: warn
-
