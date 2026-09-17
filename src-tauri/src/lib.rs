@@ -72,7 +72,8 @@ pub fn run() {
             commands::secure_set_credential,
             commands::secure_delete_credential,
             commands::frontend_ready,
-            commands::frontend_fatal
+            commands::frontend_fatal,
+            commands::window_insets
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|error| startup::exit_after_run_error(&error))

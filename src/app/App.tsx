@@ -1,176 +1,107 @@
-import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
-import { buildContext, type ContextSummary } from '../lib/context'
-import {
-  defaultAssistant,
-  builtinTools,
-  initialAppData,
-  modelProfileFromDiscovery,
-} from '../lib/defaults'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { applyAppearance } from '../lib/appearance'
+import { initialAppData, modelProfileFromDiscovery } from '../lib/defaults'
 import {
   checkProviderConnection,
-  cancelChat,
+  getWindowInsets,
+  listProviderModels,
   loadNativeAppData,
-  pickAttachment,
-  readAttachment,
   reportFrontendReady,
-  resolvePermission,
   runningInTauri,
   saveNativeAppData,
-  listProviderModels,
-  streamChat,
+  type WindowInsets,
 } from '../lib/runtime'
 import { loadAppData, saveAppData } from '../lib/storage'
-import { MessageBubble } from './MessageBubble'
-import { ToolsPage } from './ToolsPage'
-import { AssistantAvatar, JuniperMark } from './branding'
-import { ModelsMarket } from './ModelsMarket'
-import {
-  AssistantsPage,
-  DiagnosticsPage,
-  ModelsPage,
-  Onboarding,
-  PrivacyPage,
-  SettingsPage,
-  download,
-  isChatSelectable,
-  labelExecutionLocation,
-} from './pages'
-import { Sidebar } from './ui'
-import type {
-  AppData,
-  Assistant,
-  AttachmentRecord,
-  ChatMessage,
-  ChatStreamEvent,
-  Conversation,
-  HostToolResult,
-  MessagePart,
-  ModelProfile,
-  Page,
-  PermissionDecision,
-  PermissionRequest,
-  ProviderProfile,
-} from '../types'
+import type { AppData, Page, SettingsSection } from '../types'
+import { JuniperMark } from './branding'
+import { ChatHistory, ChatScreen, type NewChatState } from './ChatScreen'
+import { currentHistoryState, onHistoryPop, pushHistory, replaceHistory } from './history'
+import { Icon } from './icons'
+import type { IconName } from './icons'
+import { assistantFor, defaultAssistantFor, resolveRoute } from './model-labels'
+import { ModelsScreen } from './ModelsScreen'
+import { Onboarding } from './Onboarding'
+import { DialogProvider, Modal, useDialogs } from './overlays'
+import { SettingsScreen } from './SettingsScreen'
+import { uid, useMediaQuery, useTouchPrimary } from './ui'
 
-function uid(prefix: string): string {
-  return `${prefix}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`
-}
-function now(): string {
-  return new Date().toISOString()
-}
-function textPart(message: ChatMessage): string {
-  return message.parts
-    .filter((part) => part.type === 'text')
-    .map((part) => part.text ?? '')
-    .join('')
+interface NavState {
+  page: Page
+  section: SettingsSection | null
 }
 
-function errorCodeFromMessage(message: string): string | undefined {
-  return message.match(/^[A-Z][A-Z0-9_]+:/)?.[0].slice(0, -1)
+const PAGES: Page[] = ['chats', 'models', 'settings']
+
+const NAV_ITEMS: Array<{ page: Page; label: string; icon: IconName }> = [
+  { page: 'chats', label: 'Chats', icon: 'chat' },
+  { page: 'models', label: 'Models', icon: 'models' },
+  { page: 'settings', label: 'Settings', icon: 'settings' },
+]
+
+function freshNewChat(): NewChatState {
+  return { assistantId: null, privateChat: false, modelProfileId: null }
 }
 
-function applyStreamEvent(message: ChatMessage, event: ChatStreamEvent): ChatMessage {
-  const parts = [...message.parts]
-  if (event.delta) {
-    const textIndex = parts.findIndex((part) => part.type === 'text')
-    const text: MessagePart = {
-      id: textIndex >= 0 ? parts[textIndex]!.id : uid('part'),
-      type: 'text',
-      text: `${textIndex >= 0 ? (parts[textIndex]!.text ?? '') : ''}${event.delta}`,
-    }
-    if (textIndex >= 0) parts[textIndex] = text
-    else parts.unshift(text)
-  }
-  if (event.reasoning) {
-    const reasoningIndex = parts.findIndex((part) => part.type === 'reasoning')
-    const reasoning: MessagePart = {
-      id: reasoningIndex >= 0 ? parts[reasoningIndex]!.id : uid('part'),
-      type: 'reasoning',
-      text: `${reasoningIndex >= 0 ? (parts[reasoningIndex]!.text ?? '') : ''}${event.reasoning}`,
-    }
-    if (reasoningIndex >= 0) parts[reasoningIndex] = reasoning
-    else parts.push(reasoning)
-  }
-  for (const call of event.toolCalls ?? []) {
-    const existingIndex = parts.findIndex(
-      (part) => part.type === 'tool-call' && part.metadata?.callId === call.id,
-    )
-    if (existingIndex >= 0) {
-      const existing = parts[existingIndex]!
-      parts[existingIndex] = {
-        ...existing,
-        metadata: { ...existing.metadata, arguments: JSON.stringify(call.arguments) },
-      }
-      continue
-    }
-    parts.push({
-      id: uid('part'),
-      type: 'tool-call',
-      name: call.name,
-      text: `Requested ${call.name}`,
-      status: 'unavailable',
-      metadata: { callId: call.id, arguments: JSON.stringify(call.arguments) },
-    })
-  }
-  for (const result of event.toolResults ?? []) {
-    if (
-      parts.some((part) => part.type === 'tool-result' && part.metadata?.callId === result.callId)
-    )
-      continue
-    parts.push({
-      id: uid('part'),
-      type: 'tool-result',
-      name: result.name,
-      text: result.error?.message ?? JSON.stringify(result.result ?? {}),
-      status: result.status,
-      metadata: { callId: result.callId },
-    })
-  }
-  return {
-    ...message,
-    parts,
-    usage: event.usage ? { ...message.usage, ...event.usage } : message.usage,
-  }
+function isNavState(value: unknown): value is NavState {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<NavState>
+  return PAGES.includes(candidate.page as Page)
 }
 
-function applyHostToolResult(data: AppData, result: HostToolResult): AppData {
-  if (result.status !== 'success' || !result.result) return data
-  const payload = result.result
-  if (result.name === 'memory.save' && payload.memory && typeof payload.memory === 'object') {
-    const memory = payload.memory as AppData['memories'][number]
-    if (!memory.id || typeof memory.content !== 'string') return data
-    return {
-      ...data,
-      memories: [...data.memories.filter((item) => item.id !== memory.id), memory],
-    }
-  }
-  if (result.name === 'memory.delete' && typeof payload.deletedId === 'string') {
-    return {
-      ...data,
-      memories: data.memories.filter((memory) => memory.id !== payload.deletedId),
-    }
-  }
-  return data
+function applyInsets(insets: WindowInsets) {
+  const root = document.documentElement.style
+  root.setProperty('--native-inset-top', `${Math.max(0, insets.top)}px`)
+  root.setProperty('--native-inset-right', `${Math.max(0, insets.right)}px`)
+  root.setProperty('--native-inset-bottom', `${Math.max(0, insets.bottom)}px`)
+  root.setProperty('--native-inset-left', `${Math.max(0, insets.left)}px`)
+  root.setProperty('--native-keyboard', `${Math.max(0, insets.keyboard)}px`)
 }
 
 export default function App() {
+  return (
+    <DialogProvider>
+      <JuniperApp />
+    </DialogProvider>
+  )
+}
+
+function JuniperApp() {
+  const dialogs = useDialogs()
   const [data, setData] = useState<AppData>(() =>
     runningInTauri ? initialAppData() : loadAppData(),
   )
   const [hydrated, setHydrated] = useState(!runningInTauri)
-  const [page, setPage] = useState<Page>('chats')
-  const [selectedChatId, setSelectedChatId] = useState<string | null>(
-    data.conversations[0]?.id ?? null,
-  )
-  const [activeAssistantId, setActiveAssistantId] = useState(
-    data.assistants[0]?.id ?? defaultAssistant.id,
-  )
+  const [nav, setNav] = useState<NavState>({ page: 'chats', section: null })
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
+  const [viewKey, setViewKey] = useState(() => uid('view'))
+  const [newChat, setNewChat] = useState<NewChatState>(freshNewChat)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [composing, setComposing] = useState(false)
   const [onboardingOpen, setOnboardingOpen] = useState(!data.settings.onboardingComplete)
   // Set when stored state could not be read. Saving the in-memory defaults would
   // then overwrite the user's database, so persistence stays off for the session.
   const [loadFailed, setLoadFailed] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const mainRef = useRef<HTMLElement>(null)
+
+  const mobile = useMediaQuery('(max-width: 760px)')
+  const narrowDesktop = useMediaQuery('(max-width: 1099px)')
+  const singlePaneSettings = useMediaQuery('(max-width: 899px)')
+  const touchPrimary = useTouchPrimary()
+  // Re-resolve "system" theme, contrast, and motion when the device changes them.
+  const systemDark = useMediaQuery('(prefers-color-scheme: dark)')
+  const systemContrast = useMediaQuery('(prefers-contrast: more)')
+  const systemReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
+
+  const update = useCallback(
+    (change: (current: AppData) => AppData) => setData((current) => change(current)),
+    [],
+  )
+
+  useEffect(() => {
+    applyAppearance(document.documentElement, data.settings)
+  }, [data.settings, systemDark, systemContrast, systemReducedMotion])
 
   useEffect(() => {
     if (!hydrated) return
@@ -181,10 +112,6 @@ export default function App() {
           (error: unknown) => setSaveError(error instanceof Error ? error.message : String(error)),
         )
     } else saveAppData(data)
-    document.documentElement.dataset.theme = data.settings.theme
-    document.documentElement.style.setProperty('--accent', data.settings.accent)
-    document.documentElement.style.setProperty('--font-scale', String(data.settings.fontScale))
-    document.documentElement.dataset.reducedMotion = String(data.settings.reducedMotion)
   }, [data, hydrated, loadFailed])
 
   useEffect(() => {
@@ -195,10 +122,13 @@ export default function App() {
       })
       .catch((error) => {
         setLoadFailed(true)
-        window.alert(error instanceof Error ? error.message : 'Could not load the SQLite state.')
+        void dialogs.notify(
+          error instanceof Error ? error.message : 'Could not load the SQLite state.',
+          'Juniper couldn’t read its stored data',
+        )
       })
       .finally(() => setHydrated(true))
-  }, [])
+  }, [dialogs])
 
   useEffect(() => {
     if (!runningInTauri || !hydrated) return
@@ -207,18 +137,11 @@ export default function App() {
 
   useEffect(() => {
     if (!hydrated) return
-    setActiveAssistantId((current) =>
-      data.assistants.some((assistant) => assistant.id === current)
-        ? current
-        : (data.assistants[0]?.id ?? defaultAssistant.id),
-    )
     setSelectedChatId((current) =>
-      current && data.conversations.some((chat) => chat.id === current)
-        ? current
-        : (data.conversations[0]?.id ?? null),
+      current && data.conversations.some((chat) => chat.id === current) ? current : null,
     )
-    setOnboardingOpen(!data.settings.onboardingComplete)
-  }, [data.assistants, data.conversations, data.settings.onboardingComplete, hydrated])
+    setOnboardingOpen((open) => open || !data.settings.onboardingComplete)
+  }, [data.conversations, data.settings.onboardingComplete, hydrated])
 
   useEffect(() => {
     if (!runningInTauri || !hydrated) return
@@ -272,42 +195,114 @@ export default function App() {
           }
         })
       })
-  }, [data.providers, hydrated])
+  }, [data.providers, hydrated, update])
 
-  const update = (change: (current: AppData) => AppData) => setData((current) => change(current))
-  const activeAssistant =
-    data.assistants.find((assistant) => assistant.id === activeAssistantId) ??
-    data.assistants[0] ??
-    defaultAssistant
-  const activeModel = data.models.find(
-    (model) => model.id === activeAssistant.modelProfileId && isChatSelectable(model),
-  )
-  const selectedConversation = data.conversations.find((chat) => chat.id === selectedChatId)
-  const currentModel = selectedConversation?.modelProfileId
-    ? data.models.find((model) => model.id === selectedConversation.modelProfileId)
-    : activeModel
-  const currentProvider = currentModel
-    ? data.providers.find((provider) => provider.id === currentModel.providerId)
-    : undefined
-  const currentAssistant = selectedConversation
-    ? (data.assistants.find((assistant) => assistant.id === selectedConversation.assistantId) ??
-      activeAssistant)
-    : activeAssistant
-
-  function createChat(privateChat = false): Conversation {
-    const conversation: Conversation = {
-      id: uid('chat'),
-      title: 'New conversation',
-      assistantId: activeAssistant.id,
-      createdAt: now(),
-      updatedAt: now(),
-      privateChat,
-      messages: [],
+  // Android draws Juniper edge to edge, so the native host reports the system
+  // bar and keyboard insets that the WebView itself may not expose to CSS.
+  useEffect(() => {
+    if (!runningInTauri) return
+    const onInsets = (event: Event) => {
+      const detail = (event as CustomEvent<WindowInsets>).detail
+      if (detail && typeof detail.top === 'number') applyInsets(detail)
     }
-    update((current) => ({ ...current, conversations: [conversation, ...current.conversations] }))
-    setSelectedChatId(conversation.id)
-    setPage('chats')
-    return conversation
+    window.addEventListener('juniper-window-insets', onInsets)
+    void getWindowInsets()
+      .then((insets) => {
+        if (insets) applyInsets(insets)
+      })
+      .catch(() => undefined)
+    return () => window.removeEventListener('juniper-window-insets', onInsets)
+  }, [])
+
+  // In-app navigation is recorded in history so Android back and mouse back work.
+  useEffect(() => {
+    replaceHistory({ ...currentHistoryState(), juniperNav: { page: 'chats', section: null } })
+    return onHistoryPop((state) => {
+      if (!isNavState(state.juniperNav)) return
+      navRef.current = state.juniperNav
+      setNav(state.juniperNav)
+    })
+  }, [])
+
+  const navRef = useRef(nav)
+  const navigate = useCallback((next: NavState, options: { replace?: boolean } = {}) => {
+    const current = navRef.current
+    if (current.page === next.page && current.section === next.section) return
+    const state = { juniperNav: next }
+    if (options.replace) replaceHistory(state)
+    else pushHistory(state)
+    navRef.current = next
+    setNav(next)
+  }, [])
+
+  const startNewChat = useCallback(() => {
+    setSelectedChatId(null)
+    setNewChat(freshNewChat())
+    setViewKey(uid('view'))
+    setHistoryOpen(false)
+    navigate({ page: 'chats', section: null })
+  }, [navigate])
+
+  const openChat = useCallback(
+    (id: string) => {
+      setSelectedChatId(id)
+      setViewKey(id)
+      setHistoryOpen(false)
+      navigate({ page: 'chats', section: null })
+    },
+    [navigate],
+  )
+
+  const sidebarCollapsed =
+    data.settings.sidebar === 'collapsed' || (data.settings.sidebar === 'auto' && narrowDesktop)
+
+  const toggleSidebar = useCallback(() => {
+    update((current) => {
+      const collapsedNow =
+        current.settings.sidebar === 'collapsed' ||
+        (current.settings.sidebar === 'auto' && narrowDesktop)
+      return {
+        ...current,
+        settings: { ...current.settings, sidebar: collapsedNow ? 'expanded' : 'collapsed' },
+      }
+    })
+  }, [narrowDesktop, update])
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const modifier = event.ctrlKey || event.metaKey
+      if (!modifier || event.altKey) return
+      const key = event.key.toLowerCase()
+      if (event.shiftKey && key === 'o') {
+        event.preventDefault()
+        startNewChat()
+      } else if (event.shiftKey && key === 's' && !mobile) {
+        event.preventDefault()
+        toggleSidebar()
+      } else if (!event.shiftKey && key === 'k') {
+        event.preventDefault()
+        if (mobile) {
+          setHistoryOpen(true)
+          return
+        }
+        if (sidebarCollapsed) toggleSidebar()
+        window.setTimeout(() => searchRef.current?.focus(), 0)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [mobile, sidebarCollapsed, startNewChat, toggleSidebar])
+
+  const selectedConversation = data.conversations.find((chat) => chat.id === selectedChatId)
+  const route = resolveRoute(
+    data,
+    selectedConversation,
+    newChat.assistantId ? assistantFor(data, newChat.assistantId) : defaultAssistantFor(data),
+    newChat.modelProfileId,
+  )
+
+  function openSection(section: SettingsSection | null, options?: { replace?: boolean }) {
+    navigate({ page: 'settings', section }, options)
   }
 
   function completeOnboarding() {
@@ -318,823 +313,161 @@ export default function App() {
     setOnboardingOpen(false)
   }
 
+  const page = nav.page
+
   return (
-    <div className="app-frame">
-      <Sidebar page={page} setPage={setPage} onNewChat={() => createChat()} />
-      <main className="main-pane">
-        <header className="topbar">
-          <div className="mobile-brand">
-            <JuniperMark className="brand-mark" alt="" aria-hidden="true" />
-            <span>Juniper</span>
-          </div>
-          <div className="topbar-context">
-            <span className="eyebrow">{page === 'chats' ? 'Personal space' : page}</span>
-            <span className={`status-pill ${currentModel?.executionLocation ?? 'unknown'}`}>
-              <i />
-              {labelExecutionLocation(currentModel?.executionLocation ?? 'unknown')}
-            </span>
-          </div>
-          <button
-            className="avatar-button"
-            aria-label="Open settings"
-            onClick={() => setPage('settings')}
-          >
-            <AssistantAvatar assistant={activeAssistant} className="avatar-button-mark" />
-          </button>
-        </header>
-        {(loadFailed || saveError) && (
-          <div className="persistence-error" role="alert">
-            {loadFailed
-              ? 'Juniper could not read its stored data, so changes in this session are not saved and the stored data was left unchanged.'
-              : `Juniper could not save your latest changes: ${saveError}`}
-          </div>
+    <>
+      <div
+        className="app-frame"
+        data-layout={mobile ? 'mobile' : 'desktop'}
+        data-sidebar={sidebarCollapsed ? 'collapsed' : 'expanded'}
+        data-composing={mobile && composing ? 'true' : undefined}
+      >
+        <button className="skip-link" onClick={() => mainRef.current?.focus()}>
+          Skip to content
+        </button>
+        {!mobile && (
+          <aside className="sidebar" aria-label="Juniper">
+            <div className="sidebar-top">
+              {!sidebarCollapsed && (
+                <div className="sidebar-brand">
+                  <JuniperMark className="sidebar-logo" alt="" aria-hidden="true" />
+                  <span>Juniper</span>
+                </div>
+              )}
+              <button
+                className="icon-button"
+                onClick={toggleSidebar}
+                aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                aria-expanded={!sidebarCollapsed}
+                title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                <Icon name="sidebar" />
+              </button>
+            </div>
+            <button
+              className="sidebar-new-chat"
+              onClick={startNewChat}
+              title={sidebarCollapsed ? 'New chat' : undefined}
+            >
+              <Icon name="plus" />
+              <span className={sidebarCollapsed ? 'visually-hidden' : undefined}>New chat</span>
+            </button>
+            <nav className="sidebar-nav" aria-label="Primary">
+              {NAV_ITEMS.map((item) => (
+                <button
+                  key={item.page}
+                  className={`sidebar-nav-item ${page === item.page ? 'active' : ''}`}
+                  aria-current={page === item.page ? 'page' : undefined}
+                  title={sidebarCollapsed ? item.label : undefined}
+                  onClick={() =>
+                    navigate({
+                      page: item.page,
+                      section: item.page === 'settings' ? nav.section : null,
+                    })
+                  }
+                >
+                  <Icon name={item.icon} />
+                  <span className={sidebarCollapsed ? 'visually-hidden' : undefined}>
+                    {item.label}
+                  </span>
+                </button>
+              ))}
+            </nav>
+            {!sidebarCollapsed && (
+              <div className="sidebar-history">
+                <h2 className="sidebar-heading">Recent</h2>
+                <ChatHistory
+                  data={data}
+                  selectedChatId={page === 'chats' ? selectedChatId : null}
+                  onSelect={openChat}
+                  searchRef={searchRef}
+                />
+              </div>
+            )}
+          </aside>
         )}
-        <div className="page-content">
-          {page === 'chats' && (
-            <ChatPage
-              data={data}
-              update={update}
-              selectedChatId={selectedChatId}
-              setSelectedChatId={setSelectedChatId}
-              createChat={createChat}
-              activeAssistant={activeAssistant}
-              activeModel={activeModel}
-            />
+        <main className="main" id="main-content" ref={mainRef} tabIndex={-1}>
+          {(loadFailed || saveError) && (
+            <div className="persistence-error" role="alert">
+              {loadFailed
+                ? 'Juniper could not read its stored data, so changes in this session are not saved and the stored data was left unchanged.'
+                : `Juniper could not save your latest changes: ${saveError}`}
+            </div>
           )}
-          {page === 'assistants' && (
-            <AssistantsPage
+          {page === 'chats' && (
+            <ChatScreen
+              key={viewKey}
               data={data}
               update={update}
-              activeAssistantId={activeAssistant.id}
-              onSelectAssistant={setActiveAssistantId}
+              conversation={selectedConversation}
+              newChat={newChat}
+              setNewChat={setNewChat}
+              onMaterialize={setSelectedChatId}
+              onDeleted={startNewChat}
+              onOpenHistory={mobile ? () => setHistoryOpen(true) : undefined}
+              onBrowseModels={() => navigate({ page: 'models', section: null })}
+              mobile={mobile}
+              touchPrimary={touchPrimary}
+              onComposerFocus={setComposing}
             />
           )}
           {page === 'models' && (
-            <>
-              <ModelsMarket data={data} update={update} />
-              <ModelsPage data={data} update={update} />
-            </>
-          )}
-          {page === 'tools' && <ToolsPage data={data} update={update} />}
-          {page === 'settings' && <SettingsPage data={data} update={update} navigate={setPage} />}
-          {page === 'privacy' && (
-            <PrivacyPage
+            <ModelsScreen
               data={data}
               update={update}
-              activeAssistant={currentAssistant}
-              activeModel={currentModel}
-              activeProvider={currentProvider}
+              openSettings={(section) => navigate({ page: 'settings', section })}
+            />
+          )}
+          {page === 'settings' && (
+            <SettingsScreen
+              data={data}
+              update={update}
+              section={nav.section}
+              openSection={openSection}
+              twoPane={!singlePaneSettings}
+              route={route}
               currentConversation={selectedConversation}
+              onReplayWelcome={() => setOnboardingOpen(true)}
             />
           )}
-          {page === 'diagnostics' && <DiagnosticsPage data={data} />}
-        </div>
-      </main>
-      {onboardingOpen && <Onboarding onDone={completeOnboarding} />}
-    </div>
-  )
-}
-
-function ChatPage({
-  data,
-  update,
-  selectedChatId,
-  setSelectedChatId,
-  createChat,
-  activeAssistant,
-  activeModel,
-}: {
-  data: AppData
-  update: (change: (current: AppData) => AppData) => void
-  selectedChatId: string | null
-  setSelectedChatId: (id: string | null) => void
-  createChat: (privateChat?: boolean) => Conversation
-  activeAssistant: Assistant
-  activeModel?: ModelProfile
-}) {
-  const [query, setQuery] = useState('')
-  const conversation =
-    data.conversations.find((chat) => chat.id === selectedChatId) ?? data.conversations[0]
-  const conversationModel = conversation?.modelProfileId
-    ? data.models.find((model) => model.id === conversation.modelProfileId)
-    : undefined
-  const effectiveModel = conversation?.modelProfileId
-    ? conversationModel && isChatSelectable(conversationModel)
-      ? conversationModel
-      : undefined
-    : activeModel
-  const modelUnavailable = Boolean(conversation?.modelProfileId && !effectiveModel)
-  const effectiveProvider = effectiveModel
-    ? data.providers.find((provider) => provider.id === effectiveModel.providerId)
-    : undefined
-  const conversationAssistant = conversation
-    ? (data.assistants.find((assistant) => assistant.id === conversation.assistantId) ??
-      activeAssistant)
-    : activeAssistant
-  const filtered = data.conversations.filter((chat) =>
-    [chat.title, ...chat.messages.map(textPart)]
-      .join(' ')
-      .toLowerCase()
-      .includes(query.toLowerCase()),
-  )
-  function choose(chat: Conversation) {
-    setSelectedChatId(chat.id)
-  }
-  function renameConversation() {
-    if (!conversation) return
-    const title = window.prompt('Conversation name', conversation.title)?.trim()
-    if (!title) return
-    update((current) => ({
-      ...current,
-      conversations: current.conversations.map((chat) =>
-        chat.id === conversation.id ? { ...chat, title, updatedAt: now() } : chat,
-      ),
-    }))
-  }
-  function deleteConversation() {
-    if (!conversation || !window.confirm(`Delete “${conversation.title}”?`)) return
-    update((current) => ({
-      ...current,
-      conversations: current.conversations.filter((chat) => chat.id !== conversation.id),
-      attachments: current.attachments.filter(
-        (attachment) => attachment.conversationId !== conversation.id,
-      ),
-      permissions: current.permissions.filter(
-        (grant) => grant.scope !== 'chat' || grant.conversationId !== conversation.id,
-      ),
-    }))
-    setSelectedChatId(null)
-  }
-  return (
-    <div className="chat-layout">
-      <section className="chat-list-panel">
-        <div className="list-heading">
-          <div>
-            <span className="eyebrow">Your space</span>
-            <h2>Chats</h2>
-          </div>
-          <button className="icon-button" aria-label="New chat" onClick={() => createChat()}>
-            <span>＋</span>
-          </button>
-        </div>
-        <label className="search-field">
-          <span>⌕</span>
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search chats"
-            aria-label="Search chats"
-          />
-        </label>
-        <div className="chat-list">
-          {filtered.length === 0 ? (
-            <div className="empty-small">
-              No saved chats yet.
-              <br />
-              Start a fresh conversation.
-            </div>
-          ) : (
-            filtered.map((chat) => (
+        </main>
+        {mobile && (
+          <nav className="bottom-nav" aria-label="Primary">
+            {NAV_ITEMS.map((item) => (
               <button
-                key={chat.id}
-                className={`chat-list-item ${conversation?.id === chat.id ? 'selected' : ''}`}
-                onClick={() => choose(chat)}
+                key={item.page}
+                className={page === item.page ? 'active' : ''}
+                aria-current={page === item.page ? 'page' : undefined}
+                onClick={() =>
+                  navigate({
+                    page: item.page,
+                    section: item.page === 'settings' ? nav.section : null,
+                  })
+                }
               >
-                <span className="chat-list-avatar">{activeAssistant.avatar}</span>
-                <span>
-                  <strong>{chat.title}</strong>
-                  <small>
-                    {chat.privateChat
-                      ? 'Private · session only'
-                      : chat.messages.length
-                        ? `${chat.messages.length} messages`
-                        : 'Just now'}
-                  </small>
-                </span>
-                <span className="chevron">›</span>
+                <Icon name={item.icon} size={22} />
+                <span>{item.label}</span>
               </button>
-            ))
-          )}
-        </div>
-        <button className="private-toggle" onClick={() => createChat(true)}>
-          <span className="lock">●</span>
-          Start private chat
-        </button>
-      </section>
-      <section className="chat-main">
-        {conversation ? (
-          <ConversationView
-            // Remount per conversation so the draft, staged attachments, and
-            // context inspector never carry over into a different chat.
-            key={conversation.id}
-            data={data}
-            update={update}
-            conversation={conversation}
-            activeAssistant={conversationAssistant}
-            activeModel={effectiveModel}
-            activeProvider={effectiveProvider}
-            privateMode={conversation.privateChat === true}
-            modelUnavailable={modelUnavailable}
-            onRename={renameConversation}
-            onDelete={deleteConversation}
-            onSelectModel={(modelId) =>
-              update((current) => ({
-                ...current,
-                conversations: current.conversations.map((chat) =>
-                  chat.id === conversation.id ? { ...chat, modelProfileId: modelId } : chat,
-                ),
-              }))
-            }
-          />
-        ) : (
-          <EmptyChat onCreate={() => createChat()} />
-        )}
-      </section>
-    </div>
-  )
-}
-
-function EmptyChat({ onCreate }: { onCreate: () => void }) {
-  return (
-    <div className="empty-chat">
-      <JuniperMark className="welcome-orb" alt="Juniper" />
-      <span className="eyebrow">A calmer place to think</span>
-      <h1>What are we figuring out today?</h1>
-      <p>Juniper brings personality, context, memory, and tools around the model you choose.</p>
-      <button className="primary-button" onClick={onCreate}>
-        Start a conversation <span>→</span>
-      </button>
-    </div>
-  )
-}
-
-function ConversationView({
-  data,
-  update,
-  conversation,
-  activeAssistant,
-  activeModel,
-  activeProvider,
-  privateMode,
-  modelUnavailable,
-  onRename,
-  onDelete,
-  onSelectModel,
-}: {
-  data: AppData
-  update: (change: (current: AppData) => AppData) => void
-  conversation: Conversation
-  activeAssistant: Assistant
-  activeModel?: ModelProfile
-  activeProvider?: ProviderProfile
-  privateMode: boolean
-  modelUnavailable: boolean
-  onRename: () => void
-  onDelete: () => void
-  onSelectModel: (modelId: string | null) => void
-}) {
-  const [draft, setDraft] = useState('')
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [generationPhase, setGenerationPhase] = useState('Juniper is thinking')
-  const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null)
-  const [lastContext, setLastContext] = useState<ContextSummary | null>(null)
-  const controller = useRef<AbortController | null>(null)
-  const requestId = useRef<string | null>(null)
-  const composer = useRef<HTMLTextAreaElement>(null)
-  const [attachments, setAttachments] = useState<
-    Array<{
-      id: string
-      name: string
-      content: string
-      sizeBytes?: number
-      contentType?: string
-    }>
-  >([])
-  const messages = conversation.messages
-  function updateConversation(change: (chat: Conversation) => Conversation) {
-    update((current) => ({
-      ...current,
-      conversations: current.conversations.map((chat) =>
-        chat.id === conversation.id ? change(chat) : chat,
-      ),
-    }))
-  }
-  async function send(event?: FormEvent) {
-    event?.preventDefault()
-    const content = draft.trim()
-    if (!content || isGenerating) return
-    if (!activeModel || !activeProvider) return
-    const user: ChatMessage = {
-      id: uid('message'),
-      conversationId: conversation.id,
-      role: 'user',
-      parts: [{ id: uid('part'), type: 'text', text: content }],
-      createdAt: now(),
-    }
-    const assistantMessage: ChatMessage = {
-      id: uid('message'),
-      conversationId: conversation.id,
-      role: 'assistant',
-      parts: [{ id: uid('part'), type: 'text', text: '' }],
-      createdAt: now(),
-      modelId: activeModel.modelId,
-      providerId: activeProvider?.id,
-      isStreaming: true,
-    }
-    const nextMessages = [...messages, user, assistantMessage]
-    const enabledTools =
-      activeAssistant.toolPolicy !== 'disabled' && activeModel.capabilities.tools === 'supported'
-        ? builtinTools.filter(
-            (tool) =>
-              tool.enabled &&
-              (tool.risk === 'automatic-safe' || activeAssistant.toolPolicy === 'ask'),
-          )
-        : []
-    const context = buildContext(
-      activeAssistant,
-      data.memories,
-      nextMessages,
-      enabledTools,
-      activeModel.contextLength,
-      content,
-      attachments,
-    )
-    setLastContext(context)
-    setDraft('')
-    const requestAttachments = attachments
-    setAttachments([])
-    setIsGenerating(true)
-    setGenerationPhase(
-      activeProvider.kind === 'juniper-local' ? 'Loading verified model…' : 'Juniper is thinking',
-    )
-    controller.current = new AbortController()
-    updateConversation((chat) => ({
-      ...chat,
-      title: chat.title === 'New conversation' ? content.slice(0, 38) : chat.title,
-      updatedAt: now(),
-      messages: nextMessages,
-    }))
-    const currentRequestId = uid('request')
-    requestId.current = currentRequestId
-    try {
-      await streamChat(
-        {
-          requestId: currentRequestId,
-          assistantId: activeAssistant.id,
-          conversationId: conversation.id,
-          privateChat: privateMode,
-          provider: activeProvider,
-          model: activeModel,
-          messages: [
-            { role: 'system', content: context.system },
-            ...context.conversation,
-            { role: 'user', content: context.currentUserMessage },
-          ],
-          tools: enabledTools,
-          generation: activeAssistant.generation,
-          permissionGrants: data.permissions.filter(
-            (grant) =>
-              grant.assistantId === activeAssistant.id &&
-              (grant.scope === 'assistant' || grant.conversationId === conversation.id),
-          ),
-          hostContext: {
-            memories: data.memories,
-            conversations: data.conversations.filter((chat) => !chat.privateChat),
-          },
-          attachments: requestAttachments,
-        },
-        (streamEvent) => {
-          if (streamEvent.delta || streamEvent.reasoning) setGenerationPhase('Juniper is thinking')
-          if (streamEvent.permissionRequest) {
-            setPermissionRequest(streamEvent.permissionRequest)
-          }
-          if (
-            streamEvent.delta ||
-            streamEvent.reasoning ||
-            streamEvent.toolCalls?.length ||
-            streamEvent.toolResults?.length
-          )
-            updateConversation((chat) => ({
-              ...chat,
-              messages: chat.messages.map((message) =>
-                message.id === assistantMessage.id
-                  ? applyStreamEvent(message, streamEvent)
-                  : message,
-              ),
-            }))
-          for (const result of streamEvent.toolResults ?? []) {
-            update((current) => applyHostToolResult(current, result))
-          }
-          if (streamEvent.error)
-            updateConversation((chat) => ({
-              ...chat,
-              messages: chat.messages.map((message) =>
-                message.id === assistantMessage.id
-                  ? {
-                      ...message,
-                      isStreaming: false,
-                      parts: [
-                        {
-                          id: uid('part'),
-                          type: 'error',
-                          text: streamEvent.error?.message,
-                          metadata: streamEvent.error?.code
-                            ? { errorCode: streamEvent.error.code }
-                            : undefined,
-                        },
-                      ],
-                    }
-                  : message,
-              ),
-            }))
-          if (streamEvent.done)
-            updateConversation((chat) => ({
-              ...chat,
-              messages: chat.messages.map((message) =>
-                message.id === assistantMessage.id ? { ...message, isStreaming: false } : message,
-              ),
-            }))
-        },
-        controller.current.signal,
-      )
-    } catch (error) {
-      const message =
-        error instanceof DOMException && error.name === 'AbortError'
-          ? 'Generation cancelled.'
-          : error instanceof Error
-            ? error.message
-            : 'The provider stopped responding.'
-      updateConversation((chat) => ({
-        ...chat,
-        messages: chat.messages.map((item) =>
-          item.id === assistantMessage.id
-            ? {
-                ...item,
-                isStreaming: false,
-                parts: [
-                  {
-                    id: uid('part'),
-                    type: 'error',
-                    text: message,
-                    metadata: errorCodeFromMessage(message)
-                      ? { errorCode: errorCodeFromMessage(message)! }
-                      : undefined,
-                  },
-                ],
-              }
-            : item,
-        ),
-      }))
-    } finally {
-      setIsGenerating(false)
-      setGenerationPhase('Juniper is thinking')
-      setPermissionRequest(null)
-      controller.current = null
-      requestId.current = null
-      composer.current?.focus()
-    }
-  }
-  function stop() {
-    if (requestId.current) void cancelChat(requestId.current)
-    controller.current?.abort()
-  }
-  async function attachFromHost() {
-    try {
-      const attachment = await pickAttachment()
-      if (!attachment) return
-      const content = await readAttachment(attachment.id)
-      const metadata: AttachmentRecord = {
-        id: attachment.id,
-        conversationId: conversation.id,
-        name: attachment.name,
-        sizeBytes: attachment.sizeBytes,
-        contentType: attachment.contentType,
-      }
-      setAttachments((current) => [
-        ...current,
-        {
-          id: attachment.id,
-          name: attachment.name,
-          content,
-          sizeBytes: attachment.sizeBytes,
-          contentType: attachment.contentType,
-        },
-      ])
-      update((current) => ({
-        ...current,
-        attachments: [...current.attachments.filter((item) => item.id !== metadata.id), metadata],
-      }))
-      setDraft((current) => `${current}${current ? '\n\n' : ''}[Attached: ${attachment.name}]`)
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'Could not attach that file.')
-    }
-  }
-  async function decidePermission(decision: PermissionDecision) {
-    const pending = permissionRequest
-    if (!pending) return
-    try {
-      await resolvePermission(pending.requestId, pending.callId, decision)
-      if (decision === 'allow-chat' || decision === 'allow-assistant') {
-        const timestamp = now()
-        update((current) => ({
-          ...current,
-          permissions: [
-            ...current.permissions.filter(
-              (grant) =>
-                !(
-                  grant.toolName === pending.toolName &&
-                  grant.assistantId === pending.assistantId &&
-                  grant.scope === (decision === 'allow-chat' ? 'chat' : 'assistant') &&
-                  (decision === 'allow-assistant' ||
-                    grant.conversationId === pending.conversationId)
-                ),
-            ),
-            {
-              id: uid('permission'),
-              toolName: pending.toolName,
-              scope: decision === 'allow-chat' ? 'chat' : 'assistant',
-              assistantId: pending.assistantId,
-              ...(decision === 'allow-chat' ? { conversationId: pending.conversationId } : {}),
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            },
-          ],
-        }))
-      }
-      setPermissionRequest(null)
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'Could not record that permission.')
-    }
-  }
-  function regenerate() {
-    const lastUser = [...messages].reverse().find((message) => message.role === 'user')
-    if (lastUser) {
-      setDraft(textPart(lastUser))
-      composer.current?.focus()
-    }
-  }
-  function exportMarkdown() {
-    if (privateMode) return
-    const body = messages
-      .map(
-        (message) =>
-          `## ${message.role === 'user' ? 'You' : activeAssistant.name}\n\n${textPart(message)}`,
-      )
-      .join('\n\n')
-    download(`${conversation.title}.md`, body, 'text/markdown')
-  }
-  return (
-    <div className="conversation">
-      <div className="conversation-header">
-        <div className="assistant-identity">
-          <AssistantAvatar assistant={activeAssistant} />
-          <div>
-            <strong>{activeAssistant.name}</strong>
-            <span>
-              {modelUnavailable
-                ? 'Model unavailable'
-                : (activeModel?.displayName ?? 'Model not selected')}{' '}
-              ·{' '}
-              <span className="local-text">
-                {labelExecutionLocation(activeModel?.executionLocation ?? 'unknown')}
-              </span>
-            </span>
-          </div>
-        </div>
-        <div className="conversation-actions">
-          <label className="model-select-label">
-            <span>Model</span>
-            <select
-              value={conversation.modelProfileId ?? activeModel?.id ?? ''}
-              onChange={(event) => onSelectModel(event.target.value || null)}
-              aria-label="Conversation model"
-            >
-              <option value="">Assistant default</option>
-              {modelUnavailable && conversation.modelProfileId && (
-                <option value={conversation.modelProfileId} disabled>
-                  Model unavailable
-                </option>
-              )}
-              {data.models.filter(isChatSelectable).map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.displayName}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button className="text-button" onClick={exportMarkdown} disabled={privateMode}>
-            Export
-          </button>
-          <button className="text-button" onClick={onRename}>
-            Rename
-          </button>
-          <button className="text-button" onClick={onDelete}>
-            Delete
-          </button>
-        </div>
-      </div>
-      {data.settings.developerMode && lastContext && (
-        <details className="context-inspector">
-          <summary>Context inspector</summary>
-          <div className="context-inspector-meta">
-            <span>
-              Estimated {lastContext.estimatedTokens.toLocaleString()} /{' '}
-              {lastContext.contextLimit.toLocaleString()} tokens
-            </span>
-            <span>
-              {lastContext.contextLimitAssumed ? 'Context limit assumed' : 'Runtime limit'}
-            </span>
-            <span>{lastContext.truncated ? 'Older history truncated' : 'No truncation'}</span>
-          </div>
-          <div className="context-inspector-grid">
-            <pre>{`[Juniper system]\n${lastContext.system}`}</pre>
-            <pre>{`[Conversation]\n${lastContext.conversation.map((item) => `${item.role}: ${item.content}`).join('\n\n')}`}</pre>
-            <pre>{`[Files]\n${lastContext.attachments.join('\n') || 'None'}\n\n[Current user]\n${lastContext.currentUserMessage}`}</pre>
-          </div>
-        </details>
-      )}
-      <div className="message-scroll">
-        {messages.length === 0 ? (
-          <div className="conversation-welcome">
-            <AssistantAvatar assistant={activeAssistant} className="welcome-orb small" />
-            <h2>{activeAssistant.welcomeMessage}</h2>
-            <p>
-              {modelUnavailable
-                ? 'This chat’s model is unavailable. Choose another model or edit the assistant.'
-                : activeModel
-                  ? 'Choose a prompt below or write whatever is on your mind.'
-                  : 'No model selected. Choose or download one in Models to begin chatting.'}
-            </p>
-            <div className="suggestions">
-              {activeAssistant.suggestedPrompts.map((prompt) => (
-                <button key={prompt} onClick={() => setDraft(prompt)}>
-                  {prompt}
-                  <span>↗</span>
-                </button>
-              ))}
-            </div>
-            <div className="feature-strip">
-              <span>✦ Local-first</span>
-              <span>◌ Curated memory</span>
-              <span>⌘ Host tools</span>
-            </div>
-          </div>
-        ) : (
-          messages.map((message) => (
-            <MessageBubble
-              key={message.id}
-              message={message}
-              assistant={activeAssistant}
-              developerMode={data.settings.developerMode}
-            />
-          ))
-        )}
-        {isGenerating && (
-          <div className="typing-line">
-            <span className="typing-dot" />
-            <span>{generationPhase}</span>
-          </div>
+            ))}
+          </nav>
         )}
       </div>
-      <form className="composer-wrap" onSubmit={send}>
-        <div className="composer">
-          <label
-            className="composer-icon"
-            aria-label="Attach a file"
-            onClick={(event) => {
-              if (runningInTauri) {
-                event.preventDefault()
-                void attachFromHost()
-              }
-            }}
-          >
-            ＋
-            <input
-              type="file"
-              hidden
-              accept=".txt,.md,.json,.csv,.toml,.yaml,.yml,.rs,.ts,.tsx,.js,.jsx,.py,.css,.html,text/plain,application/json,text/markdown"
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                if (!file || file.size > 1024 * 1024) return
-                void file.text().then((content) => {
-                  const attachment = { id: uid('attachment'), name: file.name, content }
-                  const metadata: AttachmentRecord = {
-                    id: attachment.id,
-                    conversationId: conversation.id,
-                    name: file.name,
-                    sizeBytes: file.size,
-                    contentType: file.type || 'text/plain',
-                  }
-                  setAttachments((current) => [...current, attachment])
-                  update((current) => ({
-                    ...current,
-                    attachments: [
-                      ...current.attachments.filter((item) => item.id !== metadata.id),
-                      metadata,
-                    ],
-                  }))
-                  setDraft(
-                    (current) => `${current}${current ? '\n\n' : ''}[Attached: ${file.name}]`,
-                  )
-                })
-              }}
-            />
-          </label>
-          <textarea
-            ref={composer}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault()
-                void send()
-              }
-            }}
-            placeholder={`Message ${activeAssistant.name}…`}
-            rows={1}
-            aria-label="Message Juniper"
-          />
-          <div className="composer-end">
-            {isGenerating ? (
-              <button
-                type="button"
-                className="stop-button"
-                onClick={stop}
-                aria-label="Stop generation"
-              >
-                ■
-              </button>
-            ) : (
-              <button
-                type="submit"
-                className="send-button"
-                disabled={!draft.trim() || !activeModel || !activeProvider}
-                aria-label="Send message"
-              >
-                ↑
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="composer-meta">
-          <span>
-            {modelUnavailable
-              ? 'Model unavailable · choose another model or edit the assistant'
-              : !activeModel
-                ? 'No model selected · choose one in Models'
-                : privateMode
-                  ? 'Private chat · not saved after this session'
-                  : 'Shift + Enter for a new line'}
-          </span>
-          <button
-            type="button"
-            onClick={regenerate}
-            disabled={!messages.some((message) => message.role === 'user')}
-          >
-            Regenerate last
+      {mobile && (
+        <Modal
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          title="Chats"
+          variant="drawer"
+        >
+          <button className="sidebar-new-chat" onClick={startNewChat}>
+            <Icon name="plus" />
+            <span>New chat</span>
           </button>
-        </div>
-      </form>
-      {permissionRequest && (
-        <div className="permission-backdrop" role="presentation">
-          <div
-            className="permission-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="permission-title"
-          >
-            <span className="eyebrow">Juniper permission</span>
-            <h2 id="permission-title">Allow {permissionRequest.toolName}?</h2>
-            <p>
-              The model requested a host capability. Juniper will not allow it unless you choose a
-              scope below.
-            </p>
-            <div className="permission-actions">
-              <button
-                className="primary-button"
-                onClick={() => void decidePermission('allow-once')}
-              >
-                Allow once
-              </button>
-              <button
-                className="secondary-button"
-                onClick={() => void decidePermission('allow-chat')}
-              >
-                Allow for this chat
-              </button>
-              <button
-                className="secondary-button"
-                onClick={() => void decidePermission('allow-assistant')}
-              >
-                Always allow for this assistant
-              </button>
-              <button className="text-button" onClick={() => void decidePermission('deny')}>
-                Deny
-              </button>
-            </div>
-          </div>
-        </div>
+          <ChatHistory data={data} selectedChatId={selectedChatId} onSelect={openChat} />
+        </Modal>
       )}
-    </div>
+      <Onboarding open={onboardingOpen} onDone={completeOnboarding} />
+    </>
   )
 }

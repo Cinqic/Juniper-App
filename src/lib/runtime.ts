@@ -401,3 +401,17 @@ export function modelFromInspection(
     rawCapabilities: inspection.rawCapabilities ?? inspection.capabilities,
   }
 }
+
+/** System bar and keyboard insets in CSS pixels. Only Android reports them. */
+export interface WindowInsets {
+  top: number
+  right: number
+  bottom: number
+  left: number
+  keyboard: number
+}
+
+export async function getWindowInsets(): Promise<WindowInsets | null> {
+  if (!runningInTauri) return null
+  return invoke<WindowInsets | null>('window_insets')
+}

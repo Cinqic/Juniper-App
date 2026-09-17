@@ -23,6 +23,9 @@ import java.security.MessageDigest
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.webkit.WebView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.appcompat.app.AppCompatActivity
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -516,8 +519,55 @@ internal object EngineOwner {
 
 @TauriPlugin
 class JuniperLocalRuntimePlugin(private val activity: Activity) : Plugin(activity) {
+    @Volatile private var insets: JSObject = insetsObject(0.0, 0.0, 0.0, 0.0, 0.0)
+    private var webView: WebView? = null
+
     init {
         EngineOwner.initialize(activity.applicationContext, activity.applicationInfo.nativeLibraryDir)
+    }
+
+    // Tauri enables edge-to-edge drawing, so the webview sits under the status
+    // bar, navigation bar, and keyboard. Report those insets to the interface
+    // in CSS pixels; only numbers cross into the page.
+    override fun load(webView: WebView) {
+        super.load(webView)
+        this.webView = webView
+        ViewCompat.setOnApplyWindowInsetsListener(webView) { view, windowInsets ->
+            val density = view.resources.displayMetrics.density.toDouble().takeIf { it > 0 } ?: 1.0
+            val bars = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+            )
+            val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
+            val next = insetsObject(
+                bars.top / density,
+                bars.right / density,
+                bars.bottom / density,
+                bars.left / density,
+                if (windowInsets.isVisible(WindowInsetsCompat.Type.ime())) ime.bottom / density else 0.0,
+            )
+            insets = next
+            (view as WebView).evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('juniper-window-insets',{detail:$next}))",
+                null,
+            )
+            ViewCompat.onApplyWindowInsets(view, windowInsets)
+        }
+        ViewCompat.requestApplyInsets(webView)
+    }
+
+    private fun insetsObject(top: Double, right: Double, bottom: Double, left: Double, keyboard: Double) =
+        JSObject().apply {
+            put("top", top)
+            put("right", right)
+            put("bottom", bottom)
+            put("left", left)
+            put("keyboard", keyboard)
+        }
+
+    @Command
+    fun windowInsets(invoke: Invoke) {
+        activity.runOnUiThread { webView?.let { ViewCompat.requestApplyInsets(it) } }
+        invoke.resolve(insets)
     }
 
     @Command

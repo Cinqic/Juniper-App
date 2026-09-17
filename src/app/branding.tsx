@@ -1,5 +1,7 @@
 import type { ImgHTMLAttributes } from 'react'
 import type { Assistant } from '../types'
+import { readableOn } from '../lib/appearance'
+import { parseHexColor } from '../lib/settings'
 
 export const JUNIPER_LOGO_PATH = '/juniper-logo.png'
 
@@ -37,10 +39,12 @@ export function AssistantAvatar({
     )
   }
 
+  // Imported assistants can carry any accent string; only a hex colour is applied.
+  const background = parseHexColor(assistant.accent) ?? '#5A5F66'
   return (
     <span
-      className={className}
-      style={{ background: assistant.accent }}
+      className={[className, 'assistant-avatar-glyph'].filter(Boolean).join(' ')}
+      style={{ background, color: readableOn(background) }}
       aria-hidden={decorative ? true : undefined}
     >
       {assistant.avatar}

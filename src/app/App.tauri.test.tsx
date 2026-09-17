@@ -81,6 +81,7 @@ describe('Juniper native startup', () => {
   afterEach(() => {
     act(() => root?.unmount())
     container?.remove()
+    document.body.innerHTML = ''
     Reflect.deleteProperty(window, '__TAURI_INTERNALS__')
   })
 
@@ -113,24 +114,18 @@ describe('Juniper native startup', () => {
   })
 
   it('never overwrites stored state with defaults when loading it failed', async () => {
-    const alerts: string[] = []
-    const originalAlert = window.alert
-    window.alert = (message?: unknown) => void alerts.push(String(message))
-    try {
-      installTauri((command) => {
-        if (command === 'load_app_data') throw new Error('DATABASE_ERROR: disk I/O error')
-        return null
-      })
+    installTauri((command) => {
+      if (command === 'load_app_data') throw new Error('DATABASE_ERROR: disk I/O error')
+      return null
+    })
 
-      await mountApp()
+    await mountApp()
 
-      expect(uncaught).toEqual([])
-      expect(alerts).toEqual(['DATABASE_ERROR: disk I/O error'])
-      expect(commands).not.toContain('save_app_data')
-      expect(container.textContent).toContain('stored data was left unchanged')
-    } finally {
-      window.alert = originalAlert
-    }
+    expect(uncaught).toEqual([])
+    const notice = document.querySelector('[role="alertdialog"]')
+    expect(notice?.textContent).toContain('DATABASE_ERROR: disk I/O error')
+    expect(commands).not.toContain('save_app_data')
+    expect(container.textContent).toContain('stored data was left unchanged')
   })
 
   it('shows a save failure instead of silently dropping changes', async () => {
@@ -158,5 +153,26 @@ describe('Juniper native startup', () => {
     expect(uncaught).toEqual([])
     expect(commands).toContain('frontend_ready')
     expect(commands.indexOf('frontend_ready')).toBeGreaterThan(commands.indexOf('load_app_data'))
+  })
+
+  it('applies Android system bar and keyboard insets reported by the native host', async () => {
+    installTauri((command) =>
+      command === 'window_insets' ? { top: 24, right: 0, bottom: 48, left: 0, keyboard: 0 } : null,
+    )
+
+    await mountApp()
+
+    const style = document.documentElement.style
+    expect(commands).toContain('window_insets')
+    expect(style.getPropertyValue('--native-inset-top')).toBe('24px')
+    expect(style.getPropertyValue('--native-inset-bottom')).toBe('48px')
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('juniper-window-insets', {
+          detail: { top: 24, right: 0, bottom: 48, left: 0, keyboard: 310 },
+        }),
+      )
+    })
+    expect(style.getPropertyValue('--native-keyboard')).toBe('310px')
   })
 })
