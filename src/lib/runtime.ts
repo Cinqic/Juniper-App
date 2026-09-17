@@ -22,6 +22,7 @@ import {
   type DeviceCapabilities,
   type ModelCatalog,
 } from './model-catalog'
+import { randomUuid } from './ids'
 import { normalizeAppData } from './storage'
 
 export const runningInTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -66,7 +67,7 @@ async function fakeStream(
   onEvent: (event: ChatStreamEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  const latest = request.messages.at(-1)?.content.toLowerCase() ?? ''
+  const latest = request.messages[request.messages.length - 1]?.content.toLowerCase() ?? ''
   let answer =
     'This is a development preview. Open the Juniper desktop or Android app and choose a local model from Models Market to generate a real answer.'
   if (latest.includes('who are you'))
@@ -138,7 +139,7 @@ export async function pullProviderModel(
   signal: AbortSignal,
 ): Promise<void> {
   if (!runningInTauri) throw new Error('Model downloads require the Tauri desktop runtime.')
-  const requestId = `pull-${crypto.randomUUID()}`
+  const requestId = `pull-${randomUuid()}`
   const topic = `juniper://model-pull/${requestId}`
   const unlisten = await listen<ModelPullProgress>(topic, (event) => onProgress(event.payload))
   const cancel = () => void cancelModelPull(requestId)
@@ -191,7 +192,7 @@ export async function downloadManagedModel(
   signal: AbortSignal,
 ): Promise<void> {
   if (!runningInTauri) throw new Error('Model downloads require the Juniper native runtime.')
-  const requestId = `managed-${crypto.randomUUID()}`
+  const requestId = `managed-${randomUuid()}`
   const topic = `juniper://model-download/${requestId}`
   const unlisten = await listen<ModelPullProgress>(topic, (event) => onProgress(event.payload))
   const cancel = () => void cancelManagedModel(requestId)
@@ -260,7 +261,7 @@ export async function importGguf(
   signal: AbortSignal,
 ): Promise<void> {
   if (!runningInTauri) throw new Error('GGUF import requires the Tauri desktop runtime.')
-  const requestId = `gguf-${crypto.randomUUID()}`
+  const requestId = `gguf-${randomUuid()}`
   const topic = `juniper://gguf-import/${requestId}`
   const unlisten = await listen<ModelPullProgress>(topic, (event) => onProgress(event.payload))
   const cancel = () => void cancelGgufImport(requestId)

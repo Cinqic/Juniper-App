@@ -1047,7 +1047,7 @@ export function DiagnosticsSettings({ data }: { data: AppData }) {
             models: `${data.models.length} profile(s)`,
           }).map(([key, value]) => (
             <div key={key}>
-              <dt>{key.replaceAll('_', ' ')}</dt>
+              <dt>{key.replace(/_/g, ' ')}</dt>
               <dd>{value}</dd>
             </div>
           ))}
@@ -1076,7 +1076,7 @@ export function DiagnosticsSettings({ data }: { data: AppData }) {
           <ol className="log-list" aria-label="Runtime events">
             {[...logs].reverse().map((entry, index) => (
               <li key={`${entry.timestamp}-${entry.event}-${index}`}>
-                <span>{entry.event.replaceAll('_', ' ')}</span>
+                <span>{entry.event.replace(/_/g, ' ')}</span>
                 <span className="mono">
                   {[entry.providerKind, entry.modelId, entry.code].filter(Boolean).join(' · ') ||
                     'ok'}

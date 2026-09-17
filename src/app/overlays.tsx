@@ -44,7 +44,7 @@ export function useBackDismiss(open: boolean, onDismiss: () => void) {
     overlayStack.push(id)
     pushHistory({ ...currentHistoryState(), juniperOverlay: id })
     const stop = onHistoryPop(() => {
-      if (overlayStack.at(-1) !== id) return
+      if (overlayStack[overlayStack.length - 1] !== id) return
       overlayStack.pop()
       dismiss.current()
     })

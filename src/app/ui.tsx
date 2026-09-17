@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { ExecutionLocation } from '../types'
+import { randomUuid } from '../lib/ids'
 import { Icon } from './icons'
 
 export function PageHeader({
@@ -219,7 +220,7 @@ export function download(name: string, content: string, type: string) {
 }
 
 export function uid(prefix: string): string {
-  return `${prefix}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`
+  return `${prefix}-${randomUuid()}`
 }
 
 export function now(): string {

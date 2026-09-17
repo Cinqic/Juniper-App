@@ -29,7 +29,7 @@ function inline(text: string): ReactNode[] {
 }
 
 export function Markdown({ content }: { content: string }) {
-  const blocks = content.replaceAll('\r\n', '\n').split('\n')
+  const blocks = content.replace(/\r\n/g, '\n').split('\n')
   const output: ReactNode[] = []
   let index = 0
   while (index < blocks.length) {

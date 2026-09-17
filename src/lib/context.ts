@@ -94,11 +94,18 @@ export function buildContext(
     .filter((tool) => tool.enabled)
     .map((tool) => `${tool.name}: ${tool.description}`)
   const current = currentUserMessage ?? ''
-  const currentIndex = currentUserMessage
-    ? [...messages].findLastIndex(
-        (message) => message.role === 'user' && messageText(message) === currentUserMessage,
-      )
-    : -1
+  // A reverse loop rather than findLastIndex, which Android System WebView
+  // builds before Chromium 97 do not implement.
+  let currentIndex = -1
+  if (currentUserMessage) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]!
+      if (message.role === 'user' && messageText(message) === currentUserMessage) {
+        currentIndex = index
+        break
+      }
+    }
+  }
   const candidates: ContextMessage[] = messages.flatMap((message, index) => {
     if (index === currentIndex || message.role === 'system') return []
     const content = messageText(message)

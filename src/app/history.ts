@@ -31,7 +31,7 @@ function install() {
 
 export function currentHistoryState(): Record<string, unknown> {
   if (typeof window === 'undefined') return {}
-  const queued = queuedPushes.at(-1)
+  const queued = queuedPushes[queuedPushes.length - 1]
   return queued ?? ((window.history.state ?? {}) as Record<string, unknown>)
 }
 

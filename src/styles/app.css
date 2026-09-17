@@ -67,6 +67,14 @@ a {
   outline-width: 3px;
 }
 
+/* Android System WebView before Chromium 86 has no :focus-visible. */
+@supports not selector(:focus-visible) {
+  :focus {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
+
 :root[data-motion='reduced'] *,
 :root[data-motion='reduced'] *::before,
 :root[data-motion='reduced'] *::after {
@@ -139,6 +147,30 @@ kbd {
 
 .icon {
   flex: none;
+}
+
+/* Shown by StartupErrorBoundary when the interface cannot render. */
+.startup-error {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: calc(var(--safe-top) + 2rem) calc(var(--safe-right) + 1.25rem)
+    calc(var(--safe-bottom) + 2rem) calc(var(--safe-left) + 1.25rem);
+}
+
+.startup-error h1 {
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+  line-height: 1.25;
+}
+
+.startup-error pre {
+  overflow: auto;
+  padding: 0.75rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  white-space: pre-wrap;
 }
 
 /* ------------------------------------------------------------------------ */
