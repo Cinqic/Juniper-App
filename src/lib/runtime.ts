@@ -69,7 +69,7 @@ async function fakeStream(
 ): Promise<void> {
   const latest = request.messages[request.messages.length - 1]?.content.toLowerCase() ?? ''
   let answer =
-    'This is a development preview. Open the Juniper desktop or Android app and choose a local model from Models Market to generate a real answer.'
+    'This is a development preview. Open the Juniper desktop or Android app and choose a local model in Models to generate a real answer.'
   if (latest.includes('who are you'))
     answer = `I’m Juniper — the assistant experience you configured, currently using ${request.model.displayName} underneath. The browser preview is deterministic and clearly marked as development-only.`
   else if (latest.includes('847291') && latest.includes('19347'))

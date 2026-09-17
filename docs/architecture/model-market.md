@@ -1,4 +1,7 @@
-# Models Market and managed model lifecycle
+# Models and the managed model lifecycle
+
+The screen was called Models Market through `0.3.0-rc.32`; it is now simply
+**Models** (ADR 0021).
 
 `config/models/catalog.json` is the single checked-in source for the initial
 model catalog. Each entry includes the model family, parameter count, use cases,

@@ -483,7 +483,7 @@ jobs:
             echo
             echo '## Runtime notes'
             echo
-            echo '- Models Market downloads verified GGUF weights on demand; the desktop bundle owns its loopback llama.cpp runtime and does not require Ollama.'
+            echo '- Models downloads verified GGUF weights on demand; the desktop bundle owns its loopback llama.cpp runtime and does not require Ollama.'
             echo '- Desktop credentials use the operating-system credential store; Android credentials use Android Keystore-backed AES-GCM storage.'
             echo '- Android loopback addresses refer to the phone itself; use an explicit LAN endpoint to reach a computer.'
             echo '- Android llama.cpp remains Beta because physical ARM64 inference qualification is not yet recorded.'
