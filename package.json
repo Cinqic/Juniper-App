@@ -1,6 +1,6 @@
 {
   "name": "juniper-app",
-  "version": "0.3.0-rc.32",
+  "version": "0.3.0-rc.33",
   "private": true,
   "type": "module",
   "description": "Juniper — your AI, your models, your machine.",

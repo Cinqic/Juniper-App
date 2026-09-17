@@ -9,7 +9,15 @@ requirements:
     status: PASS-BY-INSPECTION
   REQ-UI-001:
     statement: Responsive onboarding, chat, assistants, models, tools, settings, privacy, diagnostics
-    implementation: [src/app/App.tsx, src/app/pages.tsx, src/app/ui.tsx, src/styles/app.css]
+    implementation:
+      [
+        src/app/App.tsx,
+        src/app/ChatScreen.tsx,
+        src/app/ModelsScreen.tsx,
+        src/app/SettingsScreen.tsx,
+        src/app/ui.tsx,
+        src/styles/app.css,
+      ]
     tests: [src/app/App.test.tsx]
     phase: 1
     status: PASS-BROWSER-SMOKE
@@ -29,7 +37,11 @@ requirements:
   REQ-ASSIST-001:
     statement: Versioned portable .juniper assistant import/export
     implementation:
-      [src/lib/assistant.ts, schemas/assistant/juniper-assistant.v1.schema.json, src/app/pages.tsx]
+      [
+        src/lib/assistant.ts,
+        schemas/assistant/juniper-assistant.v1.schema.json,
+        src/app/AssistantsSettings.tsx,
+      ]
     tests: [src/lib/assistant.test.ts]
     phase: 2
     status: PASS-BY-STATIC-TESTS
@@ -76,7 +88,7 @@ requirements:
     status: IMPLEMENTED-NATIVE-TESTED
   REQ-OLLAMA-DISCOVERY:
     statement: Native Ollama health, model discovery, inspection, and refresh
-    implementation: [src-tauri/src/providers.rs, src/app/pages.tsx]
+    implementation: [src-tauri/src/providers.rs, src/app/external-models.ts]
     tests: [src-tauri/src/providers.rs]
     phase: 11
     status: IMPLEMENTED-NATIVE-TESTED
@@ -148,7 +160,7 @@ requirements:
     status: IMPLEMENTED-NATIVE-TESTED
   REQ-PRIVACY-ROUTE:
     statement: Privacy center reports the active assistant, model, provider, persistence, memory, network-tool status, and execution location truthfully
-    implementation: [src/app/App.tsx, src/app/pages.tsx, src/types/index.ts]
+    implementation: [src/app/App.tsx, src/app/SettingsSections.tsx, src/app/model-labels.ts]
     tests: [src/app/App.test.tsx]
     phase: 11
     status: IMPLEMENTED
@@ -172,7 +184,7 @@ requirements:
     status: PASS-FRONTEND-AND-NATIVE-TESTS
   REQ-DEVICE-RECOMMENDATION:
     statement: Device memory, storage, architecture, and pressure inform explainable model recommendations with safe storage guards
-    implementation: [src-tauri/src/device.rs, src/lib/model-catalog.ts, src/app/ModelsMarket.tsx]
+    implementation: [src-tauri/src/device.rs, src/lib/model-catalog.ts, src/app/ModelsScreen.tsx]
     tests: [src/lib/model-catalog.test.ts, src-tauri/src/device.rs]
     phase: 12
     status: PASS-FRONTEND-AND-NATIVE-TESTS
@@ -182,7 +194,7 @@ requirements:
       [
         src-tauri/src/managed_models.rs,
         src/lib/runtime.ts,
-        src/app/ModelsMarket.tsx,
+        src/app/ModelsScreen.tsx,
         docs/architecture/model-market.md,
       ]
     tests: [src/lib/model-catalog.test.ts, src-tauri/src/managed_models.rs]
@@ -218,7 +230,7 @@ requirements:
         src/lib/runtime-registry.ts,
         src-tauri/src/runtime_registry.rs,
         src-tauri/src/device.rs,
-        src/app/ModelsMarket.tsx,
+        src/app/ModelsScreen.tsx,
       ]
     tests: [src-tauri/src/runtime_registry.rs, src/lib/model-catalog.test.ts]
     phase: 13
@@ -244,7 +256,7 @@ requirements:
         src-tauri/src/commands.rs,
         src-tauri/src/storage.rs,
         src/lib/runtime.ts,
-        src/app/pages.tsx,
+        src/app/ConnectionsSettings.tsx,
         docs/security/device-link-threat-model.md,
       ]
     tests: [src-tauri/src/device_link.rs, src-tauri/src/storage.rs, src-tauri/src/providers.rs]
@@ -264,3 +276,45 @@ requirements:
       ]
     phase: 13
     status: IMPLEMENTED-EMULATOR-INSTRUMENTATION-VERIFIED
+  REQ-UI-IA:
+    statement: Chats, Models, and Settings are the only primary destinations; every rc.32 surface stays reachable from Settings or a contextual menu
+    implementation:
+      [
+        src/app/App.tsx,
+        src/app/SettingsScreen.tsx,
+        docs/adr/0021-chat-first-interface-and-appearance-tokens.md,
+        docs/product/interface.md,
+      ]
+    tests: [src/app/App.test.tsx]
+    phase: 14
+    status: PASS-FRONTEND-TESTS-AND-RENDERED-EVIDENCE
+  REQ-UI-CUSTOMIZATION:
+    statement: Theme, contrast, accent, bundled fonts, interface size, chat text, line spacing, density, width, sidebar, message style, timestamps, details, and motion are validated settings that change rendering through design tokens
+    implementation: [src/lib/settings.ts, src/lib/appearance.ts, src/styles/tokens.css]
+    tests: [src/lib/settings.test.ts, src/lib/appearance.test.ts, src/app/App.test.tsx]
+    phase: 14
+    status: PASS-FRONTEND-TESTS-WITH-NEGATIVE-CONTROLS
+  REQ-UI-CONTRAST:
+    statement: No curated or custom accent can produce text, focus, or on-accent colours below WCAG AA (7:1 for text in high contrast)
+    implementation: [src/lib/appearance.ts]
+    tests: [src/lib/appearance.test.ts]
+    phase: 14
+    status: PASS-FRONTEND-TESTS-WITH-NEGATIVE-CONTROLS
+  REQ-SETTINGS-MIGRATION:
+    statement: rc.32 stored settings, chats, assistants, and model references load unchanged; malformed or unknown settings fall back per field
+    implementation: [src/lib/settings.ts, src/lib/storage.ts]
+    tests: [src/lib/settings.test.ts]
+    phase: 14
+    status: PASS-FRONTEND-TESTS-WITH-NEGATIVE-CONTROLS
+  REQ-ANDROID-INSETS:
+    statement: Android reports system bar, cutout, and keyboard insets so edge-to-edge content clears the status bar, navigation bar, and keyboard
+    implementation:
+      [
+        src-tauri/plugins/juniper-local/android/src/main/java/com/cinqic/juniper/local_runtime/JuniperLocalRuntimePlugin.kt,
+        src-tauri/src/commands.rs,
+        src/app/App.tsx,
+        src/styles/tokens.css,
+      ]
+    tests: [src/app/App.tauri.test.tsx]
+    phase: 14
+    status: FRONTEND-TESTED-EMULATOR-EVIDENCE-REQUIRED

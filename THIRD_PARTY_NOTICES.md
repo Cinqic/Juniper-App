@@ -13,6 +13,25 @@ The principal direct dependencies are:
   hmac, and sha2 — licenses are recorded in each crate's published package
   metadata.
 
+## Bundled fonts
+
+Juniper ships three fonts inside the application bundle, installed from the
+pinned `@fontsource` packages in `pnpm-lock.yaml`. No font is fetched at run
+time. Each is licensed under the SIL Open Font License, Version 1.1
+(https://openfontlicense.org), whose full text is included in the package's
+`LICENSE` file:
+
+- Inter — Copyright 2016 The Inter Project Authors
+  (https://github.com/rsms/inter). Juniper's default interface font.
+- Atkinson Hyperlegible Next — Copyright 2020-2024 The Atkinson Hyperlegible
+  Next Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next).
+  Offered as the high-legibility font.
+- OpenDyslexic — Copyright (c) 2019-07-29, Abbie Gonzalez, with Reserved Font
+  Name OpenDyslexic. Offered as the dyslexia-oriented font.
+
+The fonts are redistributed unmodified; the OFL permits bundling them with
+software under any license.
+
 Release packaging should run a dependency license audit for the target bundle
 and include any generated notices required by the selected platform.
 

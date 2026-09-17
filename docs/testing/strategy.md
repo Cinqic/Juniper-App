@@ -23,6 +23,26 @@ import/export, context order and truncation, private-chat exclusion from both
 persistence and user export, attachment metadata privacy, model-fit estimates,
 markdown rendering, and browser-preview streaming.
 
+Interface tests (`src/app/App.test.tsx`) cover the three primary destinations,
+reachability of every rc.32 surface through Settings, per-chat assistant
+avatars and composer names, routing a chat through its own assistant's model,
+model switching without rewriting attribution, overflow actions, confirmed
+deletion, in-app rename, private-chat export restrictions, progressive
+disclosure of reasoning, tools, and usage, touch versus keyboard composer
+behaviour, the sidebar preference, the default assistant, per-assistant tool
+policy, and that density, width, font, text size, message style, contrast, and
+motion change the rendered document. `src/lib/settings.test.ts` loads a
+realistic rc.32 state fixture (`src/test/fixtures.ts`) and checks field-by-field
+migration and rejection of malformed values. `src/lib/appearance.test.ts`
+sweeps curated and generated accents through light, dark, and high contrast
+and asserts WCAG ratios for every text, focus, and fill token.
+
+Nine negative controls for this work reintroduce a defect (global avatars, a
+hard-coded composer name, unvalidated settings, an inert density token,
+unconfirmed deletion, uncorrected accent text, cross-assistant model routing,
+exportable private chats, and a missed motion migration); each makes the
+corresponding test fail. The log is recorded in the rc.33 release record.
+
 Native tests cover SQLite snapshot saves whose chats or models reference a
 removed provider or model, exit cleanup of the bundled `llama-server` child,
 the per-round bound on every host tool call, the safe calculator, unit conversion, host-authored
