@@ -11,6 +11,32 @@ export function textPart(message: ChatMessage): string {
     .join('')
 }
 
+/** Copies text, falling back to a selection copy where the Clipboard API is missing. */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // Fall through to the selection-based copy.
+  }
+  const area = document.createElement('textarea')
+  area.value = text
+  area.setAttribute('readonly', '')
+  area.style.position = 'fixed'
+  area.style.opacity = '0'
+  document.body.append(area)
+  area.select()
+  try {
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    area.remove()
+  }
+}
+
 function formatTime(value: string): string | null {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return null
@@ -78,12 +104,9 @@ export function MessageBubble({
   const waiting = !user && message.isStreaming && !content && !reasoning && !toolCalls.length
 
   async function copy() {
-    try {
-      await navigator.clipboard?.writeText(content)
+    if (await copyText(content)) {
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
-    } catch {
-      setCopied(false)
     }
   }
 

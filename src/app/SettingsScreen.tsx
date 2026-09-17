@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { AppData, SettingsSection } from '../types'
 import { AssistantsSettings } from './AssistantsSettings'
+import { historyDepth } from './history'
 import { ConnectionsSettings, ModelsRuntimeSettings } from './ConnectionsSettings'
 import { Icon } from './icons'
 import type { IconName } from './icons'
@@ -183,12 +184,15 @@ export function SettingsScreen({
   }
 
   const info = sectionInfo(active)
+  // Go back through history when possible, so the back arrow and Android back
+  // agree; replacing the entry would leave the previous screen on the stack twice.
   const back =
-    active === 'diagnostics'
-      ? () => openSection('advanced', { replace: true })
-      : twoPane
-        ? undefined
-        : () => openSection(null, { replace: true })
+    active === 'diagnostics' || !twoPane
+      ? () => {
+          if (historyDepth() > 0) window.history.back()
+          else openSection(active === 'diagnostics' ? 'advanced' : null, { replace: true })
+        }
+      : undefined
 
   return (
     <div className={`page settings-page ${twoPane ? 'two-pane' : ''}`}>

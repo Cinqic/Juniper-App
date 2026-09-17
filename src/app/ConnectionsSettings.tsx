@@ -381,7 +381,9 @@ export function ModelsRuntimeSettings({ data, update }: { data: AppData; update:
           className="inline-field"
           onSubmit={(event) => {
             event.preventDefault()
-            void external.pullModel(reference).then(() => setReference(''))
+            void external.pullModel(reference).then((pulled) => {
+              if (pulled) setReference('')
+            })
           }}
         >
           <label className="field">

@@ -92,6 +92,11 @@ export function popHistorySilently() {
   })
 }
 
+/** Entries Juniper pushed that are still on the history stack. */
+export function historyDepth(): number {
+  return depth
+}
+
 /** Reports how many Juniper history entries can be gone back through. */
 export function onHistoryDepth(listener: DepthListener): () => void {
   depthListeners.add(listener)

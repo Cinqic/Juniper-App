@@ -56,13 +56,27 @@ function isNavState(value: unknown): value is NavState {
   return PAGES.includes(candidate.page as Page)
 }
 
+// Viewport height with the keyboard closed, per width (orientation).
+let restingViewport = { width: 0, height: 0 }
+
+/**
+ * Where Android already shrinks the WebView for the keyboard, the reported
+ * keyboard inset would be applied twice; pad only by what is still covered.
+ */
+export function uncoveredKeyboardHeight(keyboard: number): number {
+  const { innerWidth: width, innerHeight: height } = window
+  if (keyboard <= 0 || width !== restingViewport.width) restingViewport = { width, height }
+  const shrink = Math.max(0, restingViewport.height - height)
+  return Math.max(0, keyboard - shrink)
+}
+
 function applyInsets(insets: WindowInsets) {
   const root = document.documentElement.style
   root.setProperty('--native-inset-top', `${Math.max(0, insets.top)}px`)
   root.setProperty('--native-inset-right', `${Math.max(0, insets.right)}px`)
   root.setProperty('--native-inset-bottom', `${Math.max(0, insets.bottom)}px`)
   root.setProperty('--native-inset-left', `${Math.max(0, insets.left)}px`)
-  root.setProperty('--native-keyboard', `${Math.max(0, insets.keyboard)}px`)
+  root.setProperty('--native-keyboard', `${uncoveredKeyboardHeight(insets.keyboard)}px`)
 }
 
 export default function App() {
@@ -261,9 +275,12 @@ function JuniperApp() {
   useEffect(() => {
     replaceHistory({ ...currentHistoryState(), juniperNav: { page: 'chats', section: null } })
     return onHistoryPop((state) => {
-      if (!isNavState(state.juniperNav)) return
-      navRef.current = state.juniperNav
-      setNav(state.juniperNav)
+      // An entry Juniper never tagged is the page's starting point: Chats.
+      const next = isNavState(state.juniperNav)
+        ? state.juniperNav
+        : { page: 'chats' as const, section: null }
+      navRef.current = next
+      setNav(next)
     })
   }, [])
 

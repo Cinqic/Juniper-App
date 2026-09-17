@@ -328,10 +328,13 @@ interface PromptOptions {
   maxLength?: number
 }
 
-type Pending =
+type Pending = { key: number } & (
   | { kind: 'confirm'; options: ConfirmOptions; resolve: (value: boolean) => void }
   | { kind: 'prompt'; options: PromptOptions; resolve: (value: string | null) => void }
   | { kind: 'notice'; options: { title: string; message: string }; resolve: () => void }
+)
+
+let nextDialogKey = 0
 
 interface Dialogs {
   confirm: (options: ConfirmOptions) => Promise<boolean>
@@ -355,15 +358,21 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const dialogs = useRef<Dialogs>({
     confirm: (options) =>
       new Promise((resolve) =>
-        setQueue((items) => [...items, { kind: 'confirm', options, resolve }]),
+        setQueue((items) => [
+          ...items,
+          { key: ++nextDialogKey, kind: 'confirm', options, resolve },
+        ]),
       ),
     prompt: (options) =>
       new Promise((resolve) =>
-        setQueue((items) => [...items, { kind: 'prompt', options, resolve }]),
+        setQueue((items) => [...items, { key: ++nextDialogKey, kind: 'prompt', options, resolve }]),
       ),
     notify: (message, title = 'Something went wrong') =>
       new Promise((resolve) =>
-        setQueue((items) => [...items, { kind: 'notice', options: { title, message }, resolve }]),
+        setQueue((items) => [
+          ...items,
+          { key: ++nextDialogKey, kind: 'notice', options: { title, message }, resolve },
+        ]),
       ),
   })
 
@@ -384,7 +393,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       {children}
       {current && (
         <Modal
-          key={queue.length}
+          key={current.key}
           open
           onClose={() => finish(false)}
           role={current.kind === 'prompt' ? 'dialog' : 'alertdialog'}

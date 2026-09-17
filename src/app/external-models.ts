@@ -134,13 +134,14 @@ export function useExternalModels(data: AppData, update: Update) {
     setRefreshing(false)
   }
 
-  async function pullModel(reference: string) {
+  /** Resolves true only when the pull completed. */
+  async function pullModel(reference: string): Promise<boolean> {
     const trimmed = reference.trim()
     const provider = data.providers.find((item) => item.kind === 'ollama' && item.enabled)
-    if (!trimmed) return
+    if (!trimmed) return false
     if (!provider) {
       setPullStatus('Add and enable an Ollama connection to download this model.')
-      return
+      return false
     }
     pullController.current?.abort()
     const controller = new AbortController()
@@ -160,6 +161,7 @@ export function useExternalModels(data: AppData, update: Update) {
       )
       setPullStatus('Complete')
       await refreshModels()
+      return true
     } catch (error) {
       setPullStatus(
         controller.signal.aborted
@@ -168,6 +170,7 @@ export function useExternalModels(data: AppData, update: Update) {
             ? error.message
             : 'Download failed',
       )
+      return false
     } finally {
       pullController.current = null
       setPulling(false)

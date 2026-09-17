@@ -578,6 +578,59 @@ describe('Juniper application shell', () => {
     expect(chatTitle('[Attached: notes.md]')).toBe('Attached files')
   })
 
+  it('returns from a phone Settings section without duplicating history', async () => {
+    setMedia((query) => query.includes('max-width'))
+    await mount(settingsFor())
+    await click(buttonByText(container.querySelector('.bottom-nav')!, 'Settings'))
+    await click(
+      Array.from(container.querySelectorAll('.settings-nav-item')).find((item) =>
+        item.textContent?.startsWith('Appearance'),
+      )!,
+    )
+    expect(container.querySelector('h1')?.textContent).toBe('Appearance')
+    await click(buttonByText(container, 'Back to Settings'))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60))
+    })
+    expect(container.querySelector('h1')?.textContent).toBe('Settings')
+    await act(async () => {
+      window.history.back()
+      await new Promise((resolve) => setTimeout(resolve, 60))
+    })
+    expect(container.querySelector('.chat-screen')).not.toBeNull()
+  })
+
+  it('keeps the model name when an Ollama pull fails', async () => {
+    await mount(settingsFor())
+    await openSettingsSection('Models & runtime')
+    const input = container.querySelector<HTMLInputElement>('.inline-field input')!
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+      setter.call(input, 'qwen3:06b')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await click(buttonByText(container, 'Download'))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(container.textContent).toContain('Model downloads require')
+    expect(input.value).toBe('qwen3:06b')
+  })
+
+  it('does not claim a copy succeeded when nothing was copied', async () => {
+    await mount(settingsFor())
+    await click(container.querySelector('.history-item')!)
+    const copy = byLabel<HTMLButtonElement>(
+      container.querySelector('.message.assistant')!,
+      'Copy response',
+    )
+    await click(copy)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(container.querySelector('[aria-label="Copied"]')).toBeNull()
+  })
+
   it('labels model fit as an estimate and stays unknown without runtime data', () => {
     const provider = initialAppData().providers[0]!
     const model = modelProfileFromDiscovery(provider, 'fit-model', { fileSizeBytes: 1024 })

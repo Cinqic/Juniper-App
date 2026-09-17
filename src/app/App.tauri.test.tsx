@@ -208,4 +208,17 @@ describe('Juniper native startup', () => {
     expect(commands).toContain('plugin:app|remove_listener')
     expect(container.querySelector('.chat-screen')).not.toBeNull()
   })
+
+  it('does not double the keyboard offset when the WebView already shrank', async () => {
+    const { uncoveredKeyboardHeight } = await import('./App')
+    const setHeight = (height: number) =>
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: height })
+    setHeight(732)
+    expect(uncoveredKeyboardHeight(0)).toBe(0)
+    expect(uncoveredKeyboardHeight(343)).toBe(343)
+    setHeight(389)
+    expect(uncoveredKeyboardHeight(343)).toBe(0)
+    setHeight(732)
+    expect(uncoveredKeyboardHeight(0)).toBe(0)
+  })
 })
