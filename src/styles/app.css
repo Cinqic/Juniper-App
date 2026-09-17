@@ -1210,7 +1210,7 @@ input[aria-invalid='true'] {
   max-width: 32rem;
   color: var(--muted);
   font-size: 0.9375rem;
-  text-align: left;
+  text-align: center;
 }
 
 .welcome-note .icon {

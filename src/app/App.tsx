@@ -4,10 +4,12 @@ import { initialAppData, modelProfileFromDiscovery } from '../lib/defaults'
 import {
   checkProviderConnection,
   getWindowInsets,
+  listenForBackButton,
   listProviderModels,
   loadNativeAppData,
   reportFrontendReady,
   runningInTauri,
+  runningOnAndroid,
   saveNativeAppData,
   type WindowInsets,
 } from '../lib/runtime'
@@ -15,7 +17,13 @@ import { loadAppData, saveAppData } from '../lib/storage'
 import type { AppData, Page, SettingsSection } from '../types'
 import { JuniperMark } from './branding'
 import { ChatHistory, ChatScreen, type NewChatState } from './ChatScreen'
-import { currentHistoryState, onHistoryPop, pushHistory, replaceHistory } from './history'
+import {
+  currentHistoryState,
+  onHistoryDepth,
+  onHistoryPop,
+  pushHistory,
+  replaceHistory,
+} from './history'
 import { Icon } from './icons'
 import type { IconName } from './icons'
 import { assistantFor, defaultAssistantFor, resolveRoute } from './model-labels'
@@ -77,7 +85,7 @@ function JuniperApp() {
   const [newChat, setNewChat] = useState<NewChatState>(freshNewChat)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [composing, setComposing] = useState(false)
-  const [onboardingOpen, setOnboardingOpen] = useState(!data.settings.onboardingComplete)
+  const [replayingOnboarding, setReplayingOnboarding] = useState(false)
   // Set when stored state could not be read. Saving the in-memory defaults would
   // then overwrite the user's database, so persistence stays off for the session.
   const [loadFailed, setLoadFailed] = useState(false)
@@ -140,8 +148,7 @@ function JuniperApp() {
     setSelectedChatId((current) =>
       current && data.conversations.some((chat) => chat.id === current) ? current : null,
     )
-    setOnboardingOpen((open) => open || !data.settings.onboardingComplete)
-  }, [data.conversations, data.settings.onboardingComplete, hydrated])
+  }, [data.conversations, hydrated])
 
   useEffect(() => {
     if (!runningInTauri || !hydrated) return
@@ -212,6 +219,32 @@ function JuniperApp() {
       })
       .catch(() => undefined)
     return () => window.removeEventListener('juniper-window-insets', onInsets)
+  }, [])
+
+  // Android back closes an overlay or returns to the previous screen while
+  // Juniper has history to go back through. With nothing left, the listener is
+  // removed so Android's own back behaviour leaves the app as usual.
+  useEffect(() => {
+    if (!runningOnAndroid) return
+    let unregister: (() => Promise<void>) | null = null
+    let chain = Promise.resolve()
+    const stop = onHistoryDepth((depth) => {
+      chain = chain
+        .then(async () => {
+          if (depth > 0 && !unregister) {
+            unregister = await listenForBackButton(() => window.history.back())
+          } else if (depth === 0 && unregister) {
+            const release = unregister
+            unregister = null
+            await release()
+          }
+        })
+        .catch(() => undefined)
+    })
+    return () => {
+      stop()
+      void chain.then(() => unregister?.()).catch(() => undefined)
+    }
   }, [])
 
   // In-app navigation is recorded in history so Android back and mouse back work.
@@ -310,7 +343,7 @@ function JuniperApp() {
       ...current,
       settings: { ...current.settings, onboardingComplete: true },
     }))
-    setOnboardingOpen(false)
+    setReplayingOnboarding(false)
   }
 
   const page = nav.page
@@ -428,7 +461,7 @@ function JuniperApp() {
               twoPane={!singlePaneSettings}
               route={route}
               currentConversation={selectedConversation}
-              onReplayWelcome={() => setOnboardingOpen(true)}
+              onReplayWelcome={() => setReplayingOnboarding(true)}
             />
           )}
         </main>
@@ -467,7 +500,11 @@ function JuniperApp() {
           <ChatHistory data={data} selectedChatId={selectedChatId} onSelect={openChat} />
         </Modal>
       )}
-      <Onboarding open={onboardingOpen} onDone={completeOnboarding} />
+      {/* Wait for stored state so a returning user never sees onboarding flash open. */}
+      <Onboarding
+        open={hydrated && (!data.settings.onboardingComplete || replayingOnboarding)}
+        onDone={completeOnboarding}
+      />
     </>
   )
 }

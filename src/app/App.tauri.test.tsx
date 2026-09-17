@@ -10,6 +10,12 @@ import type { AppData, ProviderProfile } from '../types'
 // provider made startup model discovery throw a ReferenceError inside a React
 // state update, which unmounted the whole application.
 
+// Present Juniper as the Android app so Android-only behaviour is exercised.
+Object.defineProperty(window.navigator, 'userAgent', {
+  configurable: true,
+  value: 'Mozilla/5.0 (Linux; Android 11; sdk_gphone_x86_64) AppleWebKit/537.36 Juniper-test',
+})
+
 type InvokeHandler = (command: string, args?: Record<string, unknown>) => unknown
 type Invocation = { command: string; args?: Record<string, unknown> }
 
@@ -78,10 +84,12 @@ describe('Juniper native startup', () => {
     localStorage.clear()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     act(() => root?.unmount())
     container?.remove()
     document.body.innerHTML = ''
+    // Unmounting closes overlays, which pops their history entries asynchronously.
+    await new Promise((resolve) => setTimeout(resolve, 50))
     Reflect.deleteProperty(window, '__TAURI_INTERNALS__')
   })
 
@@ -174,5 +182,30 @@ describe('Juniper native startup', () => {
       )
     })
     expect(style.getPropertyValue('--native-keyboard')).toBe('310px')
+  })
+
+  it('takes over Android back only while Juniper has somewhere to go back to', async () => {
+    installTauri((command) => (command === 'load_app_data' ? storedStateWithOllama() : null))
+    await mountApp()
+    const registrations = () =>
+      invocations.filter((call) => call.command === 'plugin:app|register_listener')
+    expect(registrations()).toHaveLength(0)
+
+    const settings = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Settings',
+    )!
+    await act(async () => {
+      settings.click()
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+    expect(registrations()).toHaveLength(1)
+    expect(registrations()[0]!.args?.event).toBe('back-button')
+
+    await act(async () => {
+      window.history.back()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(commands).toContain('plugin:app|remove_listener')
+    expect(container.querySelector('.chat-screen')).not.toBeNull()
   })
 })

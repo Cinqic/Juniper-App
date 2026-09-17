@@ -826,9 +826,7 @@ export function ChatScreen({
     lastAssistantIndex >= 0 &&
     messages.slice(0, lastAssistantIndex).some((message) => message.role === 'user')
 
-  const modelLabel = modelUnavailable
-    ? 'Model unavailable'
-    : (model?.displayName ?? 'Choose a model')
+  const modelLabel = modelUnavailable ? 'Model unavailable' : (model?.displayName ?? 'Choose model')
   const statusText = modelUnavailable
     ? 'This chat’s model is unavailable. Choose another model to continue.'
     : !model

@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { addPluginListener, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type {
   AppData,
@@ -415,4 +415,17 @@ export interface WindowInsets {
 export async function getWindowInsets(): Promise<WindowInsets | null> {
   if (!runningInTauri) return null
   return invoke<WindowInsets | null>('window_insets')
+}
+
+export const runningOnAndroid =
+  runningInTauri && typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
+
+/**
+ * Receives Android back presses instead of Tauri's default handling. While a
+ * listener is registered Android does not leave the app on back, so callers
+ * register only while there is somewhere in Juniper to go back to.
+ */
+export async function listenForBackButton(handler: () => void): Promise<() => Promise<void>> {
+  const listener = await addPluginListener('app', 'back-button', handler)
+  return () => listener.unregister()
 }

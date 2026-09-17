@@ -192,7 +192,7 @@ export function ConnectionsSettings({ data, update }: { data: AppData; update: U
                   required
                 />
                 <small>
-                  Prompts would go to: <LocationBadge location={location} />
+                  <span>Prompts would go to:</span> <LocationBadge location={location} />
                 </small>
               </label>
               <label className="field wide">
