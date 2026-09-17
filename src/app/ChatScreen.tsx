@@ -35,6 +35,19 @@ type Update = (change: (current: AppData) => AppData) => void
 
 const MAX_ATTACHMENT_BYTES = 1024 * 1024
 
+/** A readable title from the first message, cut at a word boundary. */
+export function chatTitle(content: string): string {
+  const text = content
+    .replace(/\[Attached: [^\]]+\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!text) return content.trim() ? 'Attached files' : 'New conversation'
+  if (text.length <= 48) return text
+  const cut = text.slice(0, 48)
+  const space = cut.lastIndexOf(' ')
+  return `${(space > 24 ? cut.slice(0, space) : cut).replace(/[\s,.;:!?-]+$/, '')}…`
+}
+
 function errorCodeFromMessage(message: string): string | undefined {
   return message.match(/^[A-Z][A-Z0-9_]+:/)?.[0].slice(0, -1)
 }
@@ -277,6 +290,7 @@ function ModelPicker({
             type="radio"
             name="conversation-model"
             checked={selectedModelId === null}
+            data-autofocus={selectedModelId === null ? true : undefined}
             onChange={() => onSelect(null)}
           />
           <span className="model-option-text">
@@ -306,6 +320,7 @@ function ModelPicker({
               type="radio"
               name="conversation-model"
               checked={selectedModelId === model.id}
+              data-autofocus={selectedModelId === model.id ? true : undefined}
               onChange={() => onSelect(model.id)}
             />
             <span className="model-option-text">
@@ -444,7 +459,7 @@ export function ChatScreen({
       providerId: provider.id,
       isStreaming: true,
     }
-    const title = content.replace(/\s+/g, ' ').trim().slice(0, 48) || 'New conversation'
+    const title = chatTitle(content)
     if (!chatId) {
       chatId = uid('chat')
       conversationId.current = chatId

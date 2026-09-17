@@ -61,28 +61,43 @@ export function Section({
   )
 }
 
-/** A labelled setting. `control` receives the id the label points at. */
+/**
+ * A labelled setting. `control` receives ids to wire up: form controls use
+ * `id` (the row renders a `<label for>`); groups such as segmented controls set
+ * `group` and use `labelledBy`, because a label cannot point at a group.
+ */
 export function Row({
   label,
   description,
   control,
   stacked = false,
+  group = false,
 }: {
   label: string
   description?: ReactNode
-  control: (ids: { id: string; describedBy?: string }) => ReactNode
+  control: (ids: { id: string; labelledBy: string; describedBy?: string }) => ReactNode
   stacked?: boolean
+  group?: boolean
 }) {
   const id = useId()
+  const labelId = useId()
   const descriptionId = useId()
   return (
     <div className={`setting-row ${stacked ? 'stacked' : ''}`}>
       <div className="setting-text">
-        <label htmlFor={id}>{label}</label>
+        {group ? (
+          <span className="label" id={labelId}>
+            {label}
+          </span>
+        ) : (
+          <label htmlFor={id} id={labelId}>
+            {label}
+          </label>
+        )}
         {description && <small id={descriptionId}>{description}</small>}
       </div>
       <div className="setting-control">
-        {control({ id, describedBy: description ? descriptionId : undefined })}
+        {control({ id, labelledBy: labelId, describedBy: description ? descriptionId : undefined })}
       </div>
     </div>
   )
@@ -134,6 +149,8 @@ export function Segmented<T extends string>({
   describedBy?: string
 }) {
   const name = useId()
+  // The accessible name stays on the group itself so tests and assistive
+  // technology can find it whether or not a visible row label exists.
   return (
     <div className="segmented" role="radiogroup" aria-label={label} aria-describedby={describedBy}>
       {options.map((option) => (

@@ -194,9 +194,11 @@ export function AppearanceSettings({ data, update }: { data: AppData; update: Up
       <Section title="Theme">
         <Row
           label="Color mode"
-          control={() => (
+          group
+          control={({ describedBy }) => (
             <Segmented<AppSettings['theme']>
               label="Color mode"
+              describedBy={describedBy}
               value={settings.theme}
               onChange={(value) => set('theme', value)}
               options={[
@@ -322,9 +324,11 @@ export function AppearanceSettings({ data, update }: { data: AppData; update: Up
         />
         <Row
           label="Chat text size"
-          control={() => (
+          group
+          control={({ describedBy }) => (
             <Segmented<AppSettings['chatTextSize']>
               label="Chat text size"
+              describedBy={describedBy}
               value={settings.chatTextSize}
               onChange={(value) => set('chatTextSize', value)}
               options={[
@@ -338,9 +342,11 @@ export function AppearanceSettings({ data, update }: { data: AppData; update: Up
         />
         <Row
           label="Line spacing"
-          control={() => (
+          group
+          control={({ describedBy }) => (
             <Segmented<AppSettings['lineSpacing']>
               label="Line spacing"
+              describedBy={describedBy}
               value={settings.lineSpacing}
               onChange={(value) => set('lineSpacing', value)}
               options={[
@@ -358,9 +364,11 @@ export function AppearanceSettings({ data, update }: { data: AppData; update: Up
         <Row
           label="Density"
           description="Spacing and control size throughout Juniper."
-          control={() => (
+          group
+          control={({ describedBy }) => (
             <Segmented<AppSettings['density']>
               label="Density"
+              describedBy={describedBy}
               value={settings.density}
               onChange={(value) => set('density', value)}
               options={[
@@ -374,9 +382,11 @@ export function AppearanceSettings({ data, update }: { data: AppData; update: Up
         />
         <Row
           label="Conversation width"
-          control={() => (
+          group
+          control={({ describedBy }) => (
             <Segmented<AppSettings['conversationWidth']>
               label="Conversation width"
+              describedBy={describedBy}
               value={settings.conversationWidth}
               onChange={(value) => set('conversationWidth', value)}
               options={[
@@ -391,9 +401,11 @@ export function AppearanceSettings({ data, update }: { data: AppData; update: Up
         <Row
           label="Sidebar"
           description="Desktop only. Auto collapses the sidebar in narrower windows."
-          control={() => (
+          group
+          control={({ describedBy }) => (
             <Segmented<AppSettings['sidebar']>
               label="Sidebar"
+              describedBy={describedBy}
               value={settings.sidebar}
               onChange={(value) => set('sidebar', value)}
               options={[
@@ -408,9 +420,11 @@ export function AppearanceSettings({ data, update }: { data: AppData; update: Up
         <Row
           label="Message style"
           description="Bubbles put your messages in a bubble; Minimal keeps both sides flat."
-          control={() => (
+          group
+          control={({ describedBy }) => (
             <Segmented<AppSettings['messageStyle']>
               label="Message style"
+              describedBy={describedBy}
               value={settings.messageStyle}
               onChange={(value) => set('messageStyle', value)}
               options={[
@@ -483,9 +497,11 @@ export function AccessibilitySettings({
         <Row
           label="Contrast"
           description="High contrast strengthens text, borders, and focus rings. System follows your device."
-          control={() => (
+          group
+          control={({ describedBy }) => (
             <Segmented<AppSettings['contrast']>
               label="Contrast"
+              describedBy={describedBy}
               value={settings.contrast}
               onChange={(value) => set('contrast', value)}
               options={[
@@ -527,9 +543,11 @@ export function AccessibilitySettings({
         <Row
           label="Animations"
           description="System follows your device’s reduced-motion setting."
-          control={() => (
+          group
+          control={({ describedBy }) => (
             <Segmented<AppSettings['motion']>
               label="Animations"
+              describedBy={describedBy}
               value={settings.motion}
               onChange={(value) => set('motion', value)}
               options={[

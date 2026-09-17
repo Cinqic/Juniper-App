@@ -5,6 +5,7 @@ import { initialAppData, modelProfileFromDiscovery } from '../lib/defaults'
 import { rc32StoredState } from '../test/fixtures'
 import type { AppData } from '../types'
 import App from './App'
+import { chatTitle } from './ChatScreen'
 import { modelFitLabel } from './model-labels'
 
 const STORAGE_KEY = 'juniper.app-data.v1'
@@ -542,6 +543,39 @@ describe('Juniper application shell', () => {
     expect(created.messages[1]!.parts[0]!.text).toContain('I’m Juniper')
     expect(container.querySelector('.chat-title h1')?.textContent).toBe('who are you?')
     expect(container.querySelector('[role="status"]')?.textContent).toContain('Juniper replied.')
+  })
+
+  it('starts a fresh chat when the open chat is cleared from Privacy', async () => {
+    await mount(settingsFor())
+    await click(container.querySelector('.history-item')!)
+    await openSettingsSection('Privacy & data')
+    await click(buttonByText(container, 'Clear chats'))
+    await click(buttonByText(document.querySelector('[role="alertdialog"]')!, 'Clear chats'))
+    expect(stored().conversations).toHaveLength(0)
+
+    await click(buttonByText(document.querySelector('.sidebar-nav')!, 'Chats'))
+    expect(container.querySelector('.chat-title h1')?.textContent).not.toBe('Plan the garden beds')
+    const textarea = container.querySelector('textarea')!
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+      setter.call(textarea, 'who are you?')
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await click(byLabel(container, 'Send message'))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+    })
+    expect(stored().conversations.map((chat) => chat.title)).toEqual(['who are you?'])
+    expect(stored().conversations[0]!.messages).toHaveLength(2)
+  })
+
+  it('titles new chats at a word boundary without attachment markers', () => {
+    expect(chatTitle('who are you?')).toBe('who are you?')
+    expect(chatTitle('Explain in two short paragraphs why raised garden beds drain well.')).toBe(
+      'Explain in two short paragraphs why raised…',
+    )
+    expect(chatTitle('Summarise this\n\n[Attached: notes.md]')).toBe('Summarise this')
+    expect(chatTitle('[Attached: notes.md]')).toBe('Attached files')
   })
 
   it('labels model fit as an estimate and stays unknown without runtime data', () => {

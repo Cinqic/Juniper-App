@@ -145,12 +145,15 @@ function JuniperApp() {
     void reportFrontendReady().catch(() => undefined)
   }, [hydrated])
 
+  // If the open chat disappears while its view is mounted, remount the view:
+  // otherwise it would keep the old id and stream the next message into nothing.
   useEffect(() => {
-    if (!hydrated) return
-    setSelectedChatId((current) =>
-      current && data.conversations.some((chat) => chat.id === current) ? current : null,
-    )
-  }, [data.conversations, hydrated])
+    if (!hydrated || !selectedChatId) return
+    if (data.conversations.some((chat) => chat.id === selectedChatId)) return
+    setSelectedChatId(null)
+    setNewChat(freshNewChat())
+    setViewKey(uid('view'))
+  }, [data.conversations, hydrated, selectedChatId])
 
   useEffect(() => {
     if (!runningInTauri || !hydrated) return
