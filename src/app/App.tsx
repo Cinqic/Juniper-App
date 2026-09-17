@@ -85,6 +85,8 @@ function JuniperApp() {
   const [newChat, setNewChat] = useState<NewChatState>(freshNewChat)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [composing, setComposing] = useState(false)
+  // Android reports the keyboard height; elsewhere composer focus stands in for it.
+  const [keyboardOpen, setKeyboardOpen] = useState(false)
   const [replayingOnboarding, setReplayingOnboarding] = useState(false)
   // Set when stored state could not be read. Saving the in-memory defaults would
   // then overwrite the user's database, so persistence stays off for the session.
@@ -210,12 +212,17 @@ function JuniperApp() {
     if (!runningInTauri) return
     const onInsets = (event: Event) => {
       const detail = (event as CustomEvent<WindowInsets>).detail
-      if (detail && typeof detail.top === 'number') applyInsets(detail)
+      if (detail && typeof detail.top === 'number') {
+        applyInsets(detail)
+        setKeyboardOpen(detail.keyboard > 0)
+      }
     }
     window.addEventListener('juniper-window-insets', onInsets)
     void getWindowInsets()
       .then((insets) => {
-        if (insets) applyInsets(insets)
+        if (!insets) return
+        applyInsets(insets)
+        setKeyboardOpen(insets.keyboard > 0)
       })
       .catch(() => undefined)
     return () => window.removeEventListener('juniper-window-insets', onInsets)
@@ -354,7 +361,9 @@ function JuniperApp() {
         className="app-frame"
         data-layout={mobile ? 'mobile' : 'desktop'}
         data-sidebar={sidebarCollapsed ? 'collapsed' : 'expanded'}
-        data-composing={mobile && composing ? 'true' : undefined}
+        data-composing={
+          mobile && (runningOnAndroid ? keyboardOpen : composing) ? 'true' : undefined
+        }
       >
         <button className="skip-link" onClick={() => mainRef.current?.focus()}>
           Skip to content
