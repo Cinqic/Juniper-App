@@ -1,4 +1,7 @@
-# Models Market and managed model lifecycle
+# Models and the managed model lifecycle
+
+The screen was called Models Market through `0.3.0-rc.32`; it is now simply
+**Models** (ADR 0021).
 
 `config/models/catalog.json` is the single checked-in source for the initial
 model catalog. Each entry includes the model family, parameter count, use cases,
@@ -37,7 +40,11 @@ The final and partial paths are derived from trusted artifact IDs and reject
 unsafe names. Symlinks are not accepted for verification or resume. Remove
 cleans both final and partial files for the selected trusted catalog entry.
 
-The UI exposes Recommended, All models, and Installed views, shows the device
-profile and fit reason, supports pause/resume, and keeps advanced source,
-license, context, filename, and digest details visible without making them the
-default reading path.
+The Models screen exposes Recommended, All, and Installed views and a one-line
+device summary. Each card leads with the name, purpose, size, fit, and one
+primary action (download, pause, resume, use as default, or remove). Warnings
+that decide whether a model can run — insufficient storage, no compatible
+engine on this device, a non-stable engine maturity, or a partial or corrupt
+file — stay on the card. The fit reason, parameters, format and quantization,
+engines, qualification, context, license, source, revision, file, and SHA-256
+sit behind a Details disclosure.

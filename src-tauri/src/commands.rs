@@ -123,6 +123,32 @@ pub fn frontend_ready() {
     crate::startup::frontend_ready();
 }
 
+/// System bar, display cutout, and keyboard insets for the webview, in CSS
+/// pixels. Android draws Juniper edge to edge, and older Android System
+/// WebView builds do not expose these insets to CSS. Other platforms have no
+/// such insets and return `None`.
+#[tauri::command]
+pub async fn window_insets(app: AppHandle) -> Option<Value> {
+    #[cfg(target_os = "android")]
+    {
+        tokio::task::spawn_blocking(move || {
+            juniper_local_runtime::invoke::<_, Value, _>(
+                &app,
+                "windowInsets",
+                serde_json::json!({}),
+            )
+        })
+        .await
+        .ok()
+        .and_then(Result::ok)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        None
+    }
+}
+
 /// Bounded summary of an error that unmounted the interface, so a blank
 /// window leaves a local diagnostic instead of nothing. Never sent anywhere.
 #[tauri::command]
@@ -192,7 +218,7 @@ pub fn system_info() -> HashMap<String, String> {
     let mut result = HashMap::from([
         (
             String::from("application"),
-            String::from("Juniper 0.3.0-rc.32"),
+            String::from("Juniper 0.3.0-rc.33"),
         ),
         (String::from("os"), std::env::consts::OS.to_owned()),
         (

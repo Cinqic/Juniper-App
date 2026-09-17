@@ -1,5 +1,6 @@
 import type { AppData, AttachmentRecord } from '../types'
 import { initialAppData, JUNIPER_ACCENT } from './defaults'
+import { normalizeSettings } from './settings'
 
 const STORAGE_KEY = 'juniper.app-data.v1'
 
@@ -49,9 +50,6 @@ export function normalizeAppData(value: unknown): AppData {
   const defaults = initialAppData()
   if (!value || typeof value !== 'object') return defaults
   const parsed = value as Partial<AppData>
-  const parsedSettings: Partial<AppData['settings']> =
-    parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {}
-  const savedAccent = typeof parsedSettings.accent === 'string' ? parsedSettings.accent : undefined
   const providers = (Array.isArray(parsed.providers) ? parsed.providers : defaults.providers).map(
     (provider) => ({
       ...provider,
@@ -145,11 +143,7 @@ export function normalizeAppData(value: unknown): AppData {
     memories: Array.isArray(parsed.memories) ? parsed.memories : defaults.memories,
     attachments,
     permissions: Array.isArray(parsed.permissions) ? parsed.permissions : defaults.permissions,
-    settings: {
-      ...defaults.settings,
-      ...parsedSettings,
-      ...(savedAccent === '#6f8f72' ? { accent: JUNIPER_ACCENT } : {}),
-    },
+    settings: normalizeSettings(parsed.settings),
     deviceLink,
   }
 }

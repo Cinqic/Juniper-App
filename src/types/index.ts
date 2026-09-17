@@ -3,14 +3,22 @@ export type ExecutionLocation = 'on-device' | 'local-network' | 'remote' | 'unkn
 export type SupportLevel = 'supported' | 'unsupported' | 'unknown'
 export type PermissionDecision = 'allow-once' | 'allow-chat' | 'allow-assistant' | 'deny'
 export type PermissionGrantScope = 'chat' | 'assistant'
-export type Page =
-  | 'chats'
+/** Primary destinations. Everything else is nested under Settings. */
+export type Page = 'chats' | 'models' | 'settings'
+
+export type SettingsSection =
+  | 'general'
+  | 'appearance'
+  | 'accessibility'
   | 'assistants'
-  | 'models'
+  | 'models-runtime'
+  | 'connections'
   | 'tools'
-  | 'settings'
+  | 'memory'
   | 'privacy'
+  | 'advanced'
   | 'diagnostics'
+  | 'about'
 
 export type ProviderKind =
   | 'juniper-local'
@@ -303,12 +311,38 @@ export interface ToolDefinition {
   schema: Record<string, unknown>
 }
 
+export type ThemePreference = 'system' | 'light' | 'dark'
+export type ContrastPreference = 'system' | 'standard' | 'high'
+export type AccentMode = 'color' | 'neutral'
+export type FontChoice = 'juniper' | 'system' | 'legible' | 'dyslexic'
+export type ChatTextSize = 'small' | 'medium' | 'large'
+export type LineSpacing = 'compact' | 'standard' | 'relaxed'
+export type Density = 'compact' | 'comfortable' | 'spacious'
+export type ConversationWidth = 'narrow' | 'balanced' | 'wide'
+export type SidebarPreference = 'expanded' | 'collapsed' | 'auto'
+export type MessageStyle = 'bubbles' | 'minimal'
+export type MotionPreference = 'system' | 'reduced' | 'full'
+
 export interface AppSettings {
-  theme: 'system' | 'light' | 'dark'
+  theme: ThemePreference
+  contrast: ContrastPreference
+  accentMode: AccentMode
+  /** Validated `#rrggbb`. Text and focus variants are derived for contrast. */
   accent: string
+  fontFamily: FontChoice
+  /** Interface zoom, 0.85–1.3 in 0.05 steps. */
   fontScale: number
-  density: 'comfortable' | 'compact'
-  reducedMotion: boolean
+  chatTextSize: ChatTextSize
+  lineSpacing: LineSpacing
+  density: Density
+  conversationWidth: ConversationWidth
+  sidebar: SidebarPreference
+  messageStyle: MessageStyle
+  showTimestamps: boolean
+  showMessageDetails: boolean
+  motion: MotionPreference
+  /** Assistant used for new chats; falls back to the first assistant. */
+  defaultAssistantId: string | null
   developerMode: boolean
   telemetry: 'off'
   onboardingComplete: boolean

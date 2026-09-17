@@ -1,22 +1,90 @@
-import type { Assistant, ChatMessage } from '../types'
+import { useId, useState } from 'react'
+import type { Assistant, ChatMessage, MessagePart } from '../types'
 import { Markdown } from '../lib/markdown'
 import { AssistantAvatar } from './branding'
+import { Icon } from './icons'
 
-function textPart(message: ChatMessage): string {
+export function textPart(message: ChatMessage): string {
   return message.parts
     .filter((part) => part.type === 'text')
     .map((part) => part.text ?? '')
     .join('')
 }
 
+/** Copies text, falling back to a selection copy where the Clipboard API is missing. */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // Fall through to the selection-based copy.
+  }
+  const area = document.createElement('textarea')
+  area.value = text
+  area.setAttribute('readonly', '')
+  area.style.position = 'fixed'
+  area.style.opacity = '0'
+  document.body.append(area)
+  area.select()
+  try {
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    area.remove()
+  }
+}
+
+function formatTime(value: string): string | null {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
+
+function toolLabel(part: MessagePart): string {
+  return part.name ?? 'tool'
+}
+
+function statusLabel(status: MessagePart['status']): string {
+  switch (status) {
+    case 'success':
+      return 'Completed'
+    case 'denied':
+      return 'Denied'
+    case 'cancelled':
+      return 'Cancelled'
+    case 'unsupported':
+      return 'Unsupported'
+    case 'error':
+      return 'Failed'
+    default:
+      return 'Waiting for Juniper'
+  }
+}
+
 export function MessageBubble({
   message,
   assistant,
   developerMode = false,
+  showTimestamp = false,
+  showDetails = false,
+  modelName,
+  statusText,
+  onRetry,
 }: {
   message: ChatMessage
   assistant: Assistant
   developerMode?: boolean
+  showTimestamp?: boolean
+  showDetails?: boolean
+  /** Human name for the model that produced this reply, when still known. */
+  modelName?: string
+  /** Progress text while waiting for the first streamed output. */
+  statusText?: string
+  /** Present only for the reply that can be regenerated. */
+  onRetry?: () => void
 }) {
   const user = message.role === 'user'
   const content = textPart(message)
@@ -27,68 +95,175 @@ export function MessageBubble({
   const toolCalls = message.parts.filter((part) => part.type === 'tool-call')
   const toolResults = message.parts.filter((part) => part.type === 'tool-result')
   const errorPart = message.parts.find((part) => part.type === 'error')
-  const error = errorPart?.text
+  const [copied, setCopied] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const detailsId = useId()
+  const time = formatTime(message.createdAt)
+  const detailsVisible = showDetails || detailsOpen
+  const author = user ? 'You' : assistant.name
+  const waiting = !user && message.isStreaming && !content && !reasoning && !toolCalls.length
+
+  async function copy() {
+    if (await copyText(content)) {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    }
+  }
+
+  const details = [
+    modelName ? `Model: ${modelName}` : null,
+    message.modelId && message.modelId !== modelName ? `ID: ${message.modelId}` : null,
+    message.usage?.totalTokens ? `${message.usage.totalTokens.toLocaleString()} tokens` : null,
+    message.usage?.outputTokens && !message.usage.totalTokens
+      ? `${message.usage.outputTokens.toLocaleString()} output tokens`
+      : null,
+    message.usage?.durationMs ? `${(message.usage.durationMs / 1000).toFixed(1)} s` : null,
+    time,
+  ].filter(Boolean) as string[]
+
   return (
-    <article className={`message-row ${user ? 'user' : 'assistant'}`}>
-      <div className="message-label">
-        {user ? (
-          'You'
-        ) : (
-          <>
-            <AssistantAvatar assistant={assistant} className="mini-avatar" />
-            {assistant.name}
-          </>
-        )}
-      </div>
-      <div className={`${error ? 'message-card message-error' : 'message-card'}`}>
+    <article
+      className={`message ${user ? 'user' : 'assistant'} ${errorPart ? 'failed' : ''}`}
+      aria-label={`${author}${time && showTimestamp ? ` at ${time}` : ''}`}
+    >
+      {!user && (
+        <div className="message-author">
+          <AssistantAvatar assistant={assistant} className="message-avatar" />
+          <span>{assistant.name}</span>
+          {showTimestamp && time && <time dateTime={message.createdAt}>{time}</time>}
+        </div>
+      )}
+      {user && showTimestamp && time && (
+        <div className="message-author user-time">
+          <time dateTime={message.createdAt}>{time}</time>
+        </div>
+      )}
+      <div className="message-body">
         {reasoning && (
-          <details className="reasoning-details">
-            <summary>Reasoning</summary>
-            <p>{reasoning}</p>
+          <details className="disclosure">
+            <summary>
+              <Icon name="chevronRight" size={16} />
+              {message.isStreaming && !content ? 'Thinking…' : 'Thought process'}
+            </summary>
+            <p className="reasoning-text">{reasoning}</p>
           </details>
         )}
-        {toolCalls.map((part) => (
-          <div className="tool-call-card" key={part.id}>
-            <span>Tool requested</span>
-            <strong>{part.name}</strong>
-            <small>
-              {part.status === 'unavailable' ? 'Waiting for host runtime' : part.status}
-            </small>
+        {toolCalls.length > 0 && (
+          <details className="disclosure">
+            <summary>
+              <Icon name="chevronRight" size={16} />
+              {toolCalls.length === 1
+                ? `Used ${toolLabel(toolCalls[0]!)}`
+                : `Used ${toolCalls.length} tools`}
+            </summary>
+            <ul className="tool-activity">
+              {toolCalls.map((call) => {
+                const result = toolResults.find(
+                  (item) => item.metadata?.callId === call.metadata?.callId,
+                )
+                const status = result?.status ?? call.status
+                return (
+                  <li key={call.id}>
+                    <div className="tool-activity-head">
+                      <strong>{toolLabel(call)}</strong>
+                      <span className={`tool-status ${status === 'success' ? 'ok' : 'not-ok'}`}>
+                        {result ? statusLabel(result.status) : statusLabel(call.status)}
+                      </span>
+                    </div>
+                    {result?.text && (
+                      <pre className="tool-result" aria-label="Result from Juniper">
+                        {result.text}
+                      </pre>
+                    )}
+                  </li>
+                )
+              })}
+              {toolResults
+                .filter(
+                  (result) =>
+                    !toolCalls.some((call) => call.metadata?.callId === result.metadata?.callId),
+                )
+                .map((result) => (
+                  <li key={result.id}>
+                    <div className="tool-activity-head">
+                      <strong>{toolLabel(result)}</strong>
+                      <span
+                        className={`tool-status ${result.status === 'success' ? 'ok' : 'not-ok'}`}
+                      >
+                        {statusLabel(result.status)}
+                      </span>
+                    </div>
+                    {result.text && <pre className="tool-result">{result.text}</pre>}
+                  </li>
+                ))}
+            </ul>
+          </details>
+        )}
+        {errorPart ? (
+          <div className="message-error" role="alert">
+            <Icon name="info" size={18} />
+            <div>
+              <p>{errorPart.text || 'The response failed.'}</p>
+              {developerMode && errorPart.metadata?.errorCode && (
+                <small>Internal code: {String(errorPart.metadata.errorCode)}</small>
+              )}
+            </div>
           </div>
-        ))}
-        {toolResults.map((part) => (
-          <div className="tool-result-card" key={part.id}>
-            <span>Host result</span>
-            <strong>{part.name}</strong>
-            <small className={part.status === 'success' ? 'result-success' : 'result-error'}>
-              {part.status}
-            </small>
-            <p>{part.text}</p>
-          </div>
-        ))}
-        {error ? (
-          <>
-            <p>{error}</p>
-            {developerMode && errorPart?.metadata?.errorCode && (
-              <small>Internal code: {errorPart.metadata.errorCode}</small>
-            )}
-          </>
         ) : content ? (
           <Markdown content={content} />
+        ) : waiting ? (
+          <span className="typing">
+            <span className="typing-dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="typing-label">{statusText ?? `${assistant.name} is responding…`}</span>
+          </span>
+        ) : !user && !message.isStreaming && !reasoning && !toolCalls.length ? (
+          <p className="message-empty">No text was returned.</p>
         ) : null}
       </div>
-      {!user && (
-        <div className="message-tools">
-          {message.modelId && <small>Model: {message.modelId}</small>}
-          {message.usage && (
-            <small>
-              {message.usage.totalTokens
-                ? `${message.usage.totalTokens.toLocaleString()} tokens`
-                : 'Usage reported'}
-            </small>
+      {!message.isStreaming && (
+        <div className="message-actions">
+          {content && (
+            <button
+              className="icon-button small"
+              onClick={() => void copy()}
+              aria-label={copied ? 'Copied' : `Copy ${user ? 'your message' : 'response'}`}
+              title={copied ? 'Copied' : 'Copy'}
+            >
+              <Icon name={copied ? 'check' : 'copy'} size={17} />
+            </button>
           )}
-          <button onClick={() => void navigator.clipboard?.writeText(content)}>Copy</button>
+          {onRetry && (
+            <button
+              className="icon-button small"
+              onClick={onRetry}
+              aria-label="Regenerate response"
+              title="Regenerate"
+            >
+              <Icon name="retry" size={17} />
+            </button>
+          )}
+          {!user && details.length > 0 && !showDetails && (
+            <button
+              className="icon-button small"
+              onClick={() => setDetailsOpen((value) => !value)}
+              aria-expanded={detailsOpen}
+              aria-controls={detailsId}
+              aria-label="Response details"
+              title="Details"
+            >
+              <Icon name="info" size={17} />
+            </button>
+          )}
         </div>
+      )}
+      {!user && detailsVisible && details.length > 0 && (
+        <p className="message-details" id={detailsId}>
+          {details.join(' · ')}
+        </p>
       )}
     </article>
   )

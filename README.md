@@ -2,18 +2,18 @@
 
 Juniper is a local-first AI desktop and Android app for people who want a thoughtful assistant, visible model controls, and a clear boundary around private data. It works with compatible text-generation models through supported runtimes; no model family is required and no model is bundled.
 
-**Version `0.3.0-rc.32` — release candidate.** The guarded release workflow builds and packages the Juniper-owned local runtime for desktop targets only after the validation and immutable-tag gates pass. See [Download](#download).
+**Version `0.3.0-rc.33` — release candidate.** The guarded release workflow builds and packages the Juniper-owned local runtime for desktop targets only after the validation and immutable-tag gates pass. See [Download](#download).
 
 ## Download
 
-The current prerelease is [Juniper 0.3.0-rc.32](https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.32). Installers are published on the [GitHub releases page](https://github.com/Cinqic/Juniper-App/releases) only after an authorized release workflow completes. You do not need Git, a build toolchain, or a GitHub account to use a published desktop artifact.
+The latest published prerelease is [Juniper 0.3.0-rc.32](https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.32). Installers are published on the [GitHub releases page](https://github.com/Cinqic/Juniper-App/releases) only after an authorized release workflow completes. You do not need Git, a build toolchain, or a GitHub account to use a published desktop artifact.
 
-| Platform          | File                                        | Notes                                                 |
-| ----------------- | ------------------------------------------- | ----------------------------------------------------- |
-| Windows 10/11 x64 | `Juniper-0.3.0-rc.32-windows-x86_64.msi`    | Unsigned; the bundled local runtime is Juniper-owned. |
-| Linux x86_64      | `Juniper-0.3.0-rc.32-linux-x86_64.AppImage` | `chmod +x`, then run. Needs FUSE (`fuse3`).           |
-| Linux x86_64      | `Juniper-0.3.0-rc.32-linux-x86_64.deb`      | `sudo apt install ./Juniper-...deb`.                  |
-| Android 7.0+      | `Juniper-0.3.0-rc.32-android-universal.apk` | Signed; Android llama.cpp remains Beta.               |
+| Platform          | File                                        | Notes                                                                |
+| ----------------- | ------------------------------------------- | -------------------------------------------------------------------- |
+| Windows 10/11 x64 | `Juniper-0.3.0-rc.33-windows-x86_64.msi`    | Candidate artifact name; the bundled local runtime is Juniper-owned. |
+| Linux x86_64      | `Juniper-0.3.0-rc.33-linux-x86_64.AppImage` | Candidate artifact name; `chmod +x`, then run. Needs FUSE (`fuse3`). |
+| Linux x86_64      | `Juniper-0.3.0-rc.33-linux-x86_64.deb`      | Candidate artifact name; `sudo apt install ./Juniper-...deb`.        |
+| Android 7.0+      | `Juniper-0.3.0-rc.33-android-universal.apk` | Candidate artifact name; Android llama.cpp remains Beta.             |
 
 Verify a download against `SHA256SUMS.txt` from the same release:
 
@@ -23,11 +23,13 @@ sha256sum --check --ignore-missing SHA256SUMS.txt
 
 `SIGNING-android.txt` records the APK signing certificate and `SIGNING-windows.txt` records the MSI Authenticode status. Every executable artifact also carries a [GitHub artifact attestation](https://github.com/Cinqic/Juniper-App/attestations) linking it to the workflow run and commit that produced it.
 
-Juniper’s desktop bundle owns its loopback `llama-server` process, so ordinary local use does not require Ollama, a daemon, or an account. On first run, open Models Market, review the device-aware recommendations, and download a verified model. Model weights are separate user-owned files and are never bundled in the installer.
+Juniper’s desktop bundle owns its loopback `llama-server` process, so ordinary local use does not require Ollama, a daemon, or an account. On first run, open **Models**, review the device-aware recommendations, and download a verified model. Model weights are separate user-owned files and are never bundled in the installer.
 
 ## What Juniper does
 
-- A chat workspace with onboarding, streaming, markdown, export, private chats, and mobile layouts.
+- A chat-first interface: Chats, Models, and Settings are the only primary destinations. Conversation actions live in an overflow menu, the model is a compact picker that shows where each model runs, and reasoning, tool activity, and usage are one tap away instead of always on screen. See [docs/product/interface.md](docs/product/interface.md).
+- A chat workspace with onboarding, streaming, markdown, export, private chats, and phone layouts with a history drawer and Android back-gesture support.
+- Validated appearance settings: System, Light, or Dark; standard or high contrast; curated, neutral, or custom accent colours with computed WCAG-safe text shades; bundled Inter, Atkinson Hyperlegible Next, and OpenDyslexic fonts; interface size, chat text size, line spacing, density, conversation width, sidebar behaviour, message style, timestamps, and motion.
 - Assistant profiles with personality controls, model selection, tool policy, memory policy, import, and export.
 - A first-class Juniper local provider with device detection, model recommendations, verified resumable downloads, atomic installation, pause/resume, and removal.
 - A generic runtime registry with explicit maturity and qualification state for llama.cpp, LiteRT-LM, ExecuTorch, MLC LLM, and ONNX Runtime GenAI. Optional runtimes are not presented as installed without a compatible artifact.
@@ -45,7 +47,8 @@ These are deliberate exclusions in this release, not oversights:
 
 - **No Ollama dependency.** Ollama remains an optional external provider and legacy import path; it is not probed or used as a fallback by the Juniper local provider.
 - **Desktop runtime provenance.** The release workflow builds the pinned `llama.cpp` server from source and places it in the Tauri resource slot. A source checkout needs CMake and uses `scripts/build-llama-runtime.sh` before a local bundle can run the native provider.
-- **No MCP client.** The Settings entry is present and explicitly disabled.
+- **No MCP client.** Settings › Advanced lists it as unavailable.
+- **No arbitrary themes.** Appearance is limited to validated settings; Juniper never loads user CSS, scripts, or remote fonts.
 - **Android provider secrets use Android Keystore.** Juniper refuses to fall back to plaintext or SQLite storage; the instrumentation test exercises encrypt, decrypt, and deletion on an Android target.
 - **Android native local inference is Beta.** The candidate packages an in-process llama.cpp bridge for the managed, SHA-256-verified GGUF path on `arm64-v8a` (with `x86_64` reserved for emulator tests). A physical ARM64 run is still needed to promote that runtime beyond Beta, but it is not a global desktop release gate.
 - **No iOS or macOS build.**
@@ -53,7 +56,7 @@ These are deliberate exclusions in this release, not oversights:
 
 ## Privacy and security
 
-- Telemetry is off and there is no analytics or crash-reporting code. Juniper makes network requests only to provider endpoints you configure and, when you choose to download a model in Models Market, to the pinned HTTPS Hugging Face URLs listed in `config/models/catalog.json`. At startup it contacts only an enabled Ollama provider you added, to refresh its model list.
+- Telemetry is off and there is no analytics or crash-reporting code. Juniper makes network requests only to provider endpoints you configure and, when you choose to download a model in Models, to the pinned HTTPS Hugging Face URLs listed in `config/models/catalog.json`. At startup it contacts only an enabled Ollama provider you added, to refresh its model list.
 - Juniper labels every route as ON DEVICE, LOCAL NETWORK, REMOTE, or UNKNOWN, and never treats UNKNOWN as safe.
 - Desktop provider credentials are stored in the OS keychain; Android provider credentials use Android Keystore. Both are referenced only by an opaque identifier. Secrets are never written to the SQLite state and are stripped from exports.
 - Device Link is a protocol/policy preview only in this candidate. No listener, usable pairing flow, discovery, peer connection, remote-control path, or Juniper Network provider is enabled.
@@ -108,9 +111,11 @@ Suites whose capability gate the model does not meet are reported NOT-APPLICABLE
 ## Known limitations
 
 - The Windows MSI may be unsigned, so Windows SmartScreen can show an unrecognized-publisher warning.
-- `0.3.0-rc.32` is a prerelease candidate and is not promoted to final `0.3.0`.
+- `0.3.0-rc.33` is a prerelease candidate and is not promoted to final `0.3.0`.
 - Android native local inference is Beta: use a supported ARM64 phone for real offline inference; x86_64 emulator evidence is diagnostic when hardware acceleration is unavailable. The missing physical run limits maturity, not core desktop release gating.
 - Linux launch is tested on Ubuntu 22.04 and 24.04 under X11 (Xvfb) for the normal AppImage, the extract-and-run fallback, and the installed DEB. Native Wayland sessions are not verified; the AppImage forces GTK's X11 backend. If Juniper does not start, run it from a terminal and see [docs/release/linux-troubleshooting.md](docs/release/linux-troubleshooting.md).
+- `0.3.0-rc.33` reorganises navigation; [docs/product/interface.md](docs/product/interface.md) maps every rc.32 screen to its new place. Stored rc.32 settings migrate automatically.
+- The interface layout was reviewed on Linux (X11) and an Android x86_64 emulator; Windows is covered by the release install-and-launch smoke rather than a manual visual review, and no physical Android phone review is part of this candidate.
 - `0.3.0-rc.31` shipped the default Tauri Android launcher icon and showed a blank Linux window when an enabled Ollama provider had installed models; both are fixed in `0.3.0-rc.32`.
 - Android loopback addresses refer to the phone itself. Reaching a computer on your network needs an explicit LAN endpoint.
 - Browser-preview attachments are development-only; the real attachment path is the desktop native picker.

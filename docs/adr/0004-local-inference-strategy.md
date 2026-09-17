@@ -11,7 +11,7 @@ runtime binaries are committed to the repository.
 
 ## Consequences
 
-Users can open Models Market, choose a device-aware recommendation, and
+Users can open Models, choose a device-aware recommendation, and
 download a catalogued GGUF model without installing a separate daemon. An
 advanced user can still connect Ollama, an OpenAI-compatible endpoint, or a
 llama.cpp server. The model manager is explicit, hash-verified, resumable,

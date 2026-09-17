@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { addPluginListener, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type {
   AppData,
@@ -22,6 +22,7 @@ import {
   type DeviceCapabilities,
   type ModelCatalog,
 } from './model-catalog'
+import { randomUuid } from './ids'
 import { normalizeAppData } from './storage'
 
 export const runningInTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -66,9 +67,9 @@ async function fakeStream(
   onEvent: (event: ChatStreamEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  const latest = request.messages.at(-1)?.content.toLowerCase() ?? ''
+  const latest = request.messages[request.messages.length - 1]?.content.toLowerCase() ?? ''
   let answer =
-    'This is a development preview. Open the Juniper desktop or Android app and choose a local model from Models Market to generate a real answer.'
+    'This is a development preview. Open the Juniper desktop or Android app and choose a local model in Models to generate a real answer.'
   if (latest.includes('who are you'))
     answer = `I’m Juniper — the assistant experience you configured, currently using ${request.model.displayName} underneath. The browser preview is deterministic and clearly marked as development-only.`
   else if (latest.includes('847291') && latest.includes('19347'))
@@ -138,7 +139,7 @@ export async function pullProviderModel(
   signal: AbortSignal,
 ): Promise<void> {
   if (!runningInTauri) throw new Error('Model downloads require the Tauri desktop runtime.')
-  const requestId = `pull-${crypto.randomUUID()}`
+  const requestId = `pull-${randomUuid()}`
   const topic = `juniper://model-pull/${requestId}`
   const unlisten = await listen<ModelPullProgress>(topic, (event) => onProgress(event.payload))
   const cancel = () => void cancelModelPull(requestId)
@@ -191,7 +192,7 @@ export async function downloadManagedModel(
   signal: AbortSignal,
 ): Promise<void> {
   if (!runningInTauri) throw new Error('Model downloads require the Juniper native runtime.')
-  const requestId = `managed-${crypto.randomUUID()}`
+  const requestId = `managed-${randomUuid()}`
   const topic = `juniper://model-download/${requestId}`
   const unlisten = await listen<ModelPullProgress>(topic, (event) => onProgress(event.payload))
   const cancel = () => void cancelManagedModel(requestId)
@@ -260,7 +261,7 @@ export async function importGguf(
   signal: AbortSignal,
 ): Promise<void> {
   if (!runningInTauri) throw new Error('GGUF import requires the Tauri desktop runtime.')
-  const requestId = `gguf-${crypto.randomUUID()}`
+  const requestId = `gguf-${randomUuid()}`
   const topic = `juniper://gguf-import/${requestId}`
   const unlisten = await listen<ModelPullProgress>(topic, (event) => onProgress(event.payload))
   const cancel = () => void cancelGgufImport(requestId)
@@ -330,7 +331,7 @@ export async function deleteProviderCredential(reference: string): Promise<void>
 export async function getDiagnostics(): Promise<Record<string, string>> {
   if (runningInTauri) return invoke<Record<string, string>>('system_info')
   return {
-    application: 'Juniper 0.3.0-rc.32',
+    application: 'Juniper 0.3.0-rc.33',
     runtime: browserPreviewEnabled
       ? 'Browser preview (development only)'
       : 'Native runtime unavailable',
@@ -400,4 +401,31 @@ export function modelFromInspection(
     lastInspectedAt: new Date().toISOString(),
     rawCapabilities: inspection.rawCapabilities ?? inspection.capabilities,
   }
+}
+
+/** System bar and keyboard insets in CSS pixels. Only Android reports them. */
+export interface WindowInsets {
+  top: number
+  right: number
+  bottom: number
+  left: number
+  keyboard: number
+}
+
+export async function getWindowInsets(): Promise<WindowInsets | null> {
+  if (!runningInTauri) return null
+  return invoke<WindowInsets | null>('window_insets')
+}
+
+export const runningOnAndroid =
+  runningInTauri && typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
+
+/**
+ * Receives Android back presses instead of Tauri's default handling. While a
+ * listener is registered Android does not leave the app on back, so callers
+ * register only while there is somewhere in Juniper to go back to.
+ */
+export async function listenForBackButton(handler: () => void): Promise<() => Promise<void>> {
+  const listener = await addPluginListener('app', 'back-button', handler)
+  return () => listener.unregister()
 }

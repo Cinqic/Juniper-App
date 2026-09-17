@@ -1,8 +1,8 @@
 format: juniper-release-contract-v2
-version: 0.3.0-rc.32
+version: 0.3.0-rc.33
 status: release-candidate
 release:
-  tag: v0.3.0-rc.32
+  tag: v0.3.0-rc.33
   commit: resolved-from-tag
   url: derived-at-release
   prerelease: true
@@ -50,11 +50,11 @@ device_link:
     - resolved-address-private-network-enforcement
     - native-authorization-and-end-to-end-transport-tests
 expected_published_artifacts:
-  - Juniper-0.3.0-rc.32-linux-x86_64.deb
-  - Juniper-0.3.0-rc.32-linux-x86_64.AppImage
-  - Juniper-0.3.0-rc.32-windows-x86_64.msi
-  - Juniper-0.3.0-rc.32-android-universal.apk
-  - Juniper-0.3.0-rc.32-android-native-symbols.zip
+  - Juniper-0.3.0-rc.33-linux-x86_64.deb
+  - Juniper-0.3.0-rc.33-linux-x86_64.AppImage
+  - Juniper-0.3.0-rc.33-windows-x86_64.msi
+  - Juniper-0.3.0-rc.33-android-universal.apk
+  - Juniper-0.3.0-rc.33-android-native-symbols.zip
   - SHA256SUMS.txt
   - SIGNING-android.txt
   - SIGNING-windows.txt

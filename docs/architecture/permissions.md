@@ -16,7 +16,7 @@ User-data and filesystem tools pause at a native permission dialog. The user
 can allow the current call once, grant access for the chat or assistant, or
 deny it. Chat-scoped grants are removed with private chats and are never
 persisted for private conversations; assistant-scoped grants can be revoked
-from the Tools page.
+from Settings › Tools & permissions.
 
 An assistant template, attachment, model output, MCP result, or provider
 metadata cannot change this policy. A future shell/sidecar runtime must add a
