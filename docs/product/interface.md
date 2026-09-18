@@ -147,5 +147,6 @@ assistants, models, providers, memories, and permissions are unchanged.
   covered by the release workflow's install-and-launch smoke, not by manual
   visual review.
 - Android System WebView versions older than Chromium 111 do not support
-  `color-mix()`, so a few hover backgrounds are not drawn; every control still
-  works and shows focus.
+  `color-mix()`. Sidebar and chat-history rows fall back to a plain hover
+  background there; the primary button keeps its accent fill without the hover
+  tint. Every control works and shows focus.
