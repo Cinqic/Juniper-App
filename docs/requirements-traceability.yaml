@@ -317,4 +317,4 @@ requirements:
       ]
     tests: [src/app/App.tauri.test.tsx]
     phase: 14
-    status: FRONTEND-TESTED-EMULATOR-EVIDENCE-REQUIRED
+    status: PASS-FRONTEND-TESTS-AND-EMULATOR-EVIDENCE
