@@ -159,7 +159,7 @@ requirements:
     phase: 11
     status: IMPLEMENTED-NATIVE-TESTED
   REQ-PRIVACY-ROUTE:
-    statement: Privacy center reports the active assistant, model, provider, persistence, memory, network-tool status, and execution location truthfully
+    statement: Settings › Privacy & data reports the active assistant, model, provider, persistence, memory, network-tool status, and execution location truthfully
     implementation: [src/app/App.tsx, src/app/SettingsSections.tsx, src/app/model-labels.ts]
     tests: [src/app/App.test.tsx]
     phase: 11
