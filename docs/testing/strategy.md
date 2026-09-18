@@ -59,6 +59,14 @@ Two native tests are `#[ignore]`d because they require a live Ollama service
 and an owner-selected installed model. They are not counted as passes when
 skipped.
 
+`scripts/test-release-publication-guard.sh` runs the release workflow's
+publication completeness step verbatim against a stub `gh`. It proves that a
+complete publication passes, that a partial publication is repaired by
+re-uploading only the missing assets, and that a publication whose uploads never
+take effect fails. 0.3.0-rc.33 was published without three assets because the
+publication action failed part way through its uploads while the release stayed
+public, so a failed job alone is not treated as sufficient protection.
+
 ## Real-model qualification
 
 Qualification runs against a real installed model, not a fixture:

@@ -508,3 +508,36 @@ jobs:
             release-artifacts/RELEASE-PROVENANCE.json
             release-artifacts/LICENSE
             release-artifacts/THIRD_PARTY_NOTICES.md
+      # A publication step can create the release and then fail part way
+      # through its uploads: 0.3.0-rc.33 was published without its MSI, its DEB,
+      # and RELEASE-PROVENANCE.json after the action reported
+      # "Error creating asset temp dir". The job failed, but the release stayed
+      # public and incomplete. Re-upload whatever is missing from the same
+      # verified bundle, then fail if the published release still does not carry
+      # every artifact.
+      - name: Require every verified artifact to be published
+        env:
+          TAG: ${{ needs.contract.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          expected=$(find release-artifacts -maxdepth 1 -type f -printf '%f\n' | sort)
+          test -n "$expected"
+          for attempt in 1 2 3; do
+            published=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+              --jq '.assets[].name' | sort)
+            missing=$(comm -23 <(printf '%s\n' "$expected") <(printf '%s\n' "$published"))
+            if test -z "$missing"; then
+              echo "All $(printf '%s\n' "$expected" | wc -l) verified artifacts are published."
+              exit 0
+            fi
+            echo "Attempt $attempt: missing from the release:" >&2
+            printf '%s\n' "$missing" >&2
+            test "$attempt" -lt 3 || break
+            # Upload only what is absent; an existing asset is never replaced.
+            printf '%s\n' "$missing" \
+              | sed 's|^|release-artifacts/|' \
+              | xargs -r gh release upload "$TAG" --repo "$GITHUB_REPOSITORY"
+          done
+          echo "The published release is incomplete." >&2
+          exit 1
