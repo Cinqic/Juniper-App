@@ -6,14 +6,14 @@ Juniper is a local-first AI desktop and Android app for people who want a though
 
 ## Download
 
-The latest published prerelease is [Juniper 0.3.0-rc.32](https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.32). Installers are published on the [GitHub releases page](https://github.com/Cinqic/Juniper-App/releases) only after an authorized release workflow completes. You do not need Git, a build toolchain, or a GitHub account to use a published desktop artifact.
+The current prerelease is [Juniper 0.3.0-rc.33](https://github.com/Cinqic/Juniper-App/releases/tag/v0.3.0-rc.33). Installers are published on the [GitHub releases page](https://github.com/Cinqic/Juniper-App/releases) only after an authorized release workflow completes. You do not need Git, a build toolchain, or a GitHub account to use a published desktop artifact.
 
-| Platform          | File                                        | Notes                                                                |
-| ----------------- | ------------------------------------------- | -------------------------------------------------------------------- |
-| Windows 10/11 x64 | `Juniper-0.3.0-rc.33-windows-x86_64.msi`    | Candidate artifact name; the bundled local runtime is Juniper-owned. |
-| Linux x86_64      | `Juniper-0.3.0-rc.33-linux-x86_64.AppImage` | Candidate artifact name; `chmod +x`, then run. Needs FUSE (`fuse3`). |
-| Linux x86_64      | `Juniper-0.3.0-rc.33-linux-x86_64.deb`      | Candidate artifact name; `sudo apt install ./Juniper-...deb`.        |
-| Android 7.0+      | `Juniper-0.3.0-rc.33-android-universal.apk` | Candidate artifact name; Android llama.cpp remains Beta.             |
+| Platform          | File                                        | Notes                                                 |
+| ----------------- | ------------------------------------------- | ----------------------------------------------------- |
+| Windows 10/11 x64 | `Juniper-0.3.0-rc.33-windows-x86_64.msi`    | Unsigned; the bundled local runtime is Juniper-owned. |
+| Linux x86_64      | `Juniper-0.3.0-rc.33-linux-x86_64.AppImage` | `chmod +x`, then run. Needs FUSE (`fuse3`).           |
+| Linux x86_64      | `Juniper-0.3.0-rc.33-linux-x86_64.deb`      | `sudo apt install ./Juniper-...deb`.                  |
+| Android 7.0+      | `Juniper-0.3.0-rc.33-android-universal.apk` | Signed; Android llama.cpp remains Beta.               |
 
 Verify a download against `SHA256SUMS.txt` from the same release:
 
@@ -111,7 +111,7 @@ Suites whose capability gate the model does not meet are reported NOT-APPLICABLE
 ## Known limitations
 
 - The Windows MSI may be unsigned, so Windows SmartScreen can show an unrecognized-publisher warning.
-- `0.3.0-rc.33` is a prerelease candidate and is not promoted to final `0.3.0`.
+- `0.3.0-rc.33` is a prerelease candidate and is not promoted to final `0.3.0`. Its publication record, including a publication step that failed after creating the release and how the three missing assets were completed from the same workflow run, is in [docs/release/rc33-publication.md](docs/release/rc33-publication.md).
 - Android native local inference is Beta: use a supported ARM64 phone for real offline inference; x86_64 emulator evidence is diagnostic when hardware acceleration is unavailable. The missing physical run limits maturity, not core desktop release gating.
 - Linux launch is tested on Ubuntu 22.04 and 24.04 under X11 (Xvfb) for the normal AppImage, the extract-and-run fallback, and the installed DEB. Native Wayland sessions are not verified; the AppImage forces GTK's X11 backend. If Juniper does not start, run it from a terminal and see [docs/release/linux-troubleshooting.md](docs/release/linux-troubleshooting.md).
 - `0.3.0-rc.33` reorganises navigation; [docs/product/interface.md](docs/product/interface.md) maps every rc.32 screen to its new place. Stored rc.32 settings migrate automatically.
