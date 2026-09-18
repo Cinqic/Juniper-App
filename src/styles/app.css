@@ -202,6 +202,9 @@ kbd {
 }
 
 .button.primary:hover:not(:disabled) {
+  /* No pre-Chromium-111 fallback: darkening a light accent by a visible amount
+     can push --on-accent below AA, and the accent fill already marks the
+     primary action. */
   background: color-mix(in srgb, var(--accent) 88%, var(--ink));
 }
 
@@ -880,6 +883,9 @@ input[aria-invalid='true'] {
 
 .sidebar-new-chat:hover,
 .sidebar-nav-item:hover {
+  /* color-mix() needs Chromium 111; older Android System WebView keeps the
+     plain surface so the hover is still visible. */
+  background: var(--surface);
   background: color-mix(in srgb, var(--surface) 60%, var(--line));
 }
 
@@ -980,6 +986,7 @@ input[aria-invalid='true'] {
 }
 
 .history-item:hover {
+  background: var(--surface);
   background: color-mix(in srgb, var(--surface) 55%, var(--line));
 }
 
